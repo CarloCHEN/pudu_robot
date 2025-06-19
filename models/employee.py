@@ -49,7 +49,6 @@ class Employee:
     employee_id: str
     first_name: str
     last_name: str
-    email: str
     employment_status: EmploymentStatus = EmploymentStatus.ACTIVE
     hourly_rate: float = 20.0
     overtime_rate: float = 30.0

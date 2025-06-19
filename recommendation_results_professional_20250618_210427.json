@@ -1,0 +1,151 @@
+{
+  "success": true,
+  "recommendations": {
+    "recommended_tasks": [
+      {
+        "task_id": "REC_001",
+        "task_name": "Alert Response - HQ-F1-RR",
+        "recommended_assignee": "Sarah Chen",
+        "recommended_location": "HQ-F1-RR",
+        "recommended_start_time": "2024-01-20 09:00 AM",
+        "recommended_duration_minutes": 45,
+        "priority": "High",
+        "confidence_score": 0.85,
+        "reasoning": "Multiple alerts in pattern, high-traffic area requires immediate attention, Sarah has 95% efficiency rating in similar tasks",
+        "estimated_cost": 120.0,
+        "source": "alert_triggered",
+        "business_impact": "Prevent service disruption in high-visibility area",
+        "alternative_assignees": [
+          "John Doe",
+          "Mike Wilson"
+        ],
+        "skill_requirements": [
+          "emergency_response",
+          "facility_maintenance"
+        ]
+      },
+      {
+        "task_id": "REC_002",
+        "task_name": "Preventive Maintenance - RC-F1-LA",
+        "recommended_assignee": "John Doe",
+        "recommended_location": "RC-F1-LA",
+        "recommended_duration_minutes": 60,
+        "priority": "Medium",
+        "confidence_score": 0.75,
+        "reasoning": "Historical pattern indicates preventive maintenance due, optimize with current alert response",
+        "estimated_cost": 150.0,
+        "source": "pattern_based",
+        "business_impact": "Reduce future alert frequency",
+        "alternative_assignees": [
+          "Mark Thompson"
+        ],
+        "skill_requirements": [
+          "general_maintenance"
+        ]
+      }
+    ],
+    "performance_insights": [
+      {
+        "insight": "100% reactive maintenance pattern detected",
+        "recommendation": "Implement weekly preventive maintenance schedule",
+        "impact": "Potential 40% reduction in emergency responses"
+      },
+      {
+        "insight": "Location HQ-F1-RR shows highest alert frequency",
+        "recommendation": "Conduct root cause analysis and increase inspection frequency",
+        "impact": "Expected 25% reduction in alerts"
+      }
+    ],
+    "optimization_opportunities": [
+      {
+        "opportunity": "High alert concentration in HQ locations",
+        "recommendation": "Deploy IoT sensors for early detection",
+        "roi_estimate": "180% ROI within 6 months"
+      },
+      {
+        "opportunity": "Workload distribution imbalance",
+        "recommendation": "Cross-train 3 additional staff members",
+        "roi_estimate": "150% ROI within 3 months"
+      }
+    ],
+    "summary": {
+      "total_recommendations": 3,
+      "confidence_distribution": {
+        "high": 1,
+        "medium": 2,
+        "low": 0
+      },
+      "source_breakdown": {
+        "alert_triggered": 2,
+        "pattern_based": 1,
+        "metric_driven": 0
+      },
+      "total_estimated_cost": 420.0,
+      "estimated_time_savings": "2.5 hours per week"
+    }
+  },
+  "raw_response": "Based on the provided data and requirements, I'll analyze and provide comprehensive recommendations in the requested format:\n\n```json\n{\n  \"recommended_tasks\": [\n    {\n      \"task_id\": \"REC_001\",\n      \"task_name\": \"Alert Response - HQ-F1-RR\",\n      \"recommended_assignee\": \"Sarah Chen\",\n      \"recommended_location\": \"HQ-F1-RR\",\n      \"recommended_start_time\": \"2024-01-20 09:00 AM\",\n      \"recommended_duration_minutes\": 45,\n      \"priority\": \"High\",\n      \"confidence_score\": 0.85,\n      \"reasoning\": \"Multiple alerts in pattern, high-traffic area requires immediate attention, Sarah has 95% efficiency rating in similar tasks\",\n      \"estimated_cost\": 120.00,\n      \"source\": \"alert_triggered\",\n      \"business_impact\": \"Prevent service disruption in high-visibility area\",\n      \"alternative_assignees\": [\"John Doe\", \"Mike Wilson\"],\n      \"skill_requirements\": [\"emergency_response\", \"facility_maintenance\"]\n    },\n    {\n      \"task_id\": \"REC_002\",\n      \"task_name\": \"Preventive Maintenance - RC-F1-LA\",\n      \"recommended_assignee\": \"John Doe\",\n      \"recommended_location\": \"RC-F1-LA\",\n      \"recommended_duration_minutes\": 60,\n      \"priority\": \"Medium\",\n      \"confidence_score\": 0.75,\n      \"reasoning\": \"Historical pattern indicates preventive maintenance due, optimize with current alert response\",\n      \"estimated_cost\": 150.00,\n      \"source\": \"pattern_based\",\n      \"business_impact\": \"Reduce future alert frequency\",\n      \"alternative_assignees\": [\"Mark Thompson\"],\n      \"skill_requirements\": [\"general_maintenance\"]\n    }\n  ],\n  \"performance_insights\": [\n    {\n      \"insight\": \"100% reactive maintenance pattern detected\",\n      \"recommendation\": \"Implement weekly preventive maintenance schedule\",\n      \"impact\": \"Potential 40% reduction in emergency responses\"\n    },\n    {\n      \"insight\": \"Location HQ-F1-RR shows highest alert frequency\",\n      \"recommendation\": \"Conduct root cause analysis and increase inspection frequency\",\n      \"impact\": \"Expected 25% reduction in alerts\"\n    }\n  ],\n  \"optimization_opportunities\": [\n    {\n      \"opportunity\": \"High alert concentration in HQ locations\",\n      \"recommendation\": \"Deploy IoT sensors for early detection\",\n      \"roi_estimate\": \"180% ROI within 6 months\"\n    },\n    {\n      \"opportunity\": \"Workload distribution imbalance\",\n      \"recommendation\": \"Cross-train 3 additional staff members\",\n      \"roi_estimate\": \"150% ROI within 3 months\"\n    }\n  ],\n  \"summary\": {\n    \"total_recommendations\": 3,\n    \"confidence_distribution\": {\n      \"high\": 1,\n      \"medium\": 2,\n      \"low\": 0\n    },\n    \"source_breakdown\": {\n      \"alert_triggered\": 2,\n      \"pattern_based\": 1,\n      \"metric_driven\": 0\n    },\n    \"total_estimated_cost\": 420.00,\n    \"estimated_time_savings\": \"2.5 hours per week\"\n  }\n}\n```\n\nKey Improvements Recommended:\n\n1. **Preventive Maintenance Implementation**\n   - Establish regular maintenance schedules\n   - Focus on high-frequency alert locations\n   - Implement predictive maintenance using historical data\n\n2. **Resource Optimization**\n   - Cross-train staff to improve coverage\n   - Balance workload across team members\n   - Optimize skill-task matching\n\n3. **Monitoring Enhancement**\n   - Deploy additional sensors in high-alert areas\n   - Establish early warning systems\n   - Implement real-time monitoring dashboards\n\n4. **Process Improvements**\n   - Standardize response procedures\n   - Document best practices\n   - Regular performance reviews and adjustments\n\nThese recommendations aim to shift from reactive to proactive maintenance while optimizing resource utilization and reducing overall costs.",
+  "usage": {
+    "input_tokens": 1057,
+    "output_tokens": 985,
+    "total_tokens": 2042
+  },
+  "customer_tier": "professional",
+  "cost_info": {
+    "total_cost": 0.0,
+    "billing_type": "included",
+    "base_cost": 15.0,
+    "work_order_cost": 2.5,
+    "work_order_count": 10,
+    "remaining_included": 50,
+    "tier": "professional"
+  },
+  "metadata": {
+    "customer_tier": "professional",
+    "criteria": {
+      "locations": [
+        "HQ-F1-RR",
+        "RC-F1-LA",
+        "HQ-F2-CR"
+      ],
+      "work_order_types": [
+        "cleaning",
+        "maintenance",
+        "inspection"
+      ],
+      "lookback_days": 30,
+      "min_confidence": 0.7,
+      "alert_severity_threshold": "severe",
+      "variance_threshold": 0.2,
+      "max_recommendations": 10,
+      "buffer_days": 2
+    },
+    "cost_info": {
+      "total_cost": 0.0,
+      "billing_type": "included",
+      "base_cost": 15.0,
+      "work_order_cost": 2.5,
+      "work_order_count": 10,
+      "remaining_included": 50,
+      "tier": "professional"
+    },
+    "validation_info": {
+      "valid": true,
+      "tier_info": "TierFeatures(level='professional', max_work_orders=200, max_tokens=4000, features=['conflict_resolution', 'basic_workload_balancing', 'simple_scheduling', 'basic_location_grouping', 'performance_analysis', 'workload_distribution', 'location_optimization', 'historical_patterns', 'travel_time_optimization', 'performance_insights'], price_per_optimization=15.0, price_per_work_order=0.25, included_optimizations_per_month=50)",
+      "cost_info": {
+        "total_cost": 0.0,
+        "billing_type": "included",
+        "base_cost": 15.0,
+        "work_order_cost": 2.5,
+        "work_order_count": 10,
+        "remaining_included": 50,
+        "tier": "professional"
+      },
+      "work_order_validation": {
+        "allowed": true,
+        "remaining": 190
+      }
+    },
+    "generated_at": "2025-06-18T21:04:27.512020"
+  }
+}
