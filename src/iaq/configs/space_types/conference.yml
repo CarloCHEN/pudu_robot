@@ -1,0 +1,141 @@
+name: "Conference/Meeting Rooms"
+square_footage: 20000
+
+weights:
+  PM2.5: 0.15
+  PM10: 0.10
+  CO2: 0.30
+  tVOC: 0.15
+  HCHO: 0.025
+  O3: 0.025
+  Temperature: 0.15
+  Humidity: 0.10
+
+thresholds:
+  - parameter: "PM2.5"
+    ranges:
+      - range: [0, 10]
+        score: 100
+      - range: [10, 12]
+        score: 90
+      - range: [12, 15]
+        score: 80
+      - range: [15, 25]
+        score: 60
+      - range: [25, 35]
+        score: 40
+      - range: [35, "inf"]
+        score: 20
+
+  - parameter: "PM10"
+    ranges:
+      - range: [0, 20]
+        score: 100
+      - range: [20, 30]
+        score: 90
+      - range: [30, 50]
+        score: 80
+      - range: [50, 75]
+        score: 60
+      - range: [75, 100]
+        score: 40
+      - range: [100, "inf"]
+        score: 20
+
+  - parameter: "CO2"
+    ranges:
+      - range: [0, 600]
+        score: 100
+      - range: [600, 750]
+        score: 90
+      - range: [750, 900]
+        score: 80
+      - range: [900, 1000]
+        score: 70
+      - range: [1000, 1200]
+        score: 50
+      - range: [1200, "inf"]
+        score: 30
+
+  - parameter: "tVOC"
+    ranges:
+      - range: [0, 200]
+        score: 100
+      - range: [200, 300]
+        score: 90
+      - range: [300, 500]
+        score: 70
+      - range: [500, 750]
+        score: 50
+      - range: [750, 1000]
+        score: 30
+      - range: [1000, "inf"]
+        score: 10
+
+  - parameter: "HCHO"
+    ranges:
+      - range: [0, 0.033]
+        score: 100
+      - range: [0.033, 0.05]
+        score: 80
+      - range: [0.05, 0.1]
+        score: 60
+      - range: [0.1, 0.2]
+        score: 40
+      - range: [0.2, "inf"]
+        score: 20
+
+  - parameter: "O3"
+    ranges:
+      - range: [0, 0.02]
+        score: 100
+      - range: [0.02, 0.05]
+        score: 80
+      - range: [0.05, 0.07]
+        score: 60
+      - range: [0.07, 0.09]
+        score: 40
+      - range: [0.09, "inf"]
+        score: 20
+
+  - parameter: "Temperature"
+    ranges:
+      - range: [20, 23]
+        score: 100
+      - range: [18, 20]
+        score: 80
+      - range: [23, 26]
+        score: 80
+      - range: [16, 18]
+        score: 60
+      - range: [26, 28]
+        score: 60
+      - range: [14, 16]
+        score: 40
+      - range: [28, 30]
+        score: 40
+      - range: [0, 14]
+        score: 20
+      - range: [30, "inf"]
+        score: 20
+
+  - parameter: "Humidity"
+    ranges:
+      - range: [40, 50]
+        score: 100
+      - range: [30, 40]
+        score: 80
+      - range: [50, 60]
+        score: 80
+      - range: [20, 30]
+        score: 60
+      - range: [60, 70]
+        score: 60
+      - range: [10, 20]
+        score: 40
+      - range: [70, 80]
+        score: 40
+      - range: [0, 10]
+        score: 20
+      - range: [80, 100]
+        score: 20
