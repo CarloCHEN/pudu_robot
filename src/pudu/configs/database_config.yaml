@@ -1,0 +1,93 @@
+# Database Configuration for Robot Data Pipeline
+# This file defines which tables to write to in which databases
+
+# List of all databases used
+databases:
+  - "ry-vue"
+  - "foxx_irvine_office_test"
+
+# Table configurations grouped by data type
+tables:
+  # Location Table
+  location:
+    - database: "ry-vue"
+      table_name: "mnt_robots_locations"
+      primary_keys: ["location_id"]
+      fields: null  # Use all fields from the DataFrame
+      description: "Main location table in ry-vue database"
+
+    - database: "foxx_irvine_office_test"
+      table_name: "mnt_robots_locations"
+      primary_keys: ["location_id"]
+      fields: null
+      description: "Location table in foxx test database"
+
+  # Robot Status Table
+  robot_status:
+    - database: "ry-vue"
+      table_name: "mnt_robots_management"
+      primary_keys: ["robot_sn"]
+      fields: null  # Use all fields from the DataFrame
+      description: "Main robot status table in ry-vue database"
+
+    - database: "foxx_irvine_office_test"
+      table_name: "mnt_robots_management"
+      primary_keys: ["robot_sn"]
+      fields: null
+      description: "Robot status table in foxx test database"
+
+  # Robot Task Tables
+  robot_task:
+    - database: "ry-vue"
+      table_name: "mnt_robots_task"
+      primary_keys: ["robot_sn", "task_name", "start_time"]
+      fields: null  # Use all fields from the DataFrame
+      description: "Main robot task tracking table in ry-vue database"
+
+    - database: "foxx_irvine_office_test"
+      table_name: "mnt_robots_task"
+      primary_keys: ["robot_sn", "task_name", "start_time"]
+      fields: null
+      description: "Robot task tracking table in foxx test database"
+
+  # Robot Task Overview Tables
+  robot_task_overview:
+    - database: "ry-vue"
+      table_name: "mnt_robots_task_overview"
+      primary_keys: ["robot_sn", "day", "hour"]
+      fields: null
+      description: "Hourly task overview aggregation in ry-vue database"
+
+    - database: "foxx_irvine_office_test"
+      table_name: "mnt_robots_task_overview"
+      primary_keys: ["robot_sn", "day", "hour"]
+      fields: null
+      description: "Hourly task overview aggregation in foxx test database"
+
+  # Robot Charging Tables
+  robot_charging:
+    - database: "ry-vue"
+      table_name: "mnt_robots_charging_sessions"
+      primary_keys: ["robot_sn", "start_time", "end_time"]
+      fields: null
+      description: "Robot charging session data in ry-vue database"
+
+    - database: "foxx_irvine_office_test"
+      table_name: "mnt_robots_charging_sessions"
+      primary_keys: ["robot_sn", "start_time", "end_time"]
+      fields: null
+      description: "Robot charging session data in foxx test database"
+
+  # Robot Events Tables
+  robot_events:
+    - database: "ry-vue"
+      table_name: "mnt_robot_events"
+      primary_keys: ["robot_sn", "event_id"]
+      fields: null
+      description: "Robot events and errors in ry-vue database"
+
+    - database: "foxx_irvine_office_test"
+      table_name: "mnt_robot_events"
+      primary_keys: ["robot_sn", "event_id"]
+      fields: null
+      description: "Robot events and errors in foxx test database"

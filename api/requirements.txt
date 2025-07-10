@@ -1,0 +1,6 @@
+urllib3
+pandas
+requests
+fastapi
+pydantic
+concurrent-futures
