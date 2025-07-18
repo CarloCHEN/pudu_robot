@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List
 import pandas as pd
 from pudu.rds.rdsTable import RDSDatabase
@@ -28,32 +28,35 @@ def initialize_databases_from_config(config: DatabaseConfig) -> List[RDSDatabase
 
 def monitor_support_tickets(databases: List[RDSDatabase], function_name):
     """
-    Monitor support tickets for new 'reported' status entries
-    Send SNS notifications for new tickets requiring attention
+    Monitor support tickets for new 'reported' status entries.
+    Send a single SNS notification for all new tickets.
 
     Returns:
-        int: Number of new tickets found
+        (bool, int): Success flag and number of new tickets found
     """
     try:
         logger.info("🎫 Checking for new support tickets...")
-        # Get new support tickets
         ticket_count = 0
+        all_new_tickets = []
+
         for database in databases:
             logger.info(f"🔍 Checking for new support tickets in {database.database_name}")
             new_tickets = get_support_tickets_table(database)
             if new_tickets.empty:
                 logger.info("✅ No new support tickets requiring attention")
-                ticket_count += 0
             else:
-                ticket_count += len(new_tickets)
-                logger.info(f"🚨 Found {ticket_count} new support ticket(s) requiring attention!")
+                count = len(new_tickets)
+                ticket_count += count
+                logger.info(f"🚨 Found {count} new support ticket(s) requiring attention!")
+                all_new_tickets.append((database, new_tickets))
 
-                # Send notification for each new ticket
-                for _, ticket in new_tickets.iterrows():
-                    send_support_ticket_notification(function_name, ticket)
+        if ticket_count > 0:
+            combined_df = pd.concat([df for _, df in all_new_tickets], ignore_index=True)
+            send_support_ticket_notification_batch(function_name, combined_df)
 
-            # Reset new flags for notified tickets
-            reset_new_flags(database, new_tickets)
+            # Reset flags after successful notification
+            for database, df in all_new_tickets:
+                reset_new_flags(database, df)
 
         return True, ticket_count
 
@@ -61,82 +64,79 @@ def monitor_support_tickets(databases: List[RDSDatabase], function_name):
         logger.error(f"❌ Error monitoring support tickets: {e}", exc_info=True)
         return False, 0
 
-def send_support_ticket_notification(function_name, ticket):
+def send_support_ticket_notification_batch(function_name, tickets_df: pd.DataFrame):
     """
-    Send SNS notification for a new support ticket
+    Send a single SNS notification summarizing all new support tickets.
 
     Parameters:
-        function_name (str): Lambda function name
-        ticket (pd.Series): Ticket data from DataFrame row
+        function_name (str): Name of the Lambda function
+        tickets_df (pd.DataFrame): DataFrame of new support tickets
     """
     try:
         sns_topic_arn = os.getenv('SUPPORT_TICKET_SNS_TOPIC_ARN')
-
         if not sns_topic_arn:
             logger.warning("No SNS topic configured for support ticket notifications")
             return
 
         sns = boto3.client('sns')
+        now_str = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
 
-        # Extract relevant fields from the joined ticket record
-        report_id = ticket.get('report_id', 'Unknown')
-        event_id = ticket.get('event_id', 'Unknown')
-        status = ticket.get('current_status', 'Unknown')
-        reported_at = ticket.get('reported_at', 'Unknown')
-        contact_method = ticket.get('contact_method', 'Unknown')
-        contact_value = ticket.get('contact_value', 'Unknown')
-        resolved_at = ticket.get('resolved_at', 'N/A')
-        reported_by_user_id = ticket.get('reported_by_user_id', 'Unknown')
+        # Compose summary
+        message_lines = [
+            "🚨 NEW CUSTOMER SUPPORT TICKETS ALERT\n",
+            f"📅 Notification Sent: {now_str}",
+            f"🔗 Function Triggered: {function_name}",
+            f"📋 Total New Tickets: {len(tickets_df)}",
+            "\n🧾 Ticket Summaries:"
+        ]
 
-        # Event-related fields
-        robot_sn = ticket.get('robot_sn', 'Unknown')
-        event_level = ticket.get('event_level', 'Unknown')
-        event_type = ticket.get('event_type', 'Unknown')
-        event_detail = ticket.get('event_detail', 'No detail')
+        for _, ticket in tickets_df.iterrows():
+            report_id = ticket.get('report_id', 'Unknown')
+            event_id = ticket.get('event_id', 'Unknown')
+            status = ticket.get('current_status', 'Unknown')
+            reported_at = ticket.get('reported_at', 'Unknown')
+            contact_method = ticket.get('contact_method', 'Unknown')
+            contact_value = ticket.get('contact_value', 'Unknown')
+            robot_sn = ticket.get('robot_sn', 'Unknown')
+            event_type = ticket.get('event_type', 'Unknown')
+            event_level = ticket.get('event_level', 'Unknown')
+            detail = ticket.get('event_detail', 'No detail')
 
-        subject = f"🎫 NEW Support Ticket - Report #{report_id}"
+            message_lines.append(
+                f"""
+                —————————————
+                🆔 Report ID: {report_id}
+                🤖 Robot SN: {robot_sn}
+                📛 Event Type: {event_type} ({event_level})
+                🗓️ Reported At: {reported_at}
+                📬 Contact: {contact_method} - {contact_value}
+                📄 Status: {status}
+                📋 Detail: {detail.strip()[:300]}
+                """.strip()
+            )
 
-        message = f"""
-        🚨 NEW CUSTOMER SUPPORT TICKET ALERT
+        message_lines.append(
+            "\n🔧 Required Actions:\n"
+            "1. Contact the customer\n"
+            "2. Investigate the reported issues\n"
+            "3. Log responses in the support system\n"
+            "4. Follow up as needed\n"
+        )
 
-        🧾 Report Info:
-        • Report ID: {report_id}
-        • Event ID: {event_id}
-        • Status: {status}
-        • Reported At: {reported_at}
-        • Resolved At: {resolved_at if pd.notnull(resolved_at) else 'Unresolved'}
-        • Reported By User ID: {reported_by_user_id}
-        • Contact via {contact_method}: {contact_value}
+        message_lines.append("\nThis is an automated notification from the Pudu Robot Support Monitoring System.")
 
-        🤖 Robot Event Info:
-        • Robot SN: {robot_sn}
-        • Event Level: {event_level}
-        • Event Type: {event_type}
-        • Event Detail: {event_detail}
-
-        🔧 Required Actions:
-        1. Contact the customer
-        2. Investigate the reported issue
-        3. Log your response using the support system
-        4. Follow up as needed
-
-        📅 Notification Sent: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
-        🔗 Function Triggered: {function_name}
-
-        This is an automated notification from the Pudu Robot Support Monitoring System.
-        Please respond promptly to maintain customer satisfaction.
-        """.strip()
+        full_message = "\n".join(message_lines)
 
         sns.publish(
             TopicArn=sns_topic_arn,
-            Message=message,
-            Subject=subject
+            Message=full_message,
+            Subject=f"🎫 {len(tickets_df)} New Support Tickets Needing Attention"
         )
 
-        logger.info(f"✅ Support ticket notification sent for Report ID: {report_id}")
+        logger.info(f"✅ Batch support ticket notification sent for {len(tickets_df)} tickets")
 
     except Exception as e:
-        logger.error(f"❌ Failed to send support ticket notification: {e}")
+        logger.error(f"❌ Failed to send batch support ticket notification: {e}", exc_info=True)
 
 
 class EventSupportApp:

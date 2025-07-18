@@ -1,3 +1,4 @@
+# src/pudu/event_support/support_utils.py (CORRECTED VERSION)
 import pandas as pd
 from pudu.rds import RDSDatabase
 import logging
@@ -9,7 +10,7 @@ def get_support_tickets_table(database: RDSDatabase):
     Get support tickets from the database, focusing on new 'reported' tickets.
 
     Parameters:
-        ticket_table (RDSTable): RDS table object for support tickets
+        database (RDSDatabase): RDS database object for support tickets
 
     Returns:
         pd.DataFrame: DataFrame with new support tickets that need attention
@@ -33,7 +34,7 @@ def get_support_tickets_table(database: RDSDatabase):
             r.resolved_at,
             r.reported_by_user_id,
 
-            e.id AS event_id,
+            e.id AS event_table_id,
             e.robot_sn,
             e.error_id,
             e.event_level,
@@ -51,21 +52,18 @@ def get_support_tickets_table(database: RDSDatabase):
 
         FROM {database.database_name}.mnt_robot_event_reports r
         JOIN {database.database_name}.mnt_robot_events e
-            ON r.event_id = e.event_id
+            ON r.event_id = e.id
         WHERE r.is_new = 1
-        ORDER BY r.reported_at DESC;
+        ORDER BY r.reported_at DESC
         """
 
-        logger.info(f"Executing query: {base_query}")
-        # Execute the query
+        logger.info(f"Executing query for new support tickets...")
+        # Use the existing query_data_as_df method
         tickets_data = database.query_data_as_df(base_query)
 
         if not tickets_data.empty:
             # Ensure reported_at timestamp is in proper format
             tickets_data['reported_at'] = pd.to_datetime(tickets_data['reported_at'])
-
-        # Close the connection
-        database.close()
 
         logger.info(f"Retrieved {len(tickets_data)} new support tickets requiring attention")
         return tickets_data
@@ -77,30 +75,39 @@ def get_support_tickets_table(database: RDSDatabase):
 
 def reset_new_flags(database: RDSDatabase, notified_tickets_df: pd.DataFrame):
     """
-    Update the last Lambda execution timestamp and set is_new = 0 for notified tickets.
+    Set is_new = 0 for notified tickets using existing query methods.
 
     Parameters:
         database (RDSDatabase): The database connection object
-        timestamp (str): Current timestamp in 'YYYY-MM-DD HH:MM:SS' format
         notified_tickets_df (pd.DataFrame): DataFrame of tickets that were notified
     """
     try:
-        # Mark notified support tickets as not new ===
-        if not notified_tickets_df.empty:
-            report_ids = notified_tickets_df['report_id'].dropna().astype(str).tolist()
+        if notified_tickets_df.empty:
+            logger.info("No tickets to update")
+            return
 
-            # Safely format the list for SQL (e.g., '123', '456')
-            formatted_ids = ', '.join([f"'{rid}'" for rid in report_ids])
+        # Get report IDs from notified tickets
+        report_ids = notified_tickets_df['report_id'].dropna().astype(str).tolist()
 
-            update_query = f"""
-            UPDATE {database.database_name}.mnt_robot_event_reports
-            SET is_new = 0
-            WHERE report_id IN ({formatted_ids});
-            """
+        if not report_ids:
+            logger.warning("No valid report IDs found in notified tickets")
+            return
 
-            logger.info(f"Executing update for {len(report_ids)} notified tickets...")
-            database.execute_query(update_query)
-            logger.info(f"✅ is_new set to 0 for {len(report_ids)} support tickets")
+        # Safely format the list for SQL (e.g., '123', '456')
+        formatted_ids = ', '.join([f"'{rid}'" for rid in report_ids])
+
+        update_query = f"""
+        UPDATE {database.database_name}.mnt_robot_event_reports
+        SET is_new = 0, last_updated = NOW()
+        WHERE id IN ({formatted_ids})
+        """
+
+        logger.info(f"Updating is_new flag for {len(report_ids)} notified tickets...")
+
+        # Use the existing query_data method (which can execute UPDATE queries)
+        database.query_data(update_query)
+
+        logger.info(f"✅ Successfully set is_new = 0 for {len(report_ids)} support tickets")
 
     except Exception as e:
-        logger.warning(f"❌ Failed to update last run time or reset is_new flags: {e}")
+        logger.warning(f"❌ Failed to reset is_new flags: {e}")
