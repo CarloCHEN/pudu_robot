@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from callback_handler import CallbackHandler
 from models import CallbackResponse, CallbackStatus
 from config import Config
+from database_writer import DatabaseWriter
 
 # Load environment variables
 load_dotenv()
@@ -27,6 +28,14 @@ logger = logging.getLogger(__name__)
 
 # Initialize callback handler
 callback_handler = CallbackHandler()
+
+# Initialize database writer
+try:
+    database_writer = DatabaseWriter()
+    logger.info("Database writer initialized successfully")
+except Exception as e:
+    logger.error(f"Failed to initialize database writer: {e}")
+    database_writer = None
 
 # curl -X POST "http://34.230.84.10:8000/api/pudu/webhook" -H "Content-Type: application/json" -H "CallbackCode: 1vQ6MfUxqyoGMRQ9nK8C4pSkg1Qsa3Vpq" -d '{"callback_type": "robotStatus", "data": {"robot_sn": "x123", "robot_status": "ONLINE", "timestamp": 123456}}'
 @app.route('/api/pudu/webhook', methods=['POST'])
@@ -86,6 +95,12 @@ def pudu_webhook():
 
         # Process the callback
         response = callback_handler.process_callback(data)
+        # Write to database if writer is available
+        if database_writer:
+            try:
+                callback_handler.write_to_database(data, database_writer)
+            except Exception as e:
+                logger.error(f"Failed to write callback to database: {e}")
 
         # Return result
         return jsonify(response.to_dict()), 200 if response.status == CallbackStatus.SUCCESS else 400

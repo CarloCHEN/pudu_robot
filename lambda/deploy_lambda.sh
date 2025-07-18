@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Clean deployment script for Pudu Robot Pipeline Lambda
+# Simplified deployment script for Pudu Robot Pipeline Lambda with Support Ticket notifications
 # Run this from the pudu_robot root directory
 
 set -e
@@ -9,9 +9,22 @@ set -e
 FUNCTION_NAME="pudu-robot-pipeline"
 REGION="us-east-1"
 ROLE_NAME="pudu-robot-lambda-role"
-PYTHON_VERSION="3.9"  # Changed from 3.8 to 3.9 to match Lambda runtime
+PYTHON_VERSION="3.9"
 
-echo "🚀 Deploying Pudu Robot Pipeline Lambda..."
+# SNS Configuration - CHANGE THIS EMAIL TO YOUR ACTUAL EMAIL
+NOTIFICATION_EMAIL="jiaxu.chen@foxxusa.com"  # ⚠️ CHANGE THIS TO YOUR EMAIL
+
+# SNS Topic Name (only one topic needed)
+SUPPORT_TOPIC_NAME="pudu-robot-support-tickets"
+
+echo "🚀 Deploying Pudu Robot Pipeline Lambda with Support Ticket notifications..."
+
+# Validate email configuration
+if [[ "$NOTIFICATION_EMAIL" == "your-email@example.com" ]]; then
+    echo "❌ Please update the email address in the configuration section before deploying!"
+    echo "   NOTIFICATION_EMAIL: $NOTIFICATION_EMAIL"
+    exit 1
+fi
 
 # Check if we're in the right directory
 if [ ! -d "src/pudu" ]; then
@@ -134,8 +147,39 @@ fi
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 echo "🔍 Using AWS Account: $ACCOUNT_ID"
 
-# Step 6: Create IAM role if needed
-echo "🔐 Setting up IAM role..."
+# Step 6: Create SNS Topic for Support Tickets
+echo "📧 Setting up SNS topic for support ticket notifications..."
+
+# Create topic (returns existing ARN if already exists)
+SUPPORT_TOPIC_ARN=$(aws sns create-topic --name "$SUPPORT_TOPIC_NAME" --query 'TopicArn' --output text)
+
+# Set topic attributes for better email formatting
+aws sns set-topic-attributes \
+    --topic-arn "$SUPPORT_TOPIC_ARN" \
+    --attribute-name DisplayName \
+    --attribute-value "Pudu Robot Support Tickets" >/dev/null
+
+echo "📧 Support Topic ARN: $SUPPORT_TOPIC_ARN"
+
+# Check if email is already subscribed
+existing_subscription=$(aws sns list-subscriptions-by-topic \
+    --topic-arn "$SUPPORT_TOPIC_ARN" \
+    --query "Subscriptions[?Endpoint=='$NOTIFICATION_EMAIL' && Protocol=='email'].SubscriptionArn" \
+    --output text)
+
+if [ -z "$existing_subscription" ] || [ "$existing_subscription" = "None" ]; then
+    echo "📧 Subscribing $NOTIFICATION_EMAIL to support ticket notifications..."
+    aws sns subscribe \
+        --topic-arn "$SUPPORT_TOPIC_ARN" \
+        --protocol email \
+        --notification-endpoint "$NOTIFICATION_EMAIL" >/dev/null
+    echo "✅ Email subscription created (confirmation required)"
+else
+    echo "✅ Email already subscribed: $existing_subscription"
+fi
+
+# Step 7: Create IAM role with SNS permissions
+echo "🔐 Setting up IAM role with SNS permissions..."
 if ! aws iam get-role --role-name $ROLE_NAME >/dev/null 2>&1; then
     echo "Creating IAM role..."
     aws iam create-role \
@@ -165,21 +209,57 @@ if ! aws iam get-role --role-name $ROLE_NAME >/dev/null 2>&1; then
     sleep 15
 fi
 
+# Create SNS policy for the Lambda role
+echo "📧 Setting up SNS permissions..."
+SNS_POLICY_DOC=$(cat <<EOF
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "sns:Publish",
+                "sns:GetTopicAttributes"
+            ],
+            "Resource": [
+                "${SUPPORT_TOPIC_ARN}"
+            ]
+        }
+    ]
+}
+EOF
+)
+
+# Create and attach SNS policy
+aws iam put-role-policy \
+    --role-name $ROLE_NAME \
+    --policy-name "SupportTicketSNSPolicy" \
+    --policy-document "$SNS_POLICY_DOC" >/dev/null
+
 ROLE_ARN=$(aws iam get-role --role-name $ROLE_NAME --query 'Role.Arn' --output text)
 
-# Step 7: Deploy Lambda function
+# Step 8: Deploy Lambda function with environment variables
 echo "🔧 Deploying Lambda function..."
+
+# Prepare environment variables with SNS topic ARN
+ENV_VARS="Variables={SUPPORT_TICKET_SNS_TOPIC_ARN=${SUPPORT_TOPIC_ARN}}"
+
 if aws lambda get-function --function-name $FUNCTION_NAME >/dev/null 2>&1; then
     echo "Updating existing function..."
     aws lambda update-function-code \
         --function-name $FUNCTION_NAME \
         --zip-file fileb://pudu-robot-pipeline.zip
 
+    echo "⏳ Waiting for code update to complete..."
+    aws lambda wait function-updated --function-name $FUNCTION_NAME
+
+    echo "Updating function configuration..."
     aws lambda update-function-configuration \
         --function-name $FUNCTION_NAME \
         --runtime python${PYTHON_VERSION} \
         --timeout 900 \
-        --memory-size 1024
+        --memory-size 1024 \
+        --environment "$ENV_VARS"
 else
     echo "Creating new function..."
     aws lambda create-function \
@@ -190,7 +270,8 @@ else
         --zip-file "fileb://pudu-robot-pipeline.zip" \
         --timeout 900 \
         --memory-size 1024 \
-        --description "Pudu Robot Data Pipeline - runs every 5 minutes" || {
+        --environment "$ENV_VARS" \
+        --description "Pudu Robot Data Pipeline with Support Ticket Monitoring" || {
         echo "❌ Lambda creation failed"
         echo "Role ARN: $ROLE_ARN"
         echo "ZIP size: $(ls -lh pudu-robot-pipeline.zip)"
@@ -198,7 +279,7 @@ else
     }
 fi
 
-# Step 8: Set up EventBridge schedule
+# Step 9: Set up EventBridge schedule
 echo "📅 Setting up EventBridge schedule..."
 aws events put-rule \
     --name pudu-robot-5min-schedule \
@@ -206,7 +287,7 @@ aws events put-rule \
     --description "Trigger Pudu robot data pipeline every 5 minutes" \
     --state ENABLED >/dev/null
 
-# Step 9: Add Lambda permission for EventBridge
+# Step 10: Add Lambda permission for EventBridge
 aws lambda add-permission \
     --function-name $FUNCTION_NAME \
     --statement-id pudu-robot-eventbridge-permission \
@@ -215,7 +296,7 @@ aws lambda add-permission \
     --source-arn arn:aws:events:$REGION:$ACCOUNT_ID:rule/pudu-robot-5min-schedule \
     >/dev/null 2>&1 || echo "Permission already exists"
 
-# Step 10: Add Lambda as EventBridge target
+# Step 11: Add Lambda as EventBridge target
 aws events put-targets \
     --rule pudu-robot-5min-schedule \
     --targets "Id"="1","Arn"="arn:aws:lambda:$REGION:$ACCOUNT_ID:function:$FUNCTION_NAME" >/dev/null
@@ -233,10 +314,16 @@ echo "   Runtime: Python ${PYTHON_VERSION}"
 echo "   Schedule: Every 5 minutes"
 echo "   Logs: /aws/lambda/$FUNCTION_NAME"
 echo ""
+echo "📧 Support Ticket Notifications:"
+echo "   🎫 Topic: $SUPPORT_TOPIC_ARN"
+echo "   📧 Email: $NOTIFICATION_EMAIL"
+echo ""
+echo "⚠️  IMPORTANT: Check your email for SNS subscription confirmation!"
+echo ""
 echo "🔧 Useful Commands:"
 echo "   Test: aws lambda invoke --function-name $FUNCTION_NAME test-output.json && cat test-output.json"
 echo "   Logs: aws logs tail /aws/lambda/$FUNCTION_NAME --follow"
 echo "   Disable: aws events disable-rule --name pudu-robot-5min-schedule"
 echo "   Enable: aws events enable-rule --name pudu-robot-5min-schedule"
 echo ""
-echo "🎉 Your pipeline is now running every 5 minutes!"
+echo "🎫 Your pipeline now monitors support tickets and sends notifications!"

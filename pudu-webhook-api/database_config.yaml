@@ -1,0 +1,16 @@
+# Database Configuration for Webhook API
+databases:
+  - "ry-vue"
+
+tables:
+  # Robot Status/Pose/Power updates go to management table
+  robot_status:
+    - database: "ry-vue"
+      table_name: "mnt_robots_management"
+      primary_keys: ["robot_sn"]
+
+  # Robot Events/Errors go to events table
+  robot_events:
+    - database: "ry-vue"
+      table_name: "mnt_robot_events"
+      primary_keys: ["robot_sn", "event_id"]

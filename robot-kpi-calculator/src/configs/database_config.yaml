@@ -1,0 +1,106 @@
+# Database Configuration for Robot KPI Calculator
+# This file defines which tables to read from
+
+# List of all databases used
+databases:
+  - "foxx_irvine_office_test"
+
+# Table configurations
+tables:
+  # Cost Settings Table
+  cost_settings:
+    database: "foxx_irvine_office_test"
+    table_name: "mnt_robot_cost_setting"
+    primary_keys: ["id"]
+    fields:
+      - id
+      - electricity_rate
+      - water_rate
+      - human_hourly_wage
+      - human_cleaning_rate
+      - purchase_price
+      - expected_lifespan
+      - annual_maintenance_cost
+      - create_time
+      - update_time
+    description: "Robot cost configuration settings"
+
+  # Additional Costs Table
+  additional_costs:
+    database: "foxx_irvine_office_test"
+    table_name: "mnt_robot_additional_costs"
+    primary_keys: ["id"]
+    fields:
+      - id
+      - cost_date
+      - cost_type
+      - amount
+      - description
+      - create_time
+      - update_time
+    description: "Additional robot operational costs"
+
+  # Robot Tasks Table
+  robot_tasks:
+    database: "foxx_irvine_office_test"
+    table_name: "mnt_robots_task"
+    primary_keys: ["id"]
+    fields:
+      - id
+      - robot_sn
+      - task_name
+      - mode
+      - sub_mode
+      - type
+      - vacuum_speed
+      - vacuum_suction
+      - wash_speed
+      - wash_suction
+      - wash_water
+      - map_name
+      - map_url
+      - actual_area
+      - plan_area
+      - start_time
+      - end_time
+      - duration
+      - efficiency
+      - remaining_time
+      - consumption
+      - water_consumption
+      - progress
+      - status
+      - create_time
+      - update_time
+      - tenant_id
+    description: "Robot cleaning task records"
+
+  # KPI Storage Tables
+  kpi_daily:
+    database: "foxx_irvine_office_test"
+    table_name: "mnt_robot_kpi_daily"
+    primary_keys: ["calculation_date", "robot_sn"]
+    fields:
+      - id
+      - calculation_date
+      - robot_sn
+      - total_daily_cost
+      - daily_power_cost
+      - daily_water_cost
+      - daily_additional_cost
+      - power_consumption_kwh
+      - water_consumption_liters
+      - hours_saved_daily
+      - human_hours_needed
+      - robot_hours_needed
+      - area_cleaned_sqm
+      - roi_percentage
+      - cumulative_savings
+      - total_investment
+      - days_since_deployment
+      - payback_period_days
+      - tasks_count
+      - calculation_timestamp
+      - create_time
+      - update_time
+    description: "Daily KPI calculations"

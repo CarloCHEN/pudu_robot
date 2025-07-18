@@ -12,6 +12,11 @@ COPY pudu-webhook-api/config.py .
 COPY pudu-webhook-api/main.py .
 COPY pudu-webhook-api/models.py .
 COPY pudu-webhook-api/processors.py .
+COPY pudu-webhook-api/database_config.py .
+COPY pudu-webhook-api/database_writer.py .
+COPY pudu-webhook-api/rds_utils.py .
+COPY pudu-webhook-api/credentials.yaml .
+COPY pudu-webhook-api/database_config.yaml .
 
 # Create non-root user for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser

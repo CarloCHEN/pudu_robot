@@ -3,6 +3,7 @@ Robot Package
 """
 
 from .foxx_api import *
+from .support_utils import *
 
 __all__ = [
     # from foxx_api
@@ -13,5 +14,10 @@ __all__ = [
     "get_charging_table",
     "get_data",
     "get_task_overview_data",
-    "get_events_table"
+    "get_events_table",
+    # from support_api
+    "get_support_tickets_table",
+    "prepare_support_tickets_for_database",
+    "get_last_lambda_run_time",
+    "update_last_lambda_run_time"
 ]

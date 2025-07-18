@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timedelta
 import os
 import sys
+import traceback
 
 # Configure logging
 logger = logging.getLogger()
@@ -12,9 +13,11 @@ logger.setLevel(logging.INFO)
 def lambda_handler(event, context):
     """
     Lambda function to run the robot data pipeline every 5 minutes
+    NOW INCLUDES: Support ticket monitoring and notifications
     Triggered by EventBridge rule
     """
     start_time = datetime.now()
+    function_name = context.function_name if context else 'unknown'
 
     try:
         logger.info("🚀 Starting Pudu robot data pipeline Lambda")
@@ -37,9 +40,10 @@ def lambda_handler(event, context):
         # Import your app module from the correct location
         try:
             from pudu.app.main import App
-            logger.info("✅ Successfully imported pudu.app.main")
+            from pudu.app.event_support import EventSupportApp
+            logger.info("✅ Successfully imported pudu.app.main and pudu.app.event_support")
         except ImportError as e:
-            logger.error(f"❌ Failed to import pudu.app.main: {e}")
+            logger.error(f"❌ Failed to import pudu.app.main and pudu.app.event_support: {e}")
             logger.error(f"Current directory contents: {os.listdir('.')}")
             if os.path.exists('pudu'):
                 logger.error(f"pudu directory contents: {os.listdir('pudu')}")
@@ -71,7 +75,8 @@ def lambda_handler(event, context):
 
         # Initialize app with configuration
         logger.info("🔧 Initializing application...")
-        app = App(config_path)
+        app = App(config_path) # Main app for robot data pipeline
+        event_support_app = EventSupportApp(config_path) # App for support ticket monitoring and notifications
 
         # Log configuration summary
         try:
@@ -80,8 +85,16 @@ def lambda_handler(event, context):
         except Exception as e:
             logger.warning(f"⚠️ Could not get config summary: {e}")
 
-        # Run the pipeline
-        logger.info("▶️ Starting data pipeline execution...")
+        # NEW: Monitor support tickets FIRST (before running main pipeline)
+        logger.info("🎫 Monitoring support tickets...")
+        success, ticket_count = event_support_app.run(function_name)
+        if success:
+            logger.info(f"✅ Support ticket monitoring completed successfully with {ticket_count} new tickets")
+        else:
+            logger.error("❌ Support ticket monitoring completed with failures")
+
+        # Run the main robot data pipeline
+        logger.info("▶️ Starting robot data pipeline execution...")
         success = app.run(start_time=start_time_str, end_time=end_time_str)
 
         # Calculate execution time
@@ -90,45 +103,27 @@ def lambda_handler(event, context):
 
         if success:
             logger.info("✅ Pipeline completed successfully")
-
-            # Return success response
-            return {
-                'statusCode': 200,
-                'body': json.dumps({
-                    'message': 'Pipeline completed successfully',
-                    'start_time': start_time_str,
-                    'end_time': end_time_str,
-                    'execution_time_seconds': execution_time,
-                    'success': True,
-                    'timestamp': datetime.now().isoformat()
-                })
-            }
         else:
             logger.error("❌ Pipeline completed with failures")
 
-            # Return failure response but don't raise exception
-            return {
-                'statusCode': 200,  # Still return 200 to avoid Lambda retries
-                'body': json.dumps({
-                    'message': 'Pipeline completed with failures',
-                    'start_time': start_time_str,
-                    'end_time': end_time_str,
-                    'execution_time_seconds': execution_time,
-                    'success': False,
-                    'timestamp': datetime.now().isoformat()
-                })
-            }
+        # Return response with ticket information
+        return {
+            'statusCode': 200,
+            'body': json.dumps({
+                'message': 'Pipeline completed successfully' if success else 'Pipeline completed with failures',
+                'start_time': start_time_str,
+                'end_time': end_time_str,
+                'execution_time_seconds': execution_time,
+                'new_support_tickets': ticket_count,
+                'success': success,
+                'timestamp': datetime.now().isoformat()
+            })
+        }
 
     except Exception as e:
         execution_time = (datetime.now() - start_time).total_seconds()
         error_msg = f"Pipeline execution failed: {str(e)}"
         logger.error(f"💥 {error_msg}", exc_info=True)
-
-        # Send error notification (optional)
-        try:
-            send_error_notification(error_msg, str(e))
-        except Exception as notification_error:
-            logger.error(f"Failed to send error notification: {notification_error}")
 
         # Return error response
         return {
@@ -142,37 +137,6 @@ def lambda_handler(event, context):
             })
         }
 
-def send_error_notification(message, error_details):
-    """
-    Send error notification to SNS topic (optional)
-    """
-    try:
-        sns_topic_arn = os.getenv('ERROR_SNS_TOPIC_ARN')
-        if not sns_topic_arn:
-            logger.info("No SNS topic configured for error notifications")
-            return
-
-        sns = boto3.client('sns')
-
-        notification_message = {
-            'title': '🚨 Pudu Robot Pipeline Error',
-            'message': message,
-            'error_details': error_details,
-            'timestamp': datetime.now().isoformat(),
-            'function_name': os.getenv('AWS_LAMBDA_FUNCTION_NAME', 'unknown'),
-            'region': os.getenv('AWS_REGION', 'unknown')
-        }
-
-        sns.publish(
-            TopicArn=sns_topic_arn,
-            Message=json.dumps(notification_message, indent=2),
-            Subject='Pudu Robot Pipeline Error'
-        )
-
-        logger.info("✅ Error notification sent successfully")
-
-    except Exception as e:
-        logger.error(f"Failed to send error notification: {e}")
 
 # For local testing
 if __name__ == "__main__":

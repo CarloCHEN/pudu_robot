@@ -561,9 +561,8 @@ def get_schedule_table(start_time, end_time, location_id=None, robot_sn=None, ti
                 remaining_time = latest_task['remaining_time']
 
                 # Format consumption (already in %)
-                # TODO: multiply by battery capacity
-                battery_capacity = 1
-                consumption = latest_task['cost_battery']
+                battery_capacity = 1228.8 / 1000 # kWh
+                consumption = round(latest_task['cost_battery'] * battery_capacity, 5) # kWh
 
                 # TODO: insert to database
                 water_consumption = latest_task['cost_water'] # mL
@@ -729,6 +728,7 @@ def get_data(start_time, end_time, location_id=None, robot_sn=None, timezone_off
     # Filter stores by location_id
     stores = [shop for shop in get_list_stores()['list']
               if location_id is None or shop['shop_id'] == location_id]
+    battery_capacity = 1228.8 / 1000 # kWh
 
     # Process each store
     for shop in stores:
@@ -830,7 +830,7 @@ def get_data(start_time, end_time, location_id=None, robot_sn=None, timezone_off
                     'Actual Area': [round(latest_task['plan_area'] * (latest_task['percentage'] / 100), 2)], #round(latest_task['actual_area'], 2)
                     'Plan Area': [round(latest_task['plan_area'], 2)],
                     'Cost Water': [round(latest_task['cost_water'], 2)],
-                    'Cost Battery': [round(latest_task['cost_battery'], 2)],
+                    'Cost Battery': [round(latest_task['cost_battery'] * battery_capacity, 2)],
                     'Duration': [latest_task['clean_time']],
                     'Efficiency': [round(latest_task['plan_area'] * (latest_task['percentage'] / 100) / latest_task['clean_time'], 2)
                                  if latest_task['clean_time'] > 0 else 0] #round(latest_task['actual_area'] / latest_task['clean_time'], 2)

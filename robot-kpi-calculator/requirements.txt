@@ -1,0 +1,8 @@
+# Core dependencies
+pymysql>=1.1.0
+boto3>=1.34.0
+pyyaml>=6.0.0
+pandas>=2.0.0
+
+# Utilities
+python-dateutil>=2.8.0
