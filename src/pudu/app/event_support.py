@@ -37,7 +37,6 @@ def monitor_support_tickets(databases: List[RDSDatabase], function_name):
     try:
         logger.info("🎫 Checking for new support tickets...")
         ticket_count = 0
-        all_new_tickets = []
 
         for database in databases:
             logger.info(f"🔍 Checking for new support tickets in {database.database_name}")
@@ -48,15 +47,12 @@ def monitor_support_tickets(databases: List[RDSDatabase], function_name):
                 count = len(new_tickets)
                 ticket_count += count
                 logger.info(f"🚨 Found {count} new support ticket(s) requiring attention!")
-                all_new_tickets.append((database, new_tickets))
 
             if ticket_count > 0:
-                combined_df = pd.concat([df for _, df in all_new_tickets], ignore_index=True)
-                send_support_ticket_notification_batch(function_name, database.database_name, combined_df)
+                send_support_ticket_notification_batch(function_name, database.database_name, new_tickets)
 
                 # Reset flags after successful notification
-                for database, df in all_new_tickets:
-                    reset_new_flags(database, df)
+                reset_new_flags(database, new_tickets)
 
         return True, ticket_count
 
