@@ -50,13 +50,13 @@ def monitor_support_tickets(databases: List[RDSDatabase], function_name):
                 logger.info(f"🚨 Found {count} new support ticket(s) requiring attention!")
                 all_new_tickets.append((database, new_tickets))
 
-        if ticket_count > 0:
-            combined_df = pd.concat([df for _, df in all_new_tickets], ignore_index=True)
-            send_support_ticket_notification_batch(function_name, combined_df)
+            if ticket_count > 0:
+                combined_df = pd.concat([df for _, df in all_new_tickets], ignore_index=True)
+                send_support_ticket_notification_batch(function_name, database.database_name, combined_df)
 
-            # Reset flags after successful notification
-            for database, df in all_new_tickets:
-                reset_new_flags(database, df)
+                # Reset flags after successful notification
+                for database, df in all_new_tickets:
+                    reset_new_flags(database, df)
 
         return True, ticket_count
 
@@ -64,7 +64,7 @@ def monitor_support_tickets(databases: List[RDSDatabase], function_name):
         logger.error(f"❌ Error monitoring support tickets: {e}", exc_info=True)
         return False, 0
 
-def send_support_ticket_notification_batch(function_name, tickets_df: pd.DataFrame):
+def send_support_ticket_notification_batch(function_name, database_name: str, tickets_df: pd.DataFrame):
     """
     Send a single SNS notification summarizing all new support tickets.
 
@@ -87,6 +87,7 @@ def send_support_ticket_notification_batch(function_name, tickets_df: pd.DataFra
             f"📅 Notification Sent: {now_str}",
             f"🔗 Function Triggered: {function_name}",
             f"📋 Total New Tickets: {len(tickets_df)}",
+            f"📊 Database: {database_name}",
             "\n🧾 Ticket Summaries:"
         ]
 
@@ -106,6 +107,7 @@ def send_support_ticket_notification_batch(function_name, tickets_df: pd.DataFra
                 f"""
                 —————————————
                 🆔 Report ID: {report_id}
+                🔗 Event ID: {event_id}
                 🤖 Robot SN: {robot_sn}
                 📛 Event Type: {event_type} ({event_level})
                 🗓️ Reported At: {reported_at}

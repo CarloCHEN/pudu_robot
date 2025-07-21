@@ -77,17 +77,11 @@ def verify_table_exists(table: RDSTable, table_config: dict) -> bool:
 
         # If RDSTable has a method to execute queries, use it
         # Otherwise, we'll catch the error during actual insert
-        if hasattr(table, 'execute_query'):
-            table.execute_query(test_query)
-        elif hasattr(table, 'connection'):
-            cursor = table.connection.cursor()
-            cursor.execute(test_query)
-            cursor.close()
-        else:
-            # If we can't test, assume it exists and let insert operation handle errors
+        data = table.query_data(test_query)
+        if data: 
             return True
-
-        return True
+        else:
+            return False
 
     except Exception as e:
         logger.debug(f"Table verification failed for {table_config['database']}.{table_config['table_name']}: {e}")

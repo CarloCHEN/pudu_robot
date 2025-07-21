@@ -238,6 +238,33 @@ aws iam put-role-policy \
 
 ROLE_ARN=$(aws iam get-role --role-name $ROLE_NAME --query 'Role.Arn' --output text)
 
+# Create Secrets Manager policy for the Lambda role
+echo "🔐 Setting up Secrets Manager permissions..."
+SECRETS_POLICY_DOC=$(cat <<EOF
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "secretsmanager:GetSecretValue",
+                "secretsmanager:DescribeSecret"
+            ],
+            "Resource": "arn:aws:secretsmanager:${REGION}:${ACCOUNT_ID}:secret:rds!db-ef989dd0-975a-4c33-ab17-69f8ef4e03a1-*"
+        }
+    ]
+}
+EOF
+)
+
+# Create and attach Secrets Manager policy
+aws iam put-role-policy \
+    --role-name $ROLE_NAME \
+    --policy-name "SecretsManagerPolicy" \
+    --policy-document "$SECRETS_POLICY_DOC" >/dev/null
+
+echo "✅ Secrets Manager permissions configured"
+
 # Step 8: Deploy Lambda function with environment variables
 echo "🔧 Deploying Lambda function..."
 

@@ -14,4 +14,5 @@ __all__ = [
     "get_data",
     "get_task_overview_data",
     "get_events_table",
+    "SupportTicketTimelineAPI"
 ]

@@ -1,4 +1,10 @@
 from .utils import *
+from sqlalchemy import create_engine
+from sqlalchemy.pool import NullPool
+from sqlalchemy import create_engine, text
+from sqlalchemy.pool import NullPool
+import warnings
+
 
 class RDSDatabase:
     def __init__(self, connection_config, database_name):
@@ -22,8 +28,54 @@ class RDSDatabase:
     def query_data(self, query: str):
         return query_with_script(self.cursor, query)
 
-    def query_data_as_df(self, query: str):
+    def query_data_as_df(self, query: str): #deprecated - will cause pandas warnings
         return query_with_script_as_df(self.db, query)
+
+    def execute_query(self, query: str):
+        """
+        Execute query using SQLAlchemy engine to avoid pandas warnings
+        """
+        # Create SQLAlchemy engine on-demand
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        config_file = os.path.join(base_dir, "credentials.yaml")
+
+        with open(config_file, 'r') as file:
+            config = yaml.safe_load(file)
+            db_config = config['database']
+
+        from .utils import get_secret
+        username, password = get_secret(db_config['secret_name'], db_config['region_name'])
+
+        # Use the clean database name (without backticks) for connection string
+        clean_db_name = self.database_name.strip('`')
+
+        # Create connection string with database
+        connection_string = f"mysql+pymysql://{username}:{password}@{db_config['host']}/{clean_db_name}"
+
+        # Suppress pandas warnings
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="pandas only supports SQLAlchemy")
+
+            try:
+                # Create engine with proper configuration
+                engine = create_engine(
+                    connection_string,
+                    poolclass=NullPool,
+                    echo=False,
+                    future=True  # Use SQLAlchemy 2.0 style
+                )
+
+                # Execute query using pandas with the engine
+                result = pd.read_sql_query(text(query), engine)
+                return result
+
+            except Exception as e:
+                # If SQLAlchemy approach fails, fall back to original method
+                return self.query_data_as_df(query)
+
+            finally:
+                if 'engine' in locals():
+                    engine.dispose()
 
     def close(self):
         self.cursor.close()
