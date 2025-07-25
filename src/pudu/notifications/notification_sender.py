@@ -1,9 +1,147 @@
 import logging
-from typing import Dict
+from typing import Dict, Tuple
 from .notification_service import NotificationService
+from .icon_manager import get_icon_manager
+
 # Configure logging
 logger = logging.getLogger(__name__)
 
+# Task status mapping as provided
+TASK_STATUS_MAPPING = {
+    0: "Not Started",
+    1: "In Progress",
+    2: "Task Suspended",
+    3: "Task Interrupted",
+    4: "Task Ended",
+    5: "Task Abnormal",
+    6: "Task Cancelled"
+}
+
+# Severity and status tag mappings based on template document
+SEVERITY_LEVELS = {
+    'fatal': 'fatal',    # Purple - Immediate attention required
+    'error': 'error',    # Red - Task failed or serious problem
+    'warning': 'warning', # Yellow - Moderate issue or degraded state
+    'event': 'event',      # Blue - Informational or neutral event
+    'success': 'success', # Green - Positive/normal outcome
+    'neutral': 'neutral'  # Gray - Scheduled or inactive items
+}
+
+STATUS_TAGS = {
+    # Task-specific tags
+    'completed': 'completed',      # ✅ Green - Task completed
+    'failed': 'failed',           # ❌ Red - Task failed
+    'uncompleted': 'uncompleted', # 🚫 Orange - Task not completed as planned
+    'in_progress': 'in_progress', # ⏳ Blue - Task currently running
+    'scheduled': 'scheduled',     # 💤 Gray - Upcoming task
+
+    # Event/Status tags (same icons, different semantics)
+    'normal': 'normal',       # ✅ Green - Event resolved or status normal
+    'abnormal': 'abnormal',            # ❌ Red - Error occurred or abnormal status
+    'active': 'active',          # ⏳ Blue - Process active or ongoing
+    'inactive': 'inactive',      # 🚫 Orange - Process inactive or stopped
+    'pending': 'pending',        # 💤 Gray - Pending or waiting
+
+    # Robot state tags
+    'warning': 'warning',         # ⚠️ Yellow - Battery low, performance warning
+    'charging': 'charging',       # 🔌 Purple - Robot in charging state
+    'offline': 'offline',         # 📴 Red - Robot went offline
+    'online': 'online'           # 📶 Green - Robot came online
+}
+
+def get_severity_and_status_for_robot_status(old_values: dict, new_values: dict, changed_fields: list) -> Tuple[str, str]:
+    """Determine severity and status for robot status changes"""
+    if 'status' in changed_fields:
+        new_status = new_values.get('status', '').lower()
+        if 'online' in new_status:
+            return SEVERITY_LEVELS['success'], STATUS_TAGS['online']
+        elif 'offline' in new_status:
+            return SEVERITY_LEVELS['error'], STATUS_TAGS['offline']
+        else:
+            return SEVERITY_LEVELS['event'], STATUS_TAGS['active']
+
+    elif 'battery_level' in changed_fields:
+        try:
+            new_battery = new_values.get('battery_level', 100)
+            if isinstance(new_battery, (int, float)):
+                if new_battery < 5:
+                    return SEVERITY_LEVELS['fatal'], STATUS_TAGS['warning']
+                elif new_battery < 10:
+                    return SEVERITY_LEVELS['error'], STATUS_TAGS['warning']
+                elif new_battery < 20:
+                    return SEVERITY_LEVELS['warning'], STATUS_TAGS['warning']
+                else:
+                    return SEVERITY_LEVELS['success'], STATUS_TAGS['normal']
+        except:
+            pass
+        return SEVERITY_LEVELS['event'], STATUS_TAGS['normal']
+
+    else:
+        # Other status updates (position, tank levels, etc.)
+        return SEVERITY_LEVELS['event'], STATUS_TAGS['normal']
+
+def get_severity_and_status_for_task(change_type: str, old_values: dict, new_values: dict, changed_fields: list) -> Tuple[str, str]:
+    """Determine severity and status for task changes"""
+    # Get current status regardless of whether it's new or updated
+    current_status = new_values.get('status', 0)
+    if isinstance(current_status, int):
+        status_name = TASK_STATUS_MAPPING.get(current_status, 'Unknown')
+    else:
+        status_name = current_status
+
+    # Determine severity and status based on current task status
+    if status_name == "Task Ended":
+        return SEVERITY_LEVELS['success'], STATUS_TAGS['completed']
+    elif status_name in ["Task Abnormal", "Task Interrupted"]:
+        return SEVERITY_LEVELS['error'], STATUS_TAGS['failed']
+    elif status_name == "Task Cancelled":
+        return SEVERITY_LEVELS['warning'], STATUS_TAGS['uncompleted']
+    elif status_name == "Task Suspended":
+        return SEVERITY_LEVELS['warning'], STATUS_TAGS['warning']
+    elif status_name == "In Progress":
+        return SEVERITY_LEVELS['event'], STATUS_TAGS['in_progress']
+    elif status_name == "Not Started":
+        return SEVERITY_LEVELS['event'], STATUS_TAGS['scheduled']
+    else:
+        return SEVERITY_LEVELS['event'], STATUS_TAGS['active']
+
+def get_severity_and_status_for_charging(change_type: str, old_values: dict, new_values: dict, changed_fields: list) -> Tuple[str, str]:
+    """Determine severity and status for charging changes"""
+    if change_type == 'new_record':
+        return SEVERITY_LEVELS['event'], STATUS_TAGS['charging']
+
+    elif 'final_power' in changed_fields or 'power_gain' in changed_fields:
+        try:
+            final_power = new_values.get('final_power', 0)
+            if isinstance(final_power, (int, float)) and final_power >= 90:
+                return SEVERITY_LEVELS['success'], STATUS_TAGS['normal']
+            else:
+                return SEVERITY_LEVELS['event'], STATUS_TAGS['charging']
+        except:
+            return SEVERITY_LEVELS['event'], STATUS_TAGS['charging']
+
+    else:
+        return SEVERITY_LEVELS['event'], STATUS_TAGS['active']
+
+def get_severity_and_status_for_events(change_type: str, new_values: dict) -> Tuple[str, str]:
+    """Determine severity and status for robot events"""
+    event_level = new_values.get('event_level', 'event').lower()
+
+    if event_level == 'error':
+        return SEVERITY_LEVELS['error'], STATUS_TAGS['abnormal']
+    elif event_level == 'warning':
+        return SEVERITY_LEVELS['warning'], STATUS_TAGS['warning']
+    elif event_level == 'fatal':
+        return SEVERITY_LEVELS['fatal'], STATUS_TAGS['abnormal']
+    else:  # event or other
+        return SEVERITY_LEVELS['event'], STATUS_TAGS['normal']
+
+def get_severity_and_status_for_location(change_type: str, changed_fields: list) -> Tuple[str, str]:
+    """Determine severity and status for location changes"""
+    if change_type == 'new_record':
+        return SEVERITY_LEVELS['success'], STATUS_TAGS['normal']
+    else:
+        return SEVERITY_LEVELS['event'], STATUS_TAGS['normal']
 
 def send_change_based_notifications(notification_service: NotificationService, changes_dict: Dict[str, Dict],
                                  data_type: str, time_range: str = ""):
@@ -29,15 +167,28 @@ def send_change_based_notifications(notification_service: NotificationService, c
             # Generate notification content for this specific record
             title, content = generate_individual_notification_content(data_type, change_info, time_range)
 
-            # Send notification
+            # Get severity and status based on data type and change details
+            severity, status = get_severity_and_status_for_change(data_type, change_info)
+
+            # Format title with appropriate icons
+            icon_manager = get_icon_manager()
+            formatted_title = icon_manager.format_title_with_icons(title, severity, status)
+            # print(f"Title: {formatted_title}")
+            # print(f"Content: {content}")
+            # print(f"Severity: {severity}")
+            # print(f"Status: {status}")
+
+            # Send notification with severity and status
             if notification_service.send_notification(
                 robot_id=robot_id,
                 notification_type=notification_type,
-                title=title,
-                content=content
+                title=formatted_title,
+                content=content,
+                severity=severity,
+                status=status
             ):
                 successful_notifications += 1
-                logger.debug(f"✅ Sent notification for {unique_id}: {title}")
+                logger.debug(f"✅ Sent notification for {unique_id}: {formatted_title} (severity: {severity}, status: {status})")
             else:
                 failed_notifications += 1
                 logger.debug(f"❌ Failed to send notification for {unique_id}")
@@ -48,6 +199,27 @@ def send_change_based_notifications(notification_service: NotificationService, c
     total_records = len(changes_dict)
     logger.info(f"📧 {data_type} individual notifications: {successful_notifications}/{total_records} records notified")
     return successful_notifications, failed_notifications
+
+def get_severity_and_status_for_change(data_type: str, change_info: Dict) -> Tuple[str, str]:
+    """Get severity and status for a specific change based on data type"""
+    change_type = change_info.get('change_type', 'unknown')
+    changed_fields = change_info.get('changed_fields', [])
+    old_values = change_info.get('old_values', {})
+    new_values = change_info.get('new_values', {})
+
+    if data_type == 'robot_status':
+        return get_severity_and_status_for_robot_status(old_values, new_values, changed_fields)
+    elif data_type == 'robot_task':
+        return get_severity_and_status_for_task(change_type, old_values, new_values, changed_fields)
+    elif data_type == 'robot_charging':
+        return get_severity_and_status_for_charging(change_type, old_values, new_values, changed_fields)
+    elif data_type == 'robot_events':
+        return get_severity_and_status_for_events(change_type, new_values)
+    elif data_type == 'location':
+        return get_severity_and_status_for_location(change_type, changed_fields)
+    else:
+        # Default for unknown data types
+        return SEVERITY_LEVELS['event'], STATUS_TAGS['normal']
 
 def generate_individual_notification_content(data_type: str, change_info: Dict, time_range: str = "") -> tuple:
     """Generate notification content for a single record change"""
@@ -66,10 +238,8 @@ def generate_individual_notification_content(data_type: str, change_info: Dict, 
                 status = new_values.get('status', 'Unknown')
                 battery = new_values.get('battery_level', 'N/A')
                 robot_name = new_values.get('robot_name', f'Robot {robot_id}')
-                title = f"New Robot Detected - {robot_name}"
-                content = f"Robot {robot_id} ({robot_name}) is now {status.lower()} with {battery}% battery"
-                severity_level = 'success' if 'online' in status.lower() else 'error'
-                status_tag = status.lower()
+                title = f"Robot Online"
+                content = f"Robot: {robot_name}; {robot_name} is now online."
             else:  # update
                 return generate_status_change_content(robot_id, changed_fields, old_values, new_values)
 
@@ -80,233 +250,141 @@ def generate_individual_notification_content(data_type: str, change_info: Dict, 
 
             if change_type == 'new_record':
                 status = new_values.get('status', 'Unknown')
-                progress = new_values.get('progress', 0)
-                title = f"New Task Started - {task_name}"
-                content = f"Robot {robot_id} started new task '{task_name}' at {start_time}. Status: {status}, Progress: {progress}%"
+                if isinstance(status, int):
+                    status_name = TASK_STATUS_MAPPING.get(status, 'Unknown')
+                else:
+                    status_name = status
 
-                # Add additional details if available
-                plan_area = new_values.get('plan_area')
-                if plan_area:
-                    content += f", Planned area: {plan_area}m²"
+                robot_name = new_values.get('robot_name', f'Robot {robot_id}')
+                title = f"{task_name}"
+                content = f"Robot: {robot_name}; Task {task_name}'s status is {status_name}."
 
             else:  # update
-                if 'progress' in changed_fields:
-                    old_progress = old_values.get('progress', 0)
-                    new_progress = new_values.get('progress', 0)
-                    title = f"Task Progress Update - {task_name}"
-                    content = f"Robot {robot_id} task '{task_name}' (started {start_time}) progress: {old_progress}% → {new_progress}%"
+                robot_name = new_values.get('robot_name', f'Robot {robot_id}')
 
-                elif 'status' in changed_fields:
+                if 'status' in changed_fields:
                     old_status = old_values.get('status', 'Unknown')
                     new_status = new_values.get('status', 'Unknown')
-                    title = f"Task Status Change - {task_name}"
-                    content = f"Robot {robot_id} task '{task_name}' (started {start_time}) status: {old_status} → {new_status}"
 
-                    # Add progress if task completed
-                    if new_status in ['Task Ended', 'Task Completed']:
-                        progress = new_values.get('progress', 0)
-                        content += f", Final progress: {progress}%"
+                    # Convert status codes to names if needed
+                    if isinstance(old_status, int):
+                        old_status_name = TASK_STATUS_MAPPING.get(old_status, 'Unknown')
+                    else:
+                        old_status_name = old_status
 
-                elif 'actual_area' in changed_fields:
-                    old_area = old_values.get('actual_area', 0)
-                    new_area = new_values.get('actual_area', 0)
-                    title = f"Task Area Update - {task_name}"
-                    content = f"Robot {robot_id} task '{task_name}' (started {start_time}) cleaned area: {old_area}m² → {new_area}m²"
+                    if isinstance(new_status, int):
+                        new_status_name = TASK_STATUS_MAPPING.get(new_status, 'Unknown')
+                    else:
+                        new_status_name = new_status
+                    title = f"{task_name}"
+                    content = f"Robot: {robot_name}; Task {task_name}'s status has been {new_status_name}."
 
-                elif 'efficiency' in changed_fields:
-                    old_efficiency = old_values.get('efficiency', 0)
-                    new_efficiency = new_values.get('efficiency', 0)
-                    title = f"Task Efficiency Update - {task_name}"
-                    content = f"Robot {robot_id} task '{task_name}' (started {start_time}) efficiency: {old_efficiency} → {new_efficiency} m²/h"
+                elif 'progress' in changed_fields:
+                    new_progress = new_values.get('progress', 0)
+                    title = f"{task_name}"
+                    content = f"Robot: {robot_name}; Task {task_name}'s current progress is {new_progress}%."
 
                 else:
-                    # Generic update
-                    field_names = ', '.join(changed_fields[:3])
-                    title = f"Task Update - {task_name}"
-                    content = f"Robot {robot_id} task '{task_name}' (started {start_time}) updated: {field_names}"
-                    if len(changed_fields) > 3:
-                        content += f" and {len(changed_fields) - 3} more fields"
+                    # Generic task update
+                    title = f"{task_name}"
+                    content = f"Robot: {robot_name}; Task {task_name} has been updated."
 
         elif data_type == 'robot_charging':
             # Primary keys: ["robot_sn", "start_time", "end_time"]
-            start_time = new_values.get('start_time', 'Unknown Time')
-            end_time = new_values.get('end_time', 'Unknown Time')
+            robot_name = new_values.get('robot_name', f'Robot {robot_id}')
+            final_power = new_values.get('final_power', 'N/A')
 
             if change_type == 'new_record':
-                initial_power = new_values.get('initial_power', 'N/A')
-                final_power = new_values.get('final_power', 'N/A')
-                duration = new_values.get('duration', 'N/A')
-                title = f"New Charging Session Started"
-                content = f"Robot {robot_id} started charging at {start_time}. Initial power: {initial_power}, Duration: {duration}"
-
-                if final_power != 'N/A':
-                    content += f", Final power: {final_power}"
-
+                title = f"Charging"
+                content = f"Robot: {robot_name}; {robot_name} is charging with {final_power} power."
             else:  # update
                 if 'final_power' in changed_fields or 'power_gain' in changed_fields:
-                    old_power = old_values.get('final_power', 'N/A')
-                    new_power = new_values.get('final_power', 'N/A')
-                    power_gain = new_values.get('power_gain', 'N/A')
-                    title = f"Charging Progress Update"
-                    content = f"Robot {robot_id} charging session (started {start_time}) power: {old_power} → {new_power}"
-                    if power_gain != 'N/A':
-                        content += f", Total gain: {power_gain}"
-
-                elif 'duration' in changed_fields:
-                    old_duration = old_values.get('duration', 'N/A')
-                    new_duration = new_values.get('duration', 'N/A')
-                    title = f"Charging Duration Update"
-                    content = f"Robot {robot_id} charging session (started {start_time}) duration: {old_duration} → {new_duration}"
-
+                    final_power = new_values.get('final_power', 'N/A')
+                    title = f"Charging"
+                    if not isinstance(final_power, (int, float)):
+                        final_power_value = int(final_power.replace('%', ''))
+                    if final_power_value >= 90:
+                        content = f"Robot: {robot_name}; {robot_name} has completed charging with {final_power} power."
+                    else:
+                        content = f"Robot: {robot_name}; {robot_name} is charging with {final_power} power."
                 else:
-                    # Generic charging update
-                    field_names = ', '.join(changed_fields[:3])
-                    title = f"Charging Session Updated"
-                    content = f"Robot {robot_id} charging session (started {start_time}) updated: {field_names}"
+                    title = f"Charging"
+                    content = f"Robot: {robot_name}; {robot_name} charging status updated."
 
         elif data_type == 'robot_events':
             # Primary keys: ["robot_sn", "event_id"]
-            event_id = new_values.get('event_id', 'Unknown ID')
             event_type = new_values.get('event_type', 'Unknown Event')
             event_level = new_values.get('event_level', 'info').lower()
-            upload_time = new_values.get('upload_time', 'Unknown Time')
+            robot_name = new_values.get('robot_name', f'Robot {robot_id}')
+            time_info = f"{new_values.get('upload_time', 'Unknown Time')}"
 
-            # Use appropriate emoji based on event level
-            level_emoji = {'error': '🚨', 'warning': '⚠️', 'info': 'ℹ️'}.get(event_level, '📋')
-
-            if change_type == 'new_record':
-                title = f"{level_emoji} Robot {robot_id} Had A New {event_level.title()} Event - {event_type}"
-                content = f"Robot {robot_id} had a new {event_type} (ID: {event_id}) at {upload_time}"
-
-                # Add event detail if available and short
-                event_detail = new_values.get('event_detail', '')
-                if event_detail and len(event_detail) < 100:
-                    content += f" - {event_detail}"
-
-            else:  # update (rare for events, but possible)
-                title = f"Robot {robot_id}: Event Updated"
-                field_names = ', '.join(changed_fields[:3])
-                content = f"Robot {robot_id} event {event_type} (ID: {event_id}) updated: {field_names}"
+            title = f"{event_type}"
+            if event_level == 'error':
+                content = f"Robot: {robot_name}; {event_type} (error) occurred at {time_info}."
+            elif event_level == 'warning':
+                content = f"Robot: {robot_name}; {event_type} (warning) occurred at {time_info}."
+            elif event_level == 'fatal':
+                content = f"Robot: {robot_name}; {event_type} (fatal) occurred at {time_info}."
+            else:
+                content = f"Robot: {robot_name}; {event_type} (event) occurred at {time_info}."
 
         elif data_type == 'location':
             # Primary keys: ["location_id"]
-            location_id = new_values.get('location_id', 'Unknown ID')
             location_name = new_values.get('location_name', 'Unknown Location')
 
             if change_type == 'new_record':
-                title = f"New Location Added - {location_name}"
-                content = f"Location '{location_name}' (ID: {location_id}) has been added to the system"
-
-                # Add description if available
-                description = new_values.get('description')
-                if description:
-                    content += f". Description: {description}"
-
+                title = f"New Location Added"
+                content = f"Location '{location_name}' has been added to the system."
             else:  # update
-                if 'location_name' in changed_fields:
-                    old_name = old_values.get('location_name', 'Unknown')
-                    title = f"Location Renamed - {location_name}"
-                    content = f"Location (ID: {location_id}) renamed from '{old_name}' to '{location_name}'"
-                else:
-                    field_names = ', '.join(changed_fields[:3])
-                    title = f"Location Updated - {location_name}"
-                    content = f"Location '{location_name}' (ID: {location_id}) updated: {field_names}"
+                title = f"Location Updated"
+                content = f"Location '{location_name}' has been updated."
 
         else:
             # Generic handling for other data types
+            robot_name = new_values.get('robot_name', f'Robot {robot_id}')
             if change_type == 'new_record':
-                title = f"New {data_type.replace('_', ' ').title()} Record"
-                content = f"Robot {robot_id}: new {data_type} record created{time_info}"
+                title = f"New {data_type.replace('_', ' ').title()}"
+                content = f"Robot: {robot_name}; New {data_type} record created."
             else:
-                field_names = ', '.join(changed_fields[:3])
                 title = f"{data_type.replace('_', ' ').title()} Updated"
-                content = f"Robot {robot_id}: {data_type} record updated: {field_names}{time_info}"
-                if len(changed_fields) > 3:
-                    content += f" and {len(changed_fields) - 3} more fields"
+                content = f"Robot: {robot_name}; {data_type} record updated."
 
     except Exception as e:
         logger.warning(f"Error generating notification content for {data_type}: {e}")
         # Fallback
-        title = f"{data_type.replace('_', ' ').title()} Updated"
-        content = f"Robot {robot_id}: {data_type} record updated{time_info}"
+        robot_name = new_values.get('robot_name', f'Robot {robot_id}')
+        title = f"{data_type.replace('_', ' ').title()}"
+        content = f"Robot: {robot_name}; {data_type} updated."
 
     return title, content
 
 def generate_status_change_content(robot_id: str, changed_fields: list, old_values: dict, new_values: dict) -> tuple:
     """Generate specific content for robot status changes"""
     robot_name = new_values.get('robot_name', f'Robot {robot_id}')
+    icon_manager = get_icon_manager()
 
     # Prioritize important status changes
     if 'status' in changed_fields:
-        old_status = old_values.get('status', 'Unknown')
         new_status = new_values.get('status', 'Unknown')
-        title = f"Status Change - {robot_name}"
-        content = f"Robot {robot_id} ({robot_name}) changed from {old_status} to {new_status}"
 
-        # Add battery info if it also changed
-        if 'battery_level' in changed_fields:
-            old_battery = old_values.get('battery_level', 'N/A')
-            new_battery = new_values.get('battery_level', 'N/A')
-            content += f". Battery: {old_battery}% → {new_battery}%"
-        severity_level = 'success' if 'online' in new_status.lower() else 'error'
-        status_tag = new_status.lower()
+        if 'online' in str(new_status).lower():
+            title = "Robot Online"
+            content = f"Robot: {robot_name}; {robot_name} is now online."
+        elif 'offline' in str(new_status).lower():
+            title = "Robot Offline"
+            content = f"Robot: {robot_name}; {robot_name} is offline."
+        else:
+            title = "Robot Status Update"
+            content = f"Robot: {robot_name}; {robot_name} status changed to {new_status}."
 
     elif 'battery_level' in changed_fields:
-        old_battery = old_values.get('battery_level', 'N/A')
         new_battery = new_values.get('battery_level', 'N/A')
-        title = f"Battery Update - {robot_name}"
-        content = f"Robot {robot_id} ({robot_name}) battery: {old_battery}% → {new_battery}%"
-
-        # Add warning for low battery
-        try:
-            if isinstance(new_battery, (int, float)) and new_battery < 20:
-                content += " ⚠️ Low battery!"
-                status_tag = 'warning'
-        except:
-            pass
-        if
-        # battery<20% wa
-
-    elif any(field in changed_fields for field in ['water_level', 'sewage_level']):
-        title = f"Tank Levels Updated - {robot_name}"
-        changes = []
-        if 'water_level' in changed_fields:
-            changes.append(f"Water: {old_values.get('water_level', 'N/A')}% → {new_values.get('water_level', 'N/A')}%")
-        if 'sewage_level' in changed_fields:
-            changes.append(f"Sewage: {old_values.get('sewage_level', 'N/A')}% → {new_values.get('sewage_level', 'N/A')}%")
-        content = f"Robot {robot_id} ({robot_name}) {', '.join(changes)}"
-
-    elif any(field in changed_fields for field in ['x', 'y', 'z']):
-        title = f"Position Updated - {robot_name}"
-        old_pos = f"({old_values.get('x', 'N/A')}, {old_values.get('y', 'N/A')})"
-        new_pos = f"({new_values.get('x', 'N/A')}, {new_values.get('y', 'N/A')})"
-        content = f"Robot {robot_id} ({robot_name}) moved from {old_pos} to {new_pos}"
+        title = "Low Battery Alert"
+        content = f"Robot: {robot_name}; Battery level is at {new_battery}%."
 
     else:
         # Generic status update
-        field_list = ', '.join(changed_fields[:3])
-        title = f"Status Updated - {robot_name}"
-        content = f"Robot {robot_id} ({robot_name}) updated: {field_list}"
-
-    return title, content
-
-def generate_charging_change_content(robot_id: str, changed_fields: list, old_values: dict, new_values: dict, time_info: str) -> tuple:
-    """Generate specific content for charging changes"""
-    if any(field in changed_fields for field in ['initial_power', 'final_power', 'power_gain']):
-        title = f"Charging Session Update"
-        power_info = []
-        if 'power_gain' in changed_fields:
-            power_gain = new_values.get('power_gain', '+0%')
-            power_info.append(f"Power gain: {power_gain}")
-        if 'final_power' in changed_fields:
-            final_power = new_values.get('final_power', 'N/A')
-            power_info.append(f"Final: {final_power}")
-
-        content = f"Robot {robot_id} charging session {', '.join(power_info)}{time_info}"
-    else:
-        # Generic charging update
-        title = f"Charging Data Updated"
-        field_list = ', '.join(changed_fields[:3])
-        content = f"Robot {robot_id} charging information updated: {field_list}{time_info}"
+        title = "Robot Status Update"
+        content = f"Robot: {robot_name}; Robot status has been updated."
 
     return title, content

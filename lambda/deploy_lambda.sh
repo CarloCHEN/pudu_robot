@@ -11,6 +11,13 @@ REGION="us-east-1"
 ROLE_NAME="pudu-robot-lambda-role"
 PYTHON_VERSION="3.9"
 
+# Icon Configuration
+ICONS_CONFIG_PATH="icons.yaml"
+
+# Notification API Configuration
+NOTIFICATION_API_HOST="alb-streamnexus-demo-775802511.us-east-1.elb.amazonaws.com"
+NOTIFICATION_API_ENDPOINT="/notification-api/robot/notification/send"
+
 # SNS Configuration - CHANGE THIS EMAIL TO YOUR ACTUAL EMAIL
 NOTIFICATION_EMAIL="jiaxu.chen@foxxusa.com"  # ⚠️ CHANGE THIS TO YOUR EMAIL
 
@@ -43,6 +50,7 @@ cd /tmp/lambda_deploy
 cp -r "${PROJECT_ROOT}/src/pudu" ./
 cp "${PROJECT_ROOT}/lambda/robot_lambda_function.py" ./lambda_function.py
 cp "${PROJECT_ROOT}/src/pudu/configs/database_config.yaml" ./
+cp "${PROJECT_ROOT}/src/pudu/notifications/icons.yaml" ./
 cp "${PROJECT_ROOT}/credentials.yaml" ./ 2>/dev/null || echo "⚠️ credentials.yaml not found, skipping"
 
 # Copy RDS credential files if they exist
@@ -269,7 +277,7 @@ echo "✅ Secrets Manager permissions configured"
 echo "🔧 Deploying Lambda function..."
 
 # Prepare environment variables with SNS topic ARN
-ENV_VARS="Variables={SUPPORT_TICKET_SNS_TOPIC_ARN=${SUPPORT_TOPIC_ARN}}"
+ENV_VARS="Variables={SUPPORT_TICKET_SNS_TOPIC_ARN=${SUPPORT_TOPIC_ARN},NOTIFICATION_API_HOST=${NOTIFICATION_API_HOST},NOTIFICATION_API_ENDPOINT=${NOTIFICATION_API_ENDPOINT},ICONS_CONFIG_PATH=${ICONS_CONFIG_PATH}}"
 
 if aws lambda get-function --function-name $FUNCTION_NAME >/dev/null 2>&1; then
     echo "Updating existing function..."
@@ -305,6 +313,12 @@ else
         exit 1
     }
 fi
+
+echo "🔧 Environment Variables:"
+echo "   📧 SNS Topic: $SUPPORT_TOPIC_ARN"
+echo "   🌐 API Host: $NOTIFICATION_API_HOST"
+echo "   📡 API Endpoint: $NOTIFICATION_API_ENDPOINT"
+echo "   🎨 Icons Config: $ICONS_CONFIG_PATH"
 
 # Step 9: Set up EventBridge schedule
 echo "📅 Setting up EventBridge schedule..."

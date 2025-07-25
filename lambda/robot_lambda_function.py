@@ -25,7 +25,7 @@ def lambda_handler(event, context):
         logger.info(f"🔧 Event received: {json.dumps(event)}")
         logger.info(f"🐍 Python path: {sys.path}")
 
-        # Calculate time range (last 7 minutes with overlap for safety)
+        # Calculate time range from 00:00:00 to 23:59:59
         now = datetime.now()
         # Start of the day (00:00:00)
         start_time_str = now.replace(hour=0, minute=0, second=0, microsecond=0).strftime('%Y-%m-%d %H:%M:%S')

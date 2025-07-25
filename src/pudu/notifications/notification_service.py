@@ -1,7 +1,7 @@
 import http.client
 import json
 import logging
-# Configure logging 
+# Configure logging
 logger = logging.getLogger(__name__)
 
 class NotificationService:
@@ -13,7 +13,7 @@ class NotificationService:
         self.headers = {'Content-Type': 'application/json'}
 
     def send_notification(self, robot_id: str, notification_type: str, title: str, content: str,
-                         priority: str = "low", severity: str = "low") -> bool:
+                         severity: str, status: str ) -> bool:
         """Send notification to web API"""
         try:
             # Change this line from HTTPSConnection to HTTPConnection
@@ -23,8 +23,8 @@ class NotificationService:
                 "notificationType": notification_type,
                 "title": title,
                 "content": content,
-                "priority": priority,
                 "severity": severity,
+                "status": status,
             })
 
             conn.request("POST", self.endpoint, payload, self.headers)
