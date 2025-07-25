@@ -616,6 +616,21 @@ def get_task_list(shop_id=None, sn=None):
     else:
         return response
 
+def get_scheduled_task_list(sn=None):
+    """ Accepts a serial number and returns a list of scheduled tasks
+    @param sn: The serial number of the robot
+    @return: The task list dictionary -
+    """
+    if not sn:
+        raise ValueError("Serial number is required")
+    url = f"https://csu-open-platform.pudutech.com/pudu-entry/cleanbot-service/v1/api/open/cron/list?sn={sn}"
+    response = run_url(url)
+    response = json.loads(response)
+    if any(status in response["message"].lower() for status in ["success", "ok"]):
+        return response["data"]
+    else:
+        return response
+
 def get_robot_details(sn):
     """ Accepts a serial number and returns the details of the robot updated every 30s
     @param sn: The serial number of the robot

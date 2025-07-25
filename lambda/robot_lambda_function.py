@@ -27,8 +27,10 @@ def lambda_handler(event, context):
 
         # Calculate time range (last 7 minutes with overlap for safety)
         now = datetime.now()
-        end_time_str = now.strftime('%Y-%m-%d %H:%M:%S')
-        start_time_str = (now - timedelta(minutes=7)).strftime('%Y-%m-%d %H:%M:%S')
+        # Start of the day (00:00:00)
+        start_time_str = now.replace(hour=0, minute=0, second=0, microsecond=0).strftime('%Y-%m-%d %H:%M:%S')
+        # End of the day (23:59:59)
+        end_time_str = now.replace(hour=23, minute=59, second=59, microsecond=0).strftime('%Y-%m-%d %H:%M:%S')
 
         logger.info(f"📅 Processing time range: {start_time_str} to {end_time_str}")
 

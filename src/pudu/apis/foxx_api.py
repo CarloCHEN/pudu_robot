@@ -3,17 +3,17 @@ import ast
 from .pudu_api import *
 from .utils import convert_technical_string
 
-# 5 api functions: get_location_table, get_robot_status_table, get_robot_table (deprecated), get_events_table, get_schedule_table, get_charging_table, get_task_overview_data
+# 5 api functions: get_location_table, get_robot_status_table, get_robot_table (deprecated), get_events_table, get_schedule_table, get_charging_table, get_task_overview_data (deprecated)
 
 def get_location_table():
     """
     Get the table for locations with location_id and location_name.
     """
-    location_df = pd.DataFrame(columns=['Location ID', 'Location Name'])
+    location_df = pd.DataFrame(columns=['Building ID', 'Building Name'])
     all_shops = get_list_stores()['list']
     for shop in all_shops:
         shop_id, shop_name = shop['shop_id'], shop['shop_name']
-        location_df = pd.concat([location_df, pd.DataFrame({'Location ID': [shop_id], 'Location Name': [shop_name]})], ignore_index=True)
+        location_df = pd.concat([location_df, pd.DataFrame({'Building ID': [shop_id], 'Building Name': [shop_name]})], ignore_index=True)
     return location_df
 
 def get_robot_status_table(location_id=None, robot_sn=None):
@@ -97,7 +97,7 @@ def get_robot_table(start_time, end_time, location_id=None, robot_sn=None, timez
         3: "Task Interrupted",
         4: "Task Ended",
         5: "Task Abnormal",
-        6: "Done"
+        6: "Task Cancelled"
     }
     robot_df = pd.DataFrame(columns=['Location ID', 'Robot Type', 'Robot Name', 'Robot SN', 'Current Task', 'Total Task', 'Total Running Hours', \
                                      'Total Mileage', 'Total Area', 'Water Level', 'Sewage Level', 'Battery Level', 'Status'])
@@ -349,7 +349,7 @@ def get_schedule_table(start_time, end_time, location_id=None, robot_sn=None, ti
         3: "Task Interrupted",
         4: "Task Ended",
         5: "Task Abnormal",
-        6: "Done"
+        6: "Task Cancelled"
     }
     mode_mapping = {
         1: "Scrubbing",

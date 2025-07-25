@@ -11,16 +11,16 @@ tables:
   # Location Table
   location:
     - database: "ry-vue"
-      table_name: "mnt_robots_locations"
-      primary_keys: ["location_id"]
+      table_name: "pro_building_info"
+      primary_keys: ["building_id"]
       fields: null  # Use all fields from the DataFrame
-      description: "Main location table in ry-vue database"
+      description: "Building info table in ry-vue database"
 
     - database: "foxx_irvine_office_test"
-      table_name: "mnt_robots_locations"
-      primary_keys: ["location_id"]
+      table_name: "pro_building_info"
+      primary_keys: ["building_id"]
       fields: null
-      description: "Location table in foxx test database"
+      description: "Building info table in foxx test database"
 
   # Robot Status Table
   robot_status:
@@ -50,7 +50,7 @@ tables:
       fields: null
       description: "Robot task tracking table in foxx test database"
 
-  # Robot Task Overview Tables
+  # Robot Task Overview Tables - not used
   robot_task_overview:
     - database: "ry-vue"
       table_name: "mnt_robots_task_overview"
