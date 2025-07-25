@@ -215,11 +215,11 @@ def get_robot_event_data(start_time: str, end_time: str):
     return result
 
 class App:
-    def __init__(self, config_path: str = "database_config.yaml", api_host: str = ""):
+    def __init__(self, config_path: str = "database_config.yaml"):
         """Initialize the application with database configuration and notification service"""
         logger.info(f"Initializing App with config: {config_path}")
         self.config = DatabaseConfig(config_path)
-        self.notification_service = NotificationService(api_host)
+        self.notification_service = NotificationService()
 
         # Initialize tables for each type
         self.location_tables = initialize_tables_from_config(self.config, 'location')
