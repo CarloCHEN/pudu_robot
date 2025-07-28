@@ -68,8 +68,8 @@ class ConfigLoader:
     def get_notification_config(self) -> Dict[str, Any]:
         """Get notification service configuration"""
         return {
-            'api_host': os.getenv('NOTIFICATION_API_HOST', 'alb-streamnexus-demo-775802511.us-east-1.elb.amazonaws.com'),
-            'api_endpoint': os.getenv('NOTIFICATION_API_ENDPOINT', '/notification-api/robot/notification/send'),
+            'api_host': os.getenv('NOTIFICATION_API_HOST', ''),
+            'api_endpoint': os.getenv('NOTIFICATION_API_ENDPOINT', ''),
             'icons_config_path': os.getenv('ICONS_CONFIG_PATH', 'icons.yaml')
         }
 

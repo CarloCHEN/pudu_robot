@@ -49,6 +49,46 @@ STATUS_TAGS = {
     'online': 'online'           # 📶 Green - Robot came online
 }
 
+def should_skip_notification(data_type: str, change_info: Dict) -> bool:
+    """Determine if notification should be skipped for this change"""
+    change_type = change_info.get('change_type', 'unknown')
+    changed_fields = change_info.get('changed_fields', [])
+    old_values = change_info.get('old_values', {})
+    new_values = change_info.get('new_values', {})
+
+    if data_type == 'robot_task':
+        # Skip non-status updates
+        if change_type == 'update':
+            if 'status' not in changed_fields:
+                return True
+        return False
+
+    elif data_type == 'robot_charging':
+        # Skip all charging updates
+        if change_type == 'update':
+            return True
+        return False  # Don't skip new charging records
+
+    elif data_type == 'robot_status':
+        # Skip battery updates unless battery is low (< 20%)
+        if change_type == 'update' and 'battery_level' in changed_fields and 'status' not in changed_fields:
+            try:
+                new_battery = new_values.get('battery_level', 100)
+                if isinstance(new_battery, (int, float)):
+                    return new_battery >= 20  # Skip if battery is >= 20%
+            except:
+                pass
+        elif change_type == 'update' and 'status' not in changed_fields:
+            return True # skip other status updates
+        return False  # Don't skip other status updates
+
+    elif data_type == 'location':
+        # Skip all location notifications for now
+        return True
+
+    # Skip other data types by default
+    return True
+
 def get_severity_and_status_for_robot_status(old_values: dict, new_values: dict, changed_fields: list) -> Tuple[str, str]:
     """Determine severity and status for robot status changes"""
     if 'status' in changed_fields:
@@ -163,6 +203,9 @@ def send_change_based_notifications(notification_service: NotificationService, c
     for unique_id, change_info in changes_dict.items():
         try:
             robot_id = change_info.get('robot_id', 'unknown')
+            if should_skip_notification(data_type, change_info):
+                logger.info(f"Skipping notification for {unique_id} because it should be skipped")
+                continue
 
             # Generate notification content for this specific record
             title, content = generate_individual_notification_content(data_type, change_info, time_range)
@@ -173,10 +216,6 @@ def send_change_based_notifications(notification_service: NotificationService, c
             # Format title with appropriate icons
             icon_manager = get_icon_manager()
             formatted_title = icon_manager.format_title_with_icons(title, severity, status)
-            # print(f"Title: {formatted_title}")
-            # print(f"Content: {content}")
-            # print(f"Severity: {severity}")
-            # print(f"Status: {status}")
 
             # Send notification with severity and status
             if notification_service.send_notification(
@@ -280,12 +319,13 @@ def generate_individual_notification_content(data_type: str, change_info: Dict, 
                     content = f"Robot: {robot_name}; Task {task_name}'s status has been {new_status_name}."
 
                 elif 'progress' in changed_fields:
+                    # do not send notification now
                     new_progress = new_values.get('progress', 0)
                     title = f"{task_name}"
                     content = f"Robot: {robot_name}; Task {task_name}'s current progress is {new_progress}%."
 
                 else:
-                    # Generic task update
+                    # Generic task update - do not send notification now
                     title = f"{task_name}"
                     content = f"Robot: {robot_name}; Task {task_name} has been updated."
 
@@ -296,8 +336,8 @@ def generate_individual_notification_content(data_type: str, change_info: Dict, 
 
             if change_type == 'new_record':
                 title = f"Charging"
-                content = f"Robot: {robot_name}; {robot_name} is charging with {final_power} power."
-            else:  # update
+                content = f"Robot: {robot_name}; {robot_name} has been charged with {final_power} power."
+            else:  # update - do not send notification now
                 if 'final_power' in changed_fields or 'power_gain' in changed_fields:
                     final_power = new_values.get('final_power', 'N/A')
                     title = f"Charging"
@@ -329,6 +369,7 @@ def generate_individual_notification_content(data_type: str, change_info: Dict, 
                 content = f"Robot: {robot_name}; {event_type} (event) occurred at {time_info}."
 
         elif data_type == 'location':
+            # do not send notification now
             # Primary keys: ["location_id"]
             location_name = new_values.get('location_name', 'Unknown Location')
 
@@ -340,7 +381,7 @@ def generate_individual_notification_content(data_type: str, change_info: Dict, 
                 content = f"Location '{location_name}' has been updated."
 
         else:
-            # Generic handling for other data types
+            # Generic handling for other data types - do not send notification now
             robot_name = new_values.get('robot_name', f'Robot {robot_id}')
             if change_type == 'new_record':
                 title = f"New {data_type.replace('_', ' ').title()}"
@@ -379,11 +420,12 @@ def generate_status_change_content(robot_id: str, changed_fields: list, old_valu
 
     elif 'battery_level' in changed_fields:
         new_battery = new_values.get('battery_level', 'N/A')
+        # Only send notification if battery level is below 20%
         title = "Low Battery Alert"
         content = f"Robot: {robot_name}; Battery level is at {new_battery}%."
 
     else:
-        # Generic status update
+        # Generic status update - do not send notification now
         title = "Robot Status Update"
         content = f"Robot: {robot_name}; Robot status has been updated."
 

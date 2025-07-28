@@ -1,7 +1,15 @@
 import yaml
 import logging
+import os
 from typing import Dict, Optional, Tuple
 from pathlib import Path
+
+# Import config loader for local testing
+try:
+    from pudu.configs.config_loader import get_config
+    CONFIG_LOADER_AVAILABLE = True
+except ImportError:
+    CONFIG_LOADER_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -14,27 +22,44 @@ class IconManager:
 
     def _load_icons_config(self, config_path: Optional[str]):
         """Load icons configuration from YAML file"""
-        # Default path relative to this file
+
+        # Try to get path from config loader first (for local testing)
+        if not config_path and CONFIG_LOADER_AVAILABLE:
+            try:
+                config = get_config()
+                notification_config = config.get_notification_config()
+                config_path = notification_config.get('icons_config_path', 'icons.yaml')
+                logger.info("Using config_loader for icons path (local testing)")
+            except Exception as e:
+                logger.warning(f"Config loader failed for icons path: {e}")
+
+        # Fallback to environment variable (Lambda/production)
         if not config_path:
-            current_dir = Path(__file__).parent
-            config_path = current_dir / "icons.yaml"
+            config_path = os.getenv('ICONS_CONFIG_PATH', 'icons.yaml')
+            logger.info("Using environment variable for icons path")
 
-            # Also check in project root
-            if not config_path.exists():
-                project_root = current_dir.parent.parent.parent
-                config_path = project_root / "icons.yaml"
+        # Search for the config file in multiple locations
+        search_paths = [
+            config_path,  # Direct path
+            Path(__file__).parent / config_path,  # Relative to this file
+            Path(__file__).parent.parent.parent / config_path,  # Project root
+            f"src/pudu/notifications/{config_path}",  # Source directory
+            f"/opt/{config_path}"  # Lambda deployment path
+        ]
 
-        try:
-            if Path(config_path).exists():
-                with open(config_path, 'r', encoding='utf-8') as f:
-                    self.icons_config = yaml.safe_load(f) or {}
-                logger.info(f"Loaded icons configuration from {config_path}")
-            else:
-                logger.warning(f"Icons config file not found at {config_path}, using defaults")
-                self._load_default_icons()
-        except Exception as e:
-            logger.error(f"Error loading icons config: {e}, using defaults")
-            self._load_default_icons()
+        for path in search_paths:
+            try:
+                if Path(path).exists():
+                    with open(path, 'r', encoding='utf-8') as f:
+                        self.icons_config = yaml.safe_load(f) or {}
+                    logger.info(f"Loaded icons configuration from {path}")
+                    return
+            except Exception as e:
+                logger.debug(f"Failed to load icons from {path}: {e}")
+                continue
+
+        logger.warning(f"Icons config file not found in any location, using defaults")
+        self._load_default_icons()
 
     def _load_default_icons(self):
         """Load default icon configuration if file is not available"""

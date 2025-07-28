@@ -1,9 +1,88 @@
 import logging
 from typing import Dict
 from pudu.rds.rdsTable import RDSTable
+from decimal import Decimal, ROUND_HALF_UP
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+# Define decimal precision for common fields that use decimal(10, 2) in database
+DECIMAL_FIELDS_PRECISION = {
+    # Fields that should be rounded to 2 decimal places to match database schema
+    'actual_area': 2,
+    'plan_area': 2,
+    'duration': 2,
+    'efficiency': 2,
+    'remaining_time': 2,
+    'consumption': 2,
+    'water_consumption': 2,
+    'progress': 2,
+    'battery_level': 2,
+    'water_level': 2,
+    'sewage_level': 2,
+    'cost_water': 2,
+    'cost_battery': 2,
+    'clean_area': 2,
+    'task_area': 2,
+    'average_area': 2,
+    'percentage': 2
+}
+
+def normalize_decimal_value(value, field_name: str):
+    """
+    Normalize a value to match database decimal precision
+
+    Args:
+        value: The value to normalize
+        field_name: The field name to determine precision
+
+    Returns:
+        Normalized value with appropriate decimal precision
+    """
+    if value is None:
+        return None
+
+    # Get the expected decimal places for this field
+    decimal_places = DECIMAL_FIELDS_PRECISION.get(field_name.lower())
+
+    if decimal_places is not None:
+        try:
+            # Convert to Decimal for precise rounding
+            if isinstance(value, str):
+                # Handle percentage strings like "100%"
+                if '%' in value:
+                    value = value.replace('%', '')
+                decimal_value = Decimal(str(value))
+            else:
+                decimal_value = Decimal(str(value))
+
+            # Round to the specified decimal places
+            quantizer = Decimal('0.1') ** decimal_places
+            rounded_value = decimal_value.quantize(quantizer, rounding=ROUND_HALF_UP)
+
+            # Return as float for consistency (pandas DataFrames typically use float)
+            return float(rounded_value)
+
+        except (ValueError, TypeError, Exception) as e:
+            logger.debug(f"Could not normalize decimal for field {field_name}, value {value}: {e}")
+            return value
+
+    return value
+
+def normalize_record_for_comparison(record: dict) -> dict:
+    """
+    Normalize all decimal fields in a record for database comparison
+
+    Args:
+        record: Dictionary containing field values
+
+    Returns:
+        Dictionary with normalized decimal values
+    """
+    normalized = {}
+    for field_name, value in record.items():
+        normalized[field_name] = normalize_decimal_value(value, field_name)
+    return normalized
 
 def detect_data_changes(table: RDSTable, data_list: list, primary_keys: list) -> Dict[str, Dict]:
     """
@@ -16,9 +95,12 @@ def detect_data_changes(table: RDSTable, data_list: list, primary_keys: list) ->
     changes_detected = {}
 
     try:
+        # Normalize all new records for comparison
+        normalized_data_list = [normalize_record_for_comparison(record) for record in data_list]
+
         # Build WHERE clause for primary keys to fetch existing records
         primary_key_conditions = []
-        for record in data_list:
+        for record in normalized_data_list:
             pk_condition = " AND ".join([f"{pk} = '{record[pk]}'" for pk in primary_keys if pk in record])
             if pk_condition:
                 primary_key_conditions.append(f"({pk_condition})")
@@ -26,16 +108,16 @@ def detect_data_changes(table: RDSTable, data_list: list, primary_keys: list) ->
         if not primary_key_conditions:
             # No primary keys found, treat all as new records
             logger.warning(f"No primary key conditions found. Primary keys: {primary_keys}")
-            for i, record in enumerate(data_list):
-                robot_id = record.get('robot_sn', record.get('sn', f'unknown_{i}'))
+            for i, (original_record, normalized_record) in enumerate(zip(data_list, normalized_data_list)):
+                robot_id = normalized_record.get('robot_sn', normalized_record.get('sn', f'unknown_{i}'))
                 unique_id = f"{robot_id}_{i}"  # Use index to ensure uniqueness
                 changes_detected[unique_id] = {
                     'robot_id': robot_id,
-                    'primary_key_values': {pk: record.get(pk) for pk in primary_keys},
+                    'primary_key_values': {pk: normalized_record.get(pk) for pk in primary_keys},
                     'change_type': 'new_record',
-                    'changed_fields': list(record.keys()),
+                    'changed_fields': list(normalized_record.keys()),
                     'old_values': {},
-                    'new_values': record
+                    'new_values': original_record  # Use original record for notification
                 }
             return changes_detected
 
@@ -61,7 +143,7 @@ def detect_data_changes(table: RDSTable, data_list: list, primary_keys: list) ->
                     column_names = [col[0] for col in columns_result]  # First element of each tuple is column name
                 except:
                     # Fallback: use data_list keys as column names
-                    column_names = list(data_list[0].keys()) if data_list else []
+                    column_names = list(normalized_data_list[0].keys()) if normalized_data_list else []
 
                 # Convert tuples to dictionaries
                 for record_tuple in existing_records_result:
@@ -74,68 +156,78 @@ def detect_data_changes(table: RDSTable, data_list: list, primary_keys: list) ->
                 # Already dictionaries
                 existing_records = existing_records_result
 
+        # Normalize existing records for comparison
+        normalized_existing_records = [normalize_record_for_comparison(record) for record in existing_records]
+
         # Convert existing records to dictionary keyed by primary key combination
         existing_dict = {}
-        for record in existing_records:
+        for original_record, normalized_record in zip(existing_records, normalized_existing_records):
             try:
                 # Create primary key tuple - handle both string and numeric values properly
                 pk_values = []
                 for pk in primary_keys:
-                    value = record.get(pk)
+                    value = normalized_record.get(pk)
                     # Convert to string but preserve the original type for comparison
                     pk_values.append(str(value) if value is not None else '')
                 pk_key = tuple(pk_values)
-                existing_dict[pk_key] = record
+                existing_dict[pk_key] = {
+                    'original': original_record,
+                    'normalized': normalized_record
+                }
                 logger.debug(f"Added existing record with PK: {pk_key}")
             except AttributeError as e:
-                logger.warning(f"Error processing existing record: {record}, error: {e}")
+                logger.warning(f"Error processing existing record: {normalized_record}, error: {e}")
                 continue
 
         # Compare new data with existing data
-        for i, new_record in enumerate(data_list):
+        for i, (original_new_record, normalized_new_record) in enumerate(zip(data_list, normalized_data_list)):
             # Create primary key for new record
             pk_values = []
             for pk in primary_keys:
-                value = new_record.get(pk)
+                value = normalized_new_record.get(pk)
                 pk_values.append(str(value) if value is not None else '')
             pk_key = tuple(pk_values)
 
             # Get robot_id for notification purposes
-            robot_id = new_record.get('robot_sn', new_record.get('sn', 'unknown'))
+            robot_id = normalized_new_record.get('robot_sn', normalized_new_record.get('sn', 'unknown'))
 
             # Create unique identifier using primary key values
             unique_id = "_".join(pk_values) if pk_values else f"record_{i}"
 
             # Extract primary key values for notification use
-            primary_key_values = {pk: new_record.get(pk) for pk in primary_keys}
+            primary_key_values = {pk: normalized_new_record.get(pk) for pk in primary_keys}
 
             logger.debug(f"Looking for new record PK: {pk_key} in existing records")
             logger.debug(f"Existing PKs: {list(existing_dict.keys())}")
 
             if pk_key in existing_dict:
                 # Record exists, check for changes
-                existing_record = existing_dict[pk_key]
+                existing_data = existing_dict[pk_key]
+                existing_normalized = existing_data['normalized']
+                existing_original = existing_data['original']
+
                 changed_fields = []
                 old_values = {}
                 new_values = {}
 
-                # Compare ALL fields, including primary keys for notification purposes
-                for field, new_value in new_record.items():
-                    old_value = existing_record.get(field)
+                # Compare normalized values for change detection
+                for field, new_value in normalized_new_record.items():
+                    old_value = existing_normalized.get(field)
 
-                    # Smart comparison that handles Decimal vs float/int equivalence
-                    if not values_are_equivalent(old_value, new_value):
+                    # Use improved comparison that handles normalized values
+                    if not values_are_equivalent(old_value, new_value, field):
                         # Only add to changed_fields if it's NOT a primary key (for update logic)
                         if field not in primary_keys:
                             changed_fields.append(field)
-                            old_values[field] = old_value
-                            new_values[field] = new_value
+                            # Use original values for notification context
+                            old_values[field] = existing_original.get(field)
+                            new_values[field] = original_new_record.get(field)
                         logger.debug(f"Field '{field}' changed: {old_value} -> {new_value}")
 
                 if changed_fields:
                     # Include primary key values AND all new values for notification context
-                    full_new_values = new_record.copy()  # Include ALL fields including primary keys
-                    full_old_values = {field: existing_record.get(field) for field in new_record.keys()}
+                    full_new_values = original_new_record.copy()  # Use original for notifications
+                    full_old_values = {field: existing_original.get(field) for field in original_new_record.keys()}
 
                     changes_detected[unique_id] = {
                         'robot_id': robot_id,
@@ -149,15 +241,15 @@ def detect_data_changes(table: RDSTable, data_list: list, primary_keys: list) ->
                 else:
                     logger.info(f"No changes detected for record {unique_id} (robot {robot_id})")
             else:
-                # New record - include all values including primary keys
+                # New record - use original values for notification
                 logger.info(f"Detected new record {unique_id} (robot {robot_id})")
                 changes_detected[unique_id] = {
                     'robot_id': robot_id,
                     'primary_key_values': primary_key_values,
                     'change_type': 'new_record',
-                    'changed_fields': list(new_record.keys()),
+                    'changed_fields': list(original_new_record.keys()),
                     'old_values': {},
-                    'new_values': new_record  # All fields including primary keys
+                    'new_values': original_new_record  # Use original for notifications
                 }
 
     except Exception as e:
@@ -178,9 +270,10 @@ def detect_data_changes(table: RDSTable, data_list: list, primary_keys: list) ->
 
     return changes_detected
 
-def values_are_equivalent(old_value, new_value) -> bool:
+def values_are_equivalent(old_value, new_value, field_name: str = None) -> bool:
     """
-    Compare two values for equivalence, handling Decimal vs float/int, None vs NULL vs NaN cases, and case-insensitive strings
+    Compare two values for equivalence, handling Decimal vs float/int, None vs NULL vs NaN cases,
+    and case-insensitive strings, with special handling for decimal fields
     """
     import math
 
@@ -196,6 +289,23 @@ def values_are_equivalent(old_value, new_value) -> bool:
         new_str = str(new_value) if new_value is not None else 'NULL'
         null_equivalents = ['NULL', 'None', 'nan', '0', '0.0', '0.00', 'null']
         return any(old_str.lower() in null_equivalents and new_str.lower() in null_equivalents for _ in [1])
+
+    # Special handling for decimal fields - normalize both values to same precision
+    if field_name and field_name.lower() in DECIMAL_FIELDS_PRECISION:
+        try:
+            # Both values should already be normalized, but double-check
+            normalized_old = normalize_decimal_value(old_value, field_name)
+            normalized_new = normalize_decimal_value(new_value, field_name)
+
+            # Compare the normalized values
+            if isinstance(normalized_old, (int, float)) and isinstance(normalized_new, (int, float)):
+                # Use a small epsilon for floating point comparison
+                epsilon = 10 ** -(DECIMAL_FIELDS_PRECISION[field_name.lower()] + 1)
+                return abs(normalized_old - normalized_new) < epsilon
+
+        except (ValueError, TypeError) as e:
+            logger.debug(f"Error in decimal comparison for field {field_name}: {e}")
+            # Fall through to general comparison
 
     # Try numeric comparison first (handles Decimal vs float/int)
     try:

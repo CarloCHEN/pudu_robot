@@ -3,6 +3,12 @@ import json
 import logging
 import os
 
+# Import config loader for local testing
+try:
+    from pudu.configs.config_loader import get_config
+    CONFIG_LOADER_AVAILABLE = True
+except ImportError:
+    CONFIG_LOADER_AVAILABLE = False
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -11,9 +17,25 @@ class NotificationService:
     """Service for sending notifications to web API"""
 
     def __init__(self):
-        # Load from environment variables first, then fall back to defaults
-        self.api_host = os.getenv('NOTIFICATION_API_HOST', '')
-        self.endpoint = os.getenv('NOTIFICATION_API_ENDPOINT', '')
+        # Try to use config loader for local testing first
+        if CONFIG_LOADER_AVAILABLE:
+            try:
+                config = get_config()
+                notification_config = config.get_notification_config()
+                self.api_host = notification_config.get('api_host', '')
+                self.endpoint = notification_config.get('api_endpoint', '')
+                logger.info("Using config_loader for notification settings (local testing)")
+            except Exception as e:
+                logger.warning(f"Config loader failed, falling back to environment variables: {e}")
+                # Fallback to environment variables
+                self.api_host = os.getenv('NOTIFICATION_API_HOST', '')
+                self.endpoint = os.getenv('NOTIFICATION_API_ENDPOINT', '')
+        else:
+            # Load from environment variables (Lambda/production)
+            self.api_host = os.getenv('NOTIFICATION_API_HOST', '')
+            self.endpoint = os.getenv('NOTIFICATION_API_ENDPOINT', '')
+            logger.info("Using environment variables for notification settings")
+
         self.headers = {'Content-Type': 'application/json'}
 
         # Log configuration (without sensitive data)
@@ -39,11 +61,11 @@ class NotificationService:
             # Build payload - include status if provided
             payload_data = {
                 "robotId": robot_id,
-                "notificationType": notification_type,
+                "notificationType": notification_type, # robotStatus, robot_status, robot_task, robotTask
                 "title": title,
                 "content": content,
                 "severity": severity,
-                "status": status,
+                "status": status, # priority
             }
 
             payload = json.dumps(payload_data)
