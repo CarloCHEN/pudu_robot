@@ -18,6 +18,9 @@ COPY pudu-webhook-api/rds_utils.py .
 COPY pudu-webhook-api/credentials.yaml .
 COPY pudu-webhook-api/database_config.yaml .
 
+# Copy notification files
+COPY pudu-webhook-api/notifications/ ./notifications/
+
 # Create non-root user for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 RUN chown -R appuser:appuser /usr/src/app

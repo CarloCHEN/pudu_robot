@@ -7,7 +7,7 @@ class Config:
     # Server configuration
     HOST = os.getenv('HOST', '0.0.0.0')
     PORT = int(os.getenv('PORT', 8000))
-    DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
+    DEBUG = os.getenv('DEBUG', 'False').lower() == 'false'
 
     # Pudu configuration
     PUDU_CALLBACK_CODE = os.getenv('PUDU_CALLBACK_CODE', '')

@@ -27,9 +27,9 @@ def lambda_handler(event, context):
 
         # Calculate time range from 00:00:00 to 23:59:59
         now = datetime.now()
-        # Start of the day (00:00:00)
-        start_time_str = now.replace(hour=0, minute=0, second=0, microsecond=0).strftime('%Y-%m-%d %H:%M:%S')
-        # End of the day (23:59:59)
+        # Start of the previous day (00:00:00)
+        start_time_str = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0).strftime('%Y-%m-%d %H:%M:%S')
+        # End of the current day (23:59:59)
         end_time_str = now.replace(hour=23, minute=59, second=59, microsecond=0).strftime('%Y-%m-%d %H:%M:%S')
 
         logger.info(f"📅 Processing time range: {start_time_str} to {end_time_str}")
