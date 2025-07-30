@@ -276,9 +276,9 @@ def generate_individual_notification_content(data_type: str, change_info: Dict, 
             if change_type == 'new_record':
                 status = new_values.get('status', 'Unknown')
                 battery = new_values.get('battery_level', 'N/A')
-                robot_name = new_values.get('robot_name', f'Robot {robot_id}')
+                robot_name = new_values.get('robot_name', f'SN: {robot_id}')
                 title = f"Robot Online"
-                content = f"Robot: {robot_name}; {robot_name} is now online."
+                content = f"Robot {robot_name} is now online."
             else:  # update
                 return generate_status_change_content(robot_id, changed_fields, old_values, new_values)
 
@@ -294,12 +294,12 @@ def generate_individual_notification_content(data_type: str, change_info: Dict, 
                 else:
                     status_name = status
 
-                robot_name = new_values.get('robot_name', f'Robot {robot_id}')
-                title = f"{task_name}"
-                content = f"Robot: {robot_name}; Task {task_name}'s status is {status_name}."
+                robot_name = new_values.get('robot_name', f'SN: {robot_id}')
+                title = f"New Task: {task_name}"
+                content = f"Robot {robot_name} has a new task: {task_name} (status: {status_name})."
 
             else:  # update
-                robot_name = new_values.get('robot_name', f'Robot {robot_id}')
+                robot_name = new_values.get('robot_name', f'SN: {robot_id}')
 
                 if 'status' in changed_fields:
                     old_status = old_values.get('status', 'Unknown')
@@ -315,58 +315,58 @@ def generate_individual_notification_content(data_type: str, change_info: Dict, 
                         new_status_name = TASK_STATUS_MAPPING.get(new_status, 'Unknown')
                     else:
                         new_status_name = new_status
-                    title = f"{task_name}"
-                    content = f"Robot: {robot_name}; Task {task_name}'s status has been {new_status_name}."
+                    title = f"Task ({task_name}) Status Updated "
+                    content = f"Robot {robot_name}'s task - {task_name} has changed to a new status - {new_status_name} now."
 
                 elif 'progress' in changed_fields:
                     # do not send notification now
                     new_progress = new_values.get('progress', 0)
-                    title = f"{task_name}"
-                    content = f"Robot: {robot_name}; Task {task_name}'s current progress is {new_progress}%."
+                    title = f"Task ({task_name}) Progress Updated"
+                    content = f"Robot {robot_name}'s task - {task_name} has updated its progress to {new_progress}%."
 
                 else:
                     # Generic task update - do not send notification now
-                    title = f"{task_name}"
-                    content = f"Robot: {robot_name}; Task {task_name} has been updated."
+                    title = f"Task ({task_name}) Updated"
+                    content = f"Robot {robot_name}'s task - {task_name} has been updated."
 
         elif data_type == 'robot_charging':
             # Primary keys: ["robot_sn", "start_time", "end_time"]
-            robot_name = new_values.get('robot_name', f'Robot {robot_id}')
+            robot_name = new_values.get('robot_name', f'SN: {robot_id}')
             final_power = new_values.get('final_power', 'N/A')
 
             if change_type == 'new_record':
-                title = f"Charging"
-                content = f"Robot: {robot_name}; {robot_name} has been charged with {final_power} power."
+                title = f"Robot Charging"
+                content = f"Robot {robot_name} has been charged with {final_power} power."
             else:  # update - do not send notification now
                 if 'final_power' in changed_fields or 'power_gain' in changed_fields:
                     final_power = new_values.get('final_power', 'N/A')
-                    title = f"Charging"
+                    title = f"Robot Charging"
                     if not isinstance(final_power, (int, float)):
                         final_power_value = int(final_power.replace('%', ''))
                     if final_power_value >= 90:
-                        content = f"Robot: {robot_name}; {robot_name} has completed charging with {final_power} power."
+                        content = f"Robot {robot_name} has completed charging with {final_power} power."
                     else:
-                        content = f"Robot: {robot_name}; {robot_name} is charging with {final_power} power."
+                        content = f"Robot {robot_name} is charging with {final_power} power."
                 else:
-                    title = f"Charging"
-                    content = f"Robot: {robot_name}; {robot_name} charging status updated."
+                    title = f"Robot Charging"
+                    content = f"Robot {robot_name} charging status updated."
 
         elif data_type == 'robot_events':
             # Primary keys: ["robot_sn", "event_id"]
             event_type = new_values.get('event_type', 'Unknown Event')
             event_level = new_values.get('event_level', 'info').lower()
-            robot_name = new_values.get('robot_name', f'Robot {robot_id}')
+            robot_name = new_values.get('robot_name', f'SN: {robot_id}')
             time_info = f"{new_values.get('upload_time', 'Unknown Time')}"
 
-            title = f"{event_type}"
+            title = f"Robot Incident: {event_type}"
             if event_level == 'error':
-                content = f"Robot: {robot_name}; {event_type} (error) occurred at {time_info}."
+                content = f"Robot {robot_name} has a new error - {event_type} at {time_info}."
             elif event_level == 'warning':
-                content = f"Robot: {robot_name}; {event_type} (warning) occurred at {time_info}."
+                content = f"Robot {robot_name} has a new warning - {event_type} at {time_info}."
             elif event_level == 'fatal':
-                content = f"Robot: {robot_name}; {event_type} (fatal) occurred at {time_info}."
+                content = f"Robot {robot_name} has a new fatal event - {event_type} at {time_info}."
             else:
-                content = f"Robot: {robot_name}; {event_type} (event) occurred at {time_info}."
+                content = f"Robot {robot_name} has a new event - {event_type} at {time_info}."
 
         elif data_type == 'location':
             # do not send notification now
@@ -375,17 +375,17 @@ def generate_individual_notification_content(data_type: str, change_info: Dict, 
 
             if change_type == 'new_record':
                 title = f"New Location Added"
-                content = f"Location '{location_name}' has been added to the system."
+                content = f"A new location - {location_name} has been added to the system."
             else:  # update
                 title = f"Location Updated"
-                content = f"Location '{location_name}' has been updated."
+                content = f"Location - {location_name} has been updated."
 
         else:
             # Generic handling for other data types - do not send notification now
-            robot_name = new_values.get('robot_name', f'Robot {robot_id}')
+            robot_name = new_values.get('robot_name', f'SN: {robot_id}')
             if change_type == 'new_record':
                 title = f"New {data_type.replace('_', ' ').title()}"
-                content = f"Robot: {robot_name}; New {data_type} record created."
+                content = f"Robot {robot_name} has a new {data_type} record created."
             else:
                 title = f"{data_type.replace('_', ' ').title()} Updated"
                 content = f"Robot: {robot_name}; {data_type} record updated."
@@ -393,7 +393,7 @@ def generate_individual_notification_content(data_type: str, change_info: Dict, 
     except Exception as e:
         logger.warning(f"Error generating notification content for {data_type}: {e}")
         # Fallback
-        robot_name = new_values.get('robot_name', f'Robot {robot_id}')
+        robot_name = new_values.get('robot_name', f'Robot SN: {robot_id}')
         title = f"{data_type.replace('_', ' ').title()}"
         content = f"Robot: {robot_name}; {data_type} updated."
 
@@ -401,7 +401,7 @@ def generate_individual_notification_content(data_type: str, change_info: Dict, 
 
 def generate_status_change_content(robot_id: str, changed_fields: list, old_values: dict, new_values: dict) -> tuple:
     """Generate specific content for robot status changes"""
-    robot_name = new_values.get('robot_name', f'Robot {robot_id}')
+    robot_name = new_values.get('robot_name', f'SN: {robot_id}')
     icon_manager = get_icon_manager()
 
     # Prioritize important status changes
@@ -410,23 +410,23 @@ def generate_status_change_content(robot_id: str, changed_fields: list, old_valu
 
         if 'online' in str(new_status).lower():
             title = "Robot Online"
-            content = f"Robot: {robot_name}; {robot_name} is now online."
+            content = f"Robot {robot_name} is now online."
         elif 'offline' in str(new_status).lower():
             title = "Robot Offline"
-            content = f"Robot: {robot_name}; {robot_name} is offline."
+            content = f"Robot {robot_name} is offline."
         else:
             title = "Robot Status Update"
-            content = f"Robot: {robot_name}; {robot_name} status changed to {new_status}."
+            content = f"Robot {robot_name} status changed to {new_status}."
 
     elif 'battery_level' in changed_fields:
         new_battery = new_values.get('battery_level', 'N/A')
         # Only send notification if battery level is below 20%
         title = "Low Battery Alert"
-        content = f"Robot: {robot_name}; Battery level is at {new_battery}%."
+        content = f"Robot {robot_name} battery level is at {new_battery}%."
 
     else:
         # Generic status update - do not send notification now
         title = "Robot Status Update"
-        content = f"Robot: {robot_name}; Robot status has been updated."
+        content = f"Robot {robot_name} status has been updated."
 
     return title, content

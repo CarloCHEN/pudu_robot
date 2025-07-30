@@ -65,7 +65,7 @@ class NotificationService:
                 "title": title,
                 "content": content,
                 "severity": severity,
-                "status": status, # priority
+                "priority": status, # priority
             }
 
             payload = json.dumps(payload_data)

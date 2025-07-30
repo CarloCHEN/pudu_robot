@@ -221,7 +221,7 @@ The application requires the following environment variables:
 
 ```bash
 # Required
-PUDU_CALLBACK_CODE=your_callback_code_from_pudu
+PUDU_CALLBACK_CODE_callback_code_from_pudu
 
 # Optional (with defaults)
 HOST=0.0.0.0
@@ -233,34 +233,34 @@ LOG_FILE=pudu_callbacks.log
 
 ### Database Configuration
 
-1. **Update `credentials.yaml`** with your RDS details:
+1. **Update `credentials.yaml`** with RDS details:
 ```yaml
 database:
-  host: "your-rds-endpoint.region.rds.amazonaws.com"
-  secret_name: "your-secret-name"
-  region_name: "your-region"
+  host: -rds-endpoint.region.rds.amazonaws.com"
+  secret_name: -secret-name"
+  region_name: -region"
 ```
 
-2. **Configure `database_config.yaml`** for your database setup:
+2. **Configure `database_config.yaml`** for database setup:
 ```yaml
 databases:
-  - "your-database-name"
+  - -database-name"
 
 tables:
   robot_status:
-    - database: "your-database-name"
+    - database: -database-name"
       table_name: "mnt_robots_management"
       primary_keys: ["robot_sn"]
 
   robot_events:
-    - database: "your-database-name"
+    - database: -database-name"
       table_name: "mnt_robot_events"
       primary_keys: ["robot_sn", "event_id"]
 ```
 
 ### Required Database Schema
 
-Ensure your RDS instance has the following tables:
+Ensure RDS instance has the following tables:
 
 ```sql
 -- Robot management table
@@ -315,7 +315,7 @@ EOF
 
 ### 3. Configure Database Connection
 
-Update `credentials.yaml` and `database_config.yaml` with your local or development database settings.
+Update `credentials.yaml` and `database_config.yaml` with local or development database settings.
 
 ### 4. Run Locally
 
@@ -386,7 +386,7 @@ make deploy-container
 This command will:
 1. Build the Docker image from `pudu-webhook-api/Dockerfile` (now includes database files)
 2. Tag the image for ECR
-3. Push to your ECR repository
+3. Push to ECR repository
 4. Output the image URI for ECS deployment
 
 ### Step 3: Create ECS Task Definition
@@ -412,18 +412,18 @@ This command will:
    PORT = 8000
    DEBUG = false
    LOG_LEVEL = INFO
-   PUDU_CALLBACK_CODE = your_actual_callback_code_from_pudu
+   PUDU_CALLBACK_CODE =_actual_callback_code_from_pudu
    ```
 
 5. **IAM Permissions:**
    Ensure the ECS task role has permissions for:
    - **Secrets Manager**: `secretsmanager:GetSecretValue`
-   - **RDS**: Network access to your RDS instance
+   - **RDS**: Network access to RDS instance
 
 6. **Logging Configuration:**
    - **Log driver**: `awslogs`
    - **Log group**: `/ecs/pudu-webhook`
-   - **Region**: Your AWS region
+   - **Region**: AWS region
    - **Stream prefix**: `ecs`
 
 ### Step 4: Create ECS Cluster
@@ -435,7 +435,7 @@ This command will:
 
 ### Step 5: Create and Run Task
 
-1. **Go to your cluster** → **Tasks** → **Run new task**
+1. **Go to cluster** → **Tasks** → **Run new task**
 
 2. **Task Configuration:**
    - **Launch type**: `Fargate`
@@ -443,7 +443,7 @@ This command will:
    - **Task definition**: `pudu-webhook:1` (or latest revision)
 
 3. **Network Configuration:**
-   - **VPC**: Same VPC as your RDS instance
+   - **VPC**: Same VPC as RDS instance
    - **Subnets**: Select public subnets with RDS access
    - **Security group**: Create new or use existing
    - **Auto-assign public IP**: `ENABLED`
@@ -470,12 +470,12 @@ This command will:
 
 ## Health Check Testing
 
-### External Health Check from Your Laptop
+### External Health Check from Laptop
 
-Once your ECS task is running and you have the public IP address:
+Once the ECS task is running and we have the public IP address:
 
 ```bash
-# Replace with your actual public IP
+# Replace with actual public IP
 PUBLIC_IP="13.220.117.7"
 
 # Test health check endpoint
@@ -495,7 +495,7 @@ curl http://$PUBLIC_IP:8000/api/pudu/webhook/health
 # Test with sample robot status callback
 curl -X POST http://$PUBLIC_IP:8000/api/pudu/webhook \
   -H "Content-Type: application/json" \
-  -H "CallbackCode: your_actual_callback_code" \
+  -H "CallbackCode:_actual_callback_code" \
   -d '{
     "callback_type": "robotStatus",
     "data": {
@@ -508,7 +508,7 @@ curl -X POST http://$PUBLIC_IP:8000/api/pudu/webhook \
 # Test with sample robot error callback
 curl -X POST http://$PUBLIC_IP:8000/api/pudu/webhook \
   -H "Content-Type: application/json" \
-  -H "CallbackCode: your_actual_callback_code" \
+  -H "CallbackCode:_actual_callback_code" \
   -d '{
     "callback_type": "robotErrorWarning",
     "data": {
@@ -559,7 +559,7 @@ done
 
 ### Webhook Endpoint
 - **URL**: `POST /api/pudu/webhook`
-- **Headers**: `CallbackCode: your_callback_code`
+- **Headers**: `CallbackCode:_callback_code`
 - **Content-Type**: `application/json`
 - **Purpose**: Receive Pudu robot callbacks and store in database
 - **Database**: Automatically writes to configured RDS tables
@@ -571,9 +571,9 @@ done
 When applying to Pudu for webhook access, provide:
 
 ```
-Webhook URL: http://YOUR_PUBLIC_IP:8000/api/pudu/webhook
-Health Check URL: http://YOUR_PUBLIC_IP:8000/api/pudu/webhook/health
-Contact: your-email@company.com
+Webhook URL: http:/_PUBLIC_IP:8000/api/pudu/webhook
+Health Check URL: http:/_PUBLIC_IP:8000/api/pudu/webhook/health
+Contact:-email@company.com
 Use Case: Real-time monitoring of cleaning robot fleet with database storage
 ```
 
@@ -583,9 +583,9 @@ All Pudu callbacks will include the `CallbackCode` header:
 
 ```http
 POST /api/pudu/webhook HTTP/1.1
-Host: YOUR_PUBLIC_IP:8000
+Host:_PUBLIC_IP:8000
 Content-Type: application/json
-CallbackCode: your_callback_code_from_pudu
+CallbackCode:_callback_code_from_pudu
 
 {
   "callback_type": "robotStatus",
@@ -604,12 +604,12 @@ CallbackCode: your_callback_code_from_pudu
 #### 1. Health Check Fails
 ```bash
 # Check if container is running
-aws ecs describe-tasks --cluster pudu-webhook-cluster --tasks YOUR_TASK_ARN
+aws ecs describe-tasks --cluster pudu-webhook-cluster --tasks_TASK_ARN
 
 # Check container logs
 aws logs get-log-events \
   --log-group-name /ecs/pudu-webhook \
-  --log-stream-name ecs/pudu-webhook/YOUR_TASK_ID
+  --log-stream-name ecs/pudu-webhook_TASK_ID
 ```
 
 #### 2. Database Connection Issues
@@ -645,13 +645,13 @@ aws logs filter-log-events \
 #### 6. Container Won't Start
 ```bash
 # Check task stopped reason
-aws ecs describe-tasks --cluster pudu-webhook-cluster --tasks YOUR_TASK_ARN \
+aws ecs describe-tasks --cluster pudu-webhook-cluster --tasks_TASK_ARN \
   --query 'tasks[0].stoppedReason'
 
 # Check container logs for startup errors
 aws logs get-log-events \
   --log-group-name /ecs/pudu-webhook \
-  --log-stream-name ecs/pudu-webhook/YOUR_TASK_ID \
+  --log-stream-name ecs/pudu-webhook_TASK_ID \
   --start-time $(date -d '10 minutes ago' +%s)000
 ```
 
@@ -675,7 +675,7 @@ This will provide more verbose logging and error details.
 # Test database connectivity from ECS task
 aws ecs execute-command \
   --cluster pudu-webhook-cluster \
-  --task YOUR_TASK_ARN \
+  --task_TASK_ARN \
   --container pudu-webhook \
   --interactive \
   --command "python -c \"from database_writer import DatabaseWriter; dw = DatabaseWriter(); print('Database connected successfully')\""
@@ -741,13 +741,13 @@ For enhanced security, store secrets in Parameter Store:
 # Store callback code securely
 aws ssm put-parameter \
   --name "/pudu/callback-code" \
-  --value "your_actual_callback_code" \
+  --value _actual_callback_code" \
   --type "SecureString"
 
 # Store database credentials
 aws ssm put-parameter \
   --name "/pudu/database/host" \
-  --value "your-rds-endpoint" \
+  --value -rds-endpoint" \
   --type "SecureString"
 ```
 

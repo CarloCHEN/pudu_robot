@@ -2,19 +2,21 @@
 Webhook testing client for making requests to the webhook API
 """
 
-import requests
 import json
 import logging
-from typing import Dict, Any, Optional, Tuple
 import time
+from typing import Any, Dict, Optional, Tuple
+
+import requests
 
 logger = logging.getLogger(__name__)
+
 
 class WebhookClient:
     """Client for testing webhook endpoints"""
 
     def __init__(self, base_url: str = "http://localhost:8000", callback_code: str = "test_callback_code"):
-        self.base_url = base_url.rstrip('/')
+        self.base_url = base_url.rstrip("/")
         self.callback_code = callback_code
         self.webhook_endpoint = f"{self.base_url}/api/pudu/webhook"
         self.health_endpoint = f"{self.base_url}/api/pudu/webhook/health"
@@ -35,21 +37,13 @@ class WebhookClient:
         Returns:
             Tuple of (success, response_data)
         """
-        headers = {
-            "Content-Type": "application/json",
-            "CallbackCode": self.callback_code
-        }
+        headers = {"Content-Type": "application/json", "CallbackCode": self.callback_code}
 
         try:
             logger.info(f"🚀 Sending callback: {callback_data.get('callback_type', 'unknown')}")
             logger.info(f"   Robot: {callback_data.get('data', {}).get('sn', 'unknown')}")
 
-            response = requests.post(
-                self.webhook_endpoint,
-                headers=headers,
-                json=callback_data,
-                timeout=timeout
-            )
+            response = requests.post(self.webhook_endpoint, headers=headers, json=callback_data, timeout=timeout)
 
             response_data = {}
             try:
@@ -96,7 +90,7 @@ class WebhookClient:
             except json.JSONDecodeError:
                 health_data = {"raw_response": response.text}
 
-            is_healthy = response.status_code == 200 and health_data.get('status') == 'healthy'
+            is_healthy = response.status_code == 200 and health_data.get("status") == "healthy"
 
             if is_healthy:
                 logger.info(f"✅ Webhook is healthy")
@@ -130,13 +124,7 @@ class WebhookClient:
         Returns:
             Batch results summary
         """
-        results = {
-            'total': len(callbacks),
-            'successful': 0,
-            'failed': 0,
-            'responses': [],
-            'errors': []
-        }
+        results = {"total": len(callbacks), "successful": 0, "failed": 0, "responses": [], "errors": []}
 
         logger.info(f"📦 Sending batch of {len(callbacks)} callbacks...")
 
@@ -145,27 +133,21 @@ class WebhookClient:
 
             success, response = self.send_callback(callback)
 
-            results['responses'].append({
-                'callback': callback,
-                'success': success,
-                'response': response
-            })
+            results["responses"].append({"callback": callback, "success": success, "response": response})
 
             if success:
-                results['successful'] += 1
+                results["successful"] += 1
             else:
-                results['failed'] += 1
-                results['errors'].append({
-                    'callback_index': i - 1,
-                    'callback_type': callback.get('callback_type', 'unknown'),
-                    'error': response
-                })
+                results["failed"] += 1
+                results["errors"].append(
+                    {"callback_index": i - 1, "callback_type": callback.get("callback_type", "unknown"), "error": response}
+                )
 
             # Add delay between requests
             if delay_between > 0 and i < len(callbacks):
                 time.sleep(delay_between)
 
-        success_rate = (results['successful'] / results['total']) * 100 if results['total'] > 0 else 0
+        success_rate = (results["successful"] / results["total"]) * 100 if results["total"] > 0 else 0
 
         logger.info(f"📊 Batch completed:")
         logger.info(f"   Total: {results['total']}")
@@ -183,58 +165,49 @@ class WebhookClient:
         logger.info("Testing missing callback code...")
         try:
             response = requests.post(
-                self.webhook_endpoint,
-                headers={"Content-Type": "application/json"},
-                json={"callback_type": "test"},
-                timeout=5
+                self.webhook_endpoint, headers={"Content-Type": "application/json"}, json={"callback_type": "test"}, timeout=5
             )
-            test_results['missing_callback_code'] = {
-                'status_code': response.status_code,
-                'expected': 400,
-                'success': response.status_code == 400
+            test_results["missing_callback_code"] = {
+                "status_code": response.status_code,
+                "expected": 400,
+                "success": response.status_code == 400,
             }
         except Exception as e:
-            test_results['missing_callback_code'] = {'error': str(e), 'success': False}
+            test_results["missing_callback_code"] = {"error": str(e), "success": False}
 
         # Test invalid callback code
         logger.info("Testing invalid callback code...")
         try:
             response = requests.post(
                 self.webhook_endpoint,
-                headers={
-                    "Content-Type": "application/json",
-                    "CallbackCode": "invalid_code"
-                },
+                headers={"Content-Type": "application/json", "CallbackCode": "invalid_code"},
                 json={"callback_type": "test"},
-                timeout=5
+                timeout=5,
             )
-            test_results['invalid_callback_code'] = {
-                'status_code': response.status_code,
-                'expected': 401,
-                'success': response.status_code == 401
+            test_results["invalid_callback_code"] = {
+                "status_code": response.status_code,
+                "expected": 401,
+                "success": response.status_code == 401,
             }
         except Exception as e:
-            test_results['invalid_callback_code'] = {'error': str(e), 'success': False}
+            test_results["invalid_callback_code"] = {"error": str(e), "success": False}
 
         # Test invalid JSON
         logger.info("Testing invalid JSON...")
         try:
             response = requests.post(
                 self.webhook_endpoint,
-                headers={
-                    "Content-Type": "application/json",
-                    "CallbackCode": self.callback_code
-                },
+                headers={"Content-Type": "application/json", "CallbackCode": self.callback_code},
                 data="invalid json",
-                timeout=5
+                timeout=5,
             )
-            test_results['invalid_json'] = {
-                'status_code': response.status_code,
-                'expected': 400,
-                'success': response.status_code == 400
+            test_results["invalid_json"] = {
+                "status_code": response.status_code,
+                "expected": 400,
+                "success": response.status_code == 400,
             }
         except Exception as e:
-            test_results['invalid_json'] = {'error': str(e), 'success': False}
+            test_results["invalid_json"] = {"error": str(e), "success": False}
 
         # Test missing content type
         logger.info("Testing missing content type...")
@@ -243,15 +216,15 @@ class WebhookClient:
                 self.webhook_endpoint,
                 headers={"CallbackCode": self.callback_code},
                 data='{"callback_type": "test"}',
-                timeout=5
+                timeout=5,
             )
-            test_results['missing_content_type'] = {
-                'status_code': response.status_code,
-                'expected': 400,
-                'success': response.status_code == 400
+            test_results["missing_content_type"] = {
+                "status_code": response.status_code,
+                "expected": 400,
+                "success": response.status_code == 400,
             }
         except Exception as e:
-            test_results['missing_content_type'] = {'error': str(e), 'success': False}
+            test_results["missing_content_type"] = {"error": str(e), "success": False}
 
         return test_results
 
@@ -265,9 +238,9 @@ class WebhookClient:
             f'curl -X POST "{self.webhook_endpoint}"',
             '-H "Content-Type: application/json"',
             f'-H "CallbackCode: {self.callback_code}"',
-            f"-d '{escaped_json}'"
+            f"-d '{escaped_json}'",
         ]
 
-        curl_command = ' \\\n  '.join(cmd_parts) + '\n'
+        curl_command = " \\\n  ".join(cmd_parts) + "\n"
 
         return curl_command

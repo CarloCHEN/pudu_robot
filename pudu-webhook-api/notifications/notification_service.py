@@ -2,25 +2,28 @@ import http.client
 import json
 import logging
 import os
+
 # Configure logging
 logger = logging.getLogger(__name__)
+
 
 class NotificationService:
     """Service for sending notifications to web API"""
 
     def __init__(self):
         # Load from environment variables (Lambda/production)
-        self.api_host = os.getenv('NOTIFICATION_API_HOST', '')
-        self.endpoint = os.getenv('NOTIFICATION_API_ENDPOINT', '')
+        self.api_host = os.getenv("NOTIFICATION_API_HOST", "")
+        self.endpoint = os.getenv("NOTIFICATION_API_ENDPOINT", "")
         logger.info("Using environment variables for notification settings")
 
-        self.headers = {'Content-Type': 'application/json'}
+        self.headers = {"Content-Type": "application/json"}
 
         # Log configuration (without sensitive data)
         logger.info(f"NotificationService initialized with host: {self.api_host[:20]}...")
 
-    def send_notification(self, robot_id: str, notification_type: str, title: str, content: str,
-                         severity: str, status: str) -> bool:
+    def send_notification(
+        self, robot_id: str, notification_type: str, title: str, content: str, severity: str, status: str
+    ) -> bool:
         """
         Send notification to web API with severity and status
 
@@ -39,11 +42,11 @@ class NotificationService:
             # Build payload - include status if provided
             payload_data = {
                 "robotId": robot_id,
-                "notificationType": notification_type, # robotStatus, robot_status, robot_task, robotTask
+                "notificationType": notification_type,  # robotStatus, robot_status, robot_task, robotTask
                 "title": title,
                 "content": content,
                 "severity": severity,
-                "status": status, # priority
+                "status": status,  # priority
             }
 
             payload = json.dumps(payload_data)
@@ -53,10 +56,14 @@ class NotificationService:
             data = res.read()
 
             if res.status == 200:
-                logger.info(f"✅ Notification sent successfully for robot {robot_id}: {title} (severity: {severity}, status: {status})")
+                logger.info(
+                    f"✅ Notification sent successfully for robot {robot_id}: {title} (severity: {severity}, status: {status})"
+                )
                 return True
             else:
-                logger.error(f"❌ Failed to send notification for robot {robot_id}. Status: {res.status}, Response: {data.decode('utf-8')}")
+                logger.error(
+                    f"❌ Failed to send notification for robot {robot_id}. Status: {res.status}, Response: {data.decode('utf-8')}"
+                )
                 return False
 
         except Exception as e:

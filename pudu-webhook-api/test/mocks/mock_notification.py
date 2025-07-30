@@ -3,24 +3,26 @@ Mock Notification Service for Testing
 Validates notification operations without requiring actual HTTP calls
 """
 
-import logging
-import json
-from typing import Dict, List, Any, Optional
-from collections import defaultdict
 import http.client
+import json
+import logging
+from collections import defaultdict
+from typing import Any, Dict, List, Optional
 from unittest.mock import MagicMock, patch
 
 logger = logging.getLogger(__name__)
+
 
 class MockHTTPResponse:
     """Mock HTTP response"""
 
     def __init__(self, status: int = 200, data: str = '{"status": "success"}'):
         self.status = status
-        self._data = data.encode('utf-8')
+        self._data = data.encode("utf-8")
 
     def read(self):
         return self._data
+
 
 class MockHTTPConnection:
     """Mock HTTP connection that captures requests"""
@@ -32,13 +34,7 @@ class MockHTTPConnection:
 
     def request(self, method: str, endpoint: str, payload: str, headers: Dict[str, str]):
         """Capture request details"""
-        request_data = {
-            'method': method,
-            'endpoint': endpoint,
-            'payload': payload,
-            'headers': headers,
-            'host': self.host
-        }
+        request_data = {"method": method, "endpoint": endpoint, "payload": payload, "headers": headers, "host": self.host}
         self.requests.append(request_data)
 
         logger.info(f"🌐 Mock HTTP Request captured:")
@@ -55,6 +51,7 @@ class MockHTTPConnection:
     def close(self):
         self.is_connected = False
 
+
 class MockNotificationService:
     """
     Mock Notification Service that validates notification operations
@@ -64,7 +61,7 @@ class MockNotificationService:
     def __init__(self):
         self.api_host = "mock-notification-api.example.com"
         self.endpoint = "/mock/notification/send"
-        self.headers = {'Content-Type': 'application/json'}
+        self.headers = {"Content-Type": "application/json"}
         self.sent_notifications = []
         self.connection_attempts = []
 
@@ -72,8 +69,9 @@ class MockNotificationService:
         logger.info(f"Mock API Host: {self.api_host}")
         logger.info(f"Mock Endpoint: {self.endpoint}")
 
-    def send_notification(self, robot_id: str, notification_type: str, title: str,
-                         content: str, severity: str, status: str) -> bool:
+    def send_notification(
+        self, robot_id: str, notification_type: str, title: str, content: str, severity: str, status: str
+    ) -> bool:
         """
         Mock send notification that captures and validates notification data
         """
@@ -99,14 +97,14 @@ class MockNotificationService:
 
             # Store notification details for testing
             notification_record = {
-                'robot_id': robot_id,
-                'notification_type': notification_type,
-                'title': title,
-                'content': content,
-                'severity': severity,
-                'status': status,
-                'payload': payload_data,
-                'success': response.status == 200
+                "robot_id": robot_id,
+                "notification_type": notification_type,
+                "title": title,
+                "content": content,
+                "severity": severity,
+                "status": status,
+                "payload": payload_data,
+                "success": response.status == 200,
             }
 
             self.sent_notifications.append(notification_record)
@@ -130,38 +128,30 @@ class MockNotificationService:
             mock_conn.request("HEAD", "/", "", {})
             response = mock_conn.getresponse()
 
-            self.connection_attempts.append({
-                'success': True,
-                'status': response.status,
-                'host': self.api_host
-            })
+            self.connection_attempts.append({"success": True, "status": response.status, "host": self.api_host})
 
             logger.info(f"🔗 Mock connection test successful to {self.api_host}")
             mock_conn.close()
             return True
 
         except Exception as e:
-            self.connection_attempts.append({
-                'success': False,
-                'error': str(e),
-                'host': self.api_host
-            })
+            self.connection_attempts.append({"success": False, "error": str(e), "host": self.api_host})
             logger.error(f"🔗 Mock connection test failed: {e}")
             return False
 
     def get_sent_notifications(self, robot_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get sent notifications for testing verification"""
         if robot_id:
-            return [n for n in self.sent_notifications if n['robot_id'] == robot_id]
+            return [n for n in self.sent_notifications if n["robot_id"] == robot_id]
         return self.sent_notifications
 
     def get_notifications_by_severity(self, severity: str) -> List[Dict[str, Any]]:
         """Get notifications filtered by severity"""
-        return [n for n in self.sent_notifications if n['severity'] == severity]
+        return [n for n in self.sent_notifications if n["severity"] == severity]
 
     def get_notifications_by_type(self, notification_type: str) -> List[Dict[str, Any]]:
         """Get notifications filtered by type"""
-        return [n for n in self.sent_notifications if n['notification_type'] == notification_type]
+        return [n for n in self.sent_notifications if n["notification_type"] == notification_type]
 
     def clear_notifications(self):
         """Clear all stored notifications for fresh test"""
@@ -170,7 +160,7 @@ class MockNotificationService:
 
     def validate_notification_format(self, notification: Dict[str, Any]) -> bool:
         """Validate notification format"""
-        required_fields = ['robot_id', 'notification_type', 'title', 'content', 'severity', 'status']
+        required_fields = ["robot_id", "notification_type", "title", "content", "severity", "status"]
 
         for field in required_fields:
             if field not in notification:
@@ -178,14 +168,14 @@ class MockNotificationService:
                 return False
 
         # Validate severity values
-        valid_severities = ['fatal', 'error', 'warning', 'event', 'success', 'neutral']
-        if notification['severity'] not in valid_severities:
+        valid_severities = ["fatal", "error", "warning", "event", "success", "neutral"]
+        if notification["severity"] not in valid_severities:
             logger.error(f"❌ Invalid severity: {notification['severity']}. Valid: {valid_severities}")
             return False
 
         # Validate status values
-        valid_statuses = ['completed', 'failed', 'warning', 'charging', 'offline', 'online', 'normal', 'abnormal', 'active']
-        if notification['status'] not in valid_statuses:
+        valid_statuses = ["completed", "failed", "warning", "charging", "offline", "online", "normal", "abnormal", "active"]
+        if notification["status"] not in valid_statuses:
             logger.error(f"❌ Invalid status: {notification['status']}. Valid: {valid_statuses}")
             return False
 
@@ -194,9 +184,9 @@ class MockNotificationService:
 
     def print_summary(self):
         """Print summary of all notification operations"""
-        logger.info("\n" + "="*60)
+        logger.info("\n" + "=" * 60)
         logger.info("NOTIFICATION OPERATION SUMMARY")
-        logger.info("="*60)
+        logger.info("=" * 60)
 
         logger.info(f"Total notifications sent: {len(self.sent_notifications)}")
         logger.info(f"Connection tests performed: {len(self.connection_attempts)}")
@@ -211,9 +201,9 @@ class MockNotificationService:
         by_robot = defaultdict(int)
 
         for notification in self.sent_notifications:
-            by_severity[notification['severity']] += 1
-            by_type[notification['notification_type']] += 1
-            by_robot[notification['robot_id']] += 1
+            by_severity[notification["severity"]] += 1
+            by_type[notification["notification_type"]] += 1
+            by_robot[notification["robot_id"]] += 1
 
         logger.info(f"\nNotifications by severity:")
         for severity, count in by_severity.items():

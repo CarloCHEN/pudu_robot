@@ -4,21 +4,22 @@ Main test runner for Pudu Webhook API testing framework
 Runs all tests in sequence and provides comprehensive reporting
 """
 
-import sys
-import os
 import argparse
+import os
+import sys
 import time
 from pathlib import Path
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from test.utils.test_helpers import setup_test_logging
-from test.unit.test_processors import run_processor_tests
+from test.integration.test_complete_flow import run_complete_flow_tests
+from test.integration.test_webhook_endpoint import run_webhook_endpoint_tests
 from test.unit.test_database_writer import run_database_tests
 from test.unit.test_notification_sender import run_notification_tests
-from test.integration.test_webhook_endpoint import run_webhook_endpoint_tests
-from test.integration.test_complete_flow import run_complete_flow_tests
+from test.unit.test_processors import run_processor_tests
+from test.utils.test_helpers import setup_test_logging
+
 
 class TestSuite:
     """Complete test suite runner"""
@@ -30,14 +31,14 @@ class TestSuite:
 
     def run_unit_tests(self):
         """Run all unit tests"""
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("🧪 RUNNING UNIT TESTS")
-        print("="*80)
+        print("=" * 80)
 
         unit_tests = [
             ("Processors", run_processor_tests),
             ("Database Writer", run_database_tests),
-            ("Notification Sender", run_notification_tests)
+            ("Notification Sender", run_notification_tests),
         ]
 
         for test_name, test_function in unit_tests:
@@ -54,13 +55,11 @@ class TestSuite:
 
     def run_integration_tests(self, run_endpoint_tests=False):
         """Run integration tests"""
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("🔗 RUNNING INTEGRATION TESTS")
-        print("="*80)
+        print("=" * 80)
 
-        integration_tests = [
-            ("Complete Flow", run_complete_flow_tests)
-        ]
+        integration_tests = [("Complete Flow", run_complete_flow_tests)]
 
         # Only run endpoint tests if specifically requested
         if run_endpoint_tests:
@@ -82,13 +81,13 @@ class TestSuite:
         """Run complete test suite"""
         self.start_time = time.time()
 
-        print("="*80)
+        print("=" * 80)
         print("🚀 PUDU WEBHOOK API TEST SUITE")
-        print("="*80)
+        print("=" * 80)
         print("📋 Test Categories:")
         print("  • Unit Tests: Processors, Database Writer, Notification Sender")
         print("  • Integration Tests: Complete Flow" + (", Webhook Endpoint" if run_endpoint_tests else ""))
-        print("="*80)
+        print("=" * 80)
 
         # Run unit tests
         self.run_unit_tests()
@@ -105,9 +104,9 @@ class TestSuite:
         """Print comprehensive test summary"""
         duration = self.end_time - self.start_time if self.end_time and self.start_time else 0
 
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("📊 FINAL TEST SUITE SUMMARY")
-        print("="*80)
+        print("=" * 80)
 
         passed_tests = sum(1 for result in self.test_results.values() if result == "PASSED")
         total_tests = len(self.test_results)
@@ -150,37 +149,19 @@ class TestSuite:
         else:
             print(f"\n🎉 ALL TESTS PASSED! The webhook API is ready for deployment.")
 
-        print("="*80)
+        print("=" * 80)
+
 
 def main():
     """Main test runner entry point"""
     parser = argparse.ArgumentParser(description="Pudu Webhook API Test Suite")
+    parser.add_argument("--unit-only", action="store_true", help="Run only unit tests")
+    parser.add_argument("--integration-only", action="store_true", help="Run only integration tests")
     parser.add_argument(
-        "--unit-only",
-        action="store_true",
-        help="Run only unit tests"
+        "--include-endpoint", action="store_true", help="Include webhook endpoint tests (requires running server)"
     )
-    parser.add_argument(
-        "--integration-only",
-        action="store_true",
-        help="Run only integration tests"
-    )
-    parser.add_argument(
-        "--include-endpoint",
-        action="store_true",
-        help="Include webhook endpoint tests (requires running server)"
-    )
-    parser.add_argument(
-        "--log-level",
-        default="INFO",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-        help="Set logging level"
-    )
-    parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Enable verbose output"
-    )
+    parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"], help="Set logging level")
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
 
     args = parser.parse_args()
 
@@ -205,6 +186,7 @@ def main():
     else:
         # Run all tests
         test_suite.run_all_tests(args.include_endpoint)
+
 
 if __name__ == "__main__":
     main()

@@ -2,16 +2,18 @@
 Unit tests for notification sender functionality
 """
 
-import pytest
-import sys
 import os
+import sys
 from pathlib import Path
+
+import pytest
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from test.mocks.mock_notification import MockNotificationService
 from test.utils.test_helpers import TestDataLoader, setup_test_logging
+
 
 # Mock the notification sender imports
 class MockNotificationSender:
@@ -23,12 +25,15 @@ class MockNotificationSender:
     def send_webhook_notification(self, callback_type: str, callback_data: dict, notification_service) -> bool:
         """Send notification using mock service"""
         from notifications.notification_sender import send_webhook_notification
+
         return send_webhook_notification(callback_type, callback_data, notification_service)
 
     def generate_webhook_notification_content(self, callback_type: str, callback_data: dict):
         """Generate notification content"""
         from notifications.notification_sender import generate_webhook_notification_content
+
         return generate_webhook_notification_content(callback_type, callback_data)
+
 
 class TestNotificationSender:
     """Test notification sender operations"""
@@ -44,12 +49,12 @@ class TestNotificationSender:
         print("\n🧪 Testing robot status notifications")
 
         status_data = self.test_data.get_robot_status_data()
-        valid_cases = status_data.get('valid_status_changes', [])
+        valid_cases = status_data.get("valid_status_changes", [])
 
         for case in valid_cases[:4]:  # Test first 4 cases
-            callback_type = case['callback_type']
-            callback_data = case['data']
-            robot_sn = callback_data['sn']
+            callback_type = case["callback_type"]
+            callback_data = case["data"]
+            robot_sn = callback_data["sn"]
 
             print(f"  Testing notification for: {case['name']}")
 
@@ -68,7 +73,7 @@ class TestNotificationSender:
             # Validate notification content
             notification = sent_notifications[0]
             assert self.mock_service.validate_notification_format(notification)
-            assert notification['severity'] == case['expected_severity']
+            assert notification["severity"] == case["expected_severity"]
 
             print(f"  ✅ Notification validated for {case['name']}")
 
@@ -80,16 +85,16 @@ class TestNotificationSender:
 
         # Test different error types
         for category_name, cases in error_data.items():
-            if category_name == 'edge_cases':
+            if category_name == "edge_cases":
                 continue
 
             case = cases[0] if cases else None  # Test first case from each category
             if not case:
                 continue
 
-            callback_type = case['callback_type']
-            callback_data = case['data']
-            robot_sn = callback_data['sn']
+            callback_type = case["callback_type"]
+            callback_data = case["data"]
+            robot_sn = callback_data["sn"]
 
             print(f"  Testing error notification: {category_name}")
 
@@ -108,7 +113,7 @@ class TestNotificationSender:
             # Validate notification content
             notification = sent_notifications[0]
             assert self.mock_service.validate_notification_format(notification)
-            assert notification['severity'] == case['expected_severity']
+            assert notification["severity"] == case["expected_severity"]
 
             print(f"  ✅ Error notification validated for {category_name}")
 
@@ -119,11 +124,11 @@ class TestNotificationSender:
         power_data = self.test_data.get_robot_power_data()
 
         # Test low battery alerts
-        low_battery_cases = power_data.get('low_battery_alerts', [])
+        low_battery_cases = power_data.get("low_battery_alerts", [])
         for case in low_battery_cases:
-            callback_type = case['callback_type']
-            callback_data = case['data']
-            robot_sn = callback_data['sn']
+            callback_type = case["callback_type"]
+            callback_data = case["data"]
+            robot_sn = callback_data["sn"]
 
             print(f"  Testing power notification: {case['name']}")
 
@@ -133,7 +138,7 @@ class TestNotificationSender:
             # Send notification
             success = self.sender.send_webhook_notification(callback_type, callback_data, self.mock_service)
 
-            if case.get('expected_notification', True):
+            if case.get("expected_notification", True):
                 # Should send notification
                 assert success == True
 
@@ -143,7 +148,7 @@ class TestNotificationSender:
                 # Validate notification content
                 notification = sent_notifications[0]
                 assert self.mock_service.validate_notification_format(notification)
-                assert notification['severity'] == case['expected_severity']
+                assert notification["severity"] == case["expected_severity"]
 
                 print(f"  ✅ Power notification validated for {case['name']}")
             else:
@@ -159,13 +164,13 @@ class TestNotificationSender:
         print("\n🧪 Testing robot pose notification skipping")
 
         pose_data = self.test_data.get_robot_pose_data()
-        normal_cases = pose_data.get('normal_positions', [])
+        normal_cases = pose_data.get("normal_positions", [])
 
         case = normal_cases[0] if normal_cases else None
         if case:
-            callback_type = case['callback_type']
-            callback_data = case['data']
-            robot_sn = callback_data['sn']
+            callback_type = case["callback_type"]
+            callback_data = case["data"]
+            robot_sn = callback_data["sn"]
 
             # Clear previous notifications
             self.mock_service.clear_notifications()
@@ -186,63 +191,60 @@ class TestNotificationSender:
         print("\n🧪 Testing notification content generation")
 
         # Test robot status content
-        status_data = {'sn': 'TEST_ROBOT_CONTENT', 'run_status': 'ONLINE'}
-        title, content, severity, status = self.sender.generate_webhook_notification_content('robotStatus', status_data)
+        status_data = {"sn": "TEST_ROBOT_CONTENT", "run_status": "ONLINE"}
+        title, content, severity, status = self.sender.generate_webhook_notification_content("robotStatus", status_data)
 
         assert title is not None
         assert content is not None
         assert severity is not None
         assert status is not None
-        assert 'TEST_ROBOT_CONTENT' in content
+        assert "TEST_ROBOT_CONTENT" in content
         print("  ✅ Robot status content generation works")
 
         # Test robot error content
         error_data = {
-            'sn': 'TEST_ROBOT_ERROR',
-            'error_level': 'ERROR',
-            'error_type': 'TestError',
-            'error_detail': 'Test error detail',
-            'error_id': 'test_001'
+            "sn": "TEST_ROBOT_ERROR",
+            "error_level": "ERROR",
+            "error_type": "TestError",
+            "error_detail": "Test error detail",
+            "error_id": "test_001",
         }
-        title, content, severity, status = self.sender.generate_webhook_notification_content('robotErrorWarning', error_data)
+        title, content, severity, status = self.sender.generate_webhook_notification_content("robotErrorWarning", error_data)
 
         assert title is not None
         assert content is not None
-        assert severity == 'error'
-        assert 'TEST_ROBOT_ERROR' in content
+        assert severity == "error"
+        assert "TEST_ROBOT_ERROR" in content
         print("  ✅ Robot error content generation works")
 
         # Test robot power content
-        power_data = {'sn': 'TEST_ROBOT_POWER', 'power': 4, 'charge_state': 'discharging'}
-        title, content, severity, status = self.sender.generate_webhook_notification_content('notifyRobotPower', power_data)
+        power_data = {"sn": "TEST_ROBOT_POWER", "power": 4, "charge_state": "discharging"}
+        title, content, severity, status = self.sender.generate_webhook_notification_content("notifyRobotPower", power_data)
 
         assert title is not None
         assert content is not None
-        assert severity == 'fatal'  # Critical battery
-        assert 'TEST_ROBOT_POWER' in content
+        assert severity == "fatal"  # Critical battery
+        assert "TEST_ROBOT_POWER" in content
         print("  ✅ Robot power content generation works")
 
     def test_severity_mapping(self):
         """Test severity level mapping"""
         print("\n🧪 Testing severity level mapping")
 
-        severity_tests = [
-            ('FATAL', 'fatal'),
-            ('ERROR', 'error'),
-            ('WARNING', 'warning'),
-            ('INFO', 'event')
-        ]
+        severity_tests = [("FATAL", "fatal"), ("ERROR", "error"), ("WARNING", "warning"), ("INFO", "event")]
 
         for input_level, expected_severity in severity_tests:
             error_data = {
-                'sn': 'TEST_ROBOT_SEVERITY',
-                'error_level': input_level,
-                'error_type': 'TestError',
-                'error_detail': f'Testing {input_level}',
-                'error_id': f'test_{input_level.lower()}'
+                "sn": "TEST_ROBOT_SEVERITY",
+                "error_level": input_level,
+                "error_type": "TestError",
+                "error_detail": f"Testing {input_level}",
+                "error_id": f"test_{input_level.lower()}",
             }
 
-            title, content, severity, status = self.sender.generate_webhook_notification_content('robotErrorWarning', error_data)
+            title, content, severity, status = self.sender.generate_webhook_notification_content(
+                "robotErrorWarning", error_data
+            )
 
             assert severity == expected_severity
             print(f"  ✅ {input_level} -> {expected_severity} mapping correct")
@@ -252,20 +254,18 @@ class TestNotificationSender:
         print("\n🧪 Testing battery threshold notifications")
 
         battery_tests = [
-            (3, 'fatal'),    # Critical
-            (8, 'error'),    # Low
-            (15, 'warning'), # Warning
-            (50, None)       # Normal (no notification)
+            (3, "fatal"),  # Critical
+            (8, "error"),  # Low
+            (15, "warning"),  # Warning
+            (50, None),  # Normal (no notification)
         ]
 
         for battery_level, expected_severity in battery_tests:
-            power_data = {
-                'sn': f'TEST_ROBOT_BATTERY_{battery_level}',
-                'power': battery_level,
-                'charge_state': 'discharging'
-            }
+            power_data = {"sn": f"TEST_ROBOT_BATTERY_{battery_level}", "power": battery_level, "charge_state": "discharging"}
 
-            title, content, severity, status = self.sender.generate_webhook_notification_content('notifyRobotPower', power_data)
+            title, content, severity, status = self.sender.generate_webhook_notification_content(
+                "notifyRobotPower", power_data
+            )
 
             if expected_severity:
                 assert severity == expected_severity
@@ -286,7 +286,7 @@ class TestNotificationSender:
         # Verify connection attempts were logged
         attempts = self.mock_service.connection_attempts
         assert len(attempts) > 0
-        assert attempts[-1]['success'] == True
+        assert attempts[-1]["success"] == True
         print("  ✅ Connection attempts properly logged")
 
     def test_notification_format_validation(self):
@@ -295,12 +295,12 @@ class TestNotificationSender:
 
         # Valid notification
         valid_notification = {
-            'robot_id': 'TEST_ROBOT',
-            'notification_type': 'robot_status',
-            'title': 'Test Title',
-            'content': 'Test Content',
-            'severity': 'success',
-            'status': 'online'
+            "robot_id": "TEST_ROBOT",
+            "notification_type": "robot_status",
+            "title": "Test Title",
+            "content": "Test Content",
+            "severity": "success",
+            "status": "online",
         }
 
         assert self.mock_service.validate_notification_format(valid_notification) == True
@@ -308,8 +308,8 @@ class TestNotificationSender:
 
         # Invalid notification (missing field)
         invalid_notification = {
-            'robot_id': 'TEST_ROBOT',
-            'title': 'Test Title',
+            "robot_id": "TEST_ROBOT",
+            "title": "Test Title",
             # Missing required fields
         }
 
@@ -318,28 +318,29 @@ class TestNotificationSender:
 
         # Invalid severity
         invalid_severity = {
-            'robot_id': 'TEST_ROBOT',
-            'notification_type': 'robot_status',
-            'title': 'Test Title',
-            'content': 'Test Content',
-            'severity': 'invalid_severity',
-            'status': 'online'
+            "robot_id": "TEST_ROBOT",
+            "notification_type": "robot_status",
+            "title": "Test Title",
+            "content": "Test Content",
+            "severity": "invalid_severity",
+            "status": "online",
         }
 
         assert self.mock_service.validate_notification_format(invalid_severity) == False
         print("  ✅ Invalid severity rejected")
+
 
 # Test runner function
 def run_notification_tests():
     """Run all notification sender tests"""
     setup_test_logging("INFO")
 
-    print("="*60)
+    print("=" * 60)
     print("RUNNING NOTIFICATION SENDER TESTS")
-    print("="*60)
+    print("=" * 60)
 
     test_instance = TestNotificationSender()
-    test_methods = [method for method in dir(test_instance) if method.startswith('test_')]
+    test_methods = [method for method in dir(test_instance) if method.startswith("test_")]
 
     total_tests = 0
     passed_tests = 0
@@ -355,6 +356,7 @@ def run_notification_tests():
         except Exception as e:
             print(f"❌ {method_name} - FAILED: {e}")
             import traceback
+
             traceback.print_exc()
         finally:
             # Print notification summary after each test
@@ -368,6 +370,7 @@ def run_notification_tests():
     print(f"Failed: {total_tests - passed_tests}")
     print(f"Success rate: {(passed_tests/total_tests*100):.1f}%" if total_tests > 0 else "No tests")
     print(f"{'='*60}")
+
 
 if __name__ == "__main__":
     run_notification_tests()
