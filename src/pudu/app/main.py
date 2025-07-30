@@ -245,8 +245,6 @@ class App:
             'total_failed_inserts': 0,
             'total_successful_notifications': 0,
             'total_failed_notifications': 0,
-            'data_types_processed': 0,
-            'data_types_failed': 0
         }
 
         try:
@@ -289,9 +287,6 @@ class App:
             successful, failed, changes = insert_to_databases_with_change_detection(task_data, self.task_tables, 'robot_task')
             pipeline_stats['total_successful_inserts'] += successful
             pipeline_stats['total_failed_inserts'] += failed
-            pipeline_stats['data_types_processed'] += 1
-            if successful == 0 and len(self.task_tables) > 0:
-                pipeline_stats['data_types_failed'] += 1
 
             # Send notifications only for actual changes
             if successful > 0 and changes:
@@ -310,9 +305,6 @@ class App:
             # successful, failed, changes = insert_to_databases_with_change_detection(task_overview_data, self.task_overview_tables, 'robot_task_overview')
             # pipeline_stats['total_successful_inserts'] += successful
             # pipeline_stats['total_failed_inserts'] += failed
-            # pipeline_stats['data_types_processed'] += 1
-            # if successful == 0 and len(self.task_overview_tables) > 0:
-            #     pipeline_stats['data_types_failed'] += 1
 
             # Fetch and insert charging data
             logger.info("=" * 50)
@@ -321,9 +313,6 @@ class App:
             successful, failed, changes = insert_to_databases_with_change_detection(charging_data, self.charging_tables, 'robot_charging')
             pipeline_stats['total_successful_inserts'] += successful
             pipeline_stats['total_failed_inserts'] += failed
-            pipeline_stats['data_types_processed'] += 1
-            if successful == 0 and len(self.charging_tables) > 0:
-                pipeline_stats['data_types_failed'] += 1
 
             # Send notifications only for actual changes
             if successful > 0 and changes:
@@ -341,9 +330,6 @@ class App:
             successful, failed, changes = insert_to_databases_with_change_detection(event_data, self.event_tables, 'robot_events')
             pipeline_stats['total_successful_inserts'] += successful
             pipeline_stats['total_failed_inserts'] += failed
-            pipeline_stats['data_types_processed'] += 1
-            if successful == 0 and len(self.event_tables) > 0:
-                pipeline_stats['data_types_failed'] += 1
 
             # Send notifications only for actual changes
             if successful > 0 and changes:
@@ -367,8 +353,6 @@ class App:
             logger.info(f"❌ Total failed inserts: {pipeline_stats['total_failed_inserts']}")
             logger.info(f"📧 Total successful notifications: {pipeline_stats['total_successful_notifications']}")
             logger.info(f"📧 Total failed notifications: {pipeline_stats['total_failed_notifications']}")
-            logger.info(f"📊 Data types processed: {pipeline_stats['data_types_processed']}")
-            logger.info(f"⚠️  Data types with all failures: {pipeline_stats['data_types_failed']}")
 
             if pipeline_stats['total_successful_inserts'] > 0 and pipeline_stats['total_failed_inserts'] == 0:
                 logger.info("✅ Data pipeline completed successfully with all successful inserts")
