@@ -1,0 +1,271 @@
+{
+    "navigation_errors": [
+      {
+        "name": "lost_localization_fatal",
+        "callback_type": "robotErrorWarning",
+        "data": {
+          "sn": "PUDU_NAV_001",
+          "error_level": "FATAL",
+          "error_type": "LostLocalization",
+          "error_detail": "SensorMalfunction",
+          "error_id": "nav_fatal_001",
+          "timestamp": 1640995800
+        },
+        "expected_severity": "fatal"
+      },
+      {
+        "name": "lost_localization_error",
+        "callback_type": "robotErrorWarning",
+        "data": {
+          "sn": "PUDU_NAV_002",
+          "error_level": "ERROR",
+          "error_type": "LostLocalization",
+          "error_detail": "OdomSlip",
+          "error_id": "nav_error_001",
+          "timestamp": 1640995900
+        },
+        "expected_severity": "error"
+      },
+      {
+        "name": "lost_localization_warning",
+        "callback_type": "robotErrorWarning",
+        "data": {
+          "sn": "PUDU_NAV_003",
+          "error_level": "WARNING",
+          "error_type": "LostLocalization",
+          "error_detail": "TemporarySignalLoss",
+          "error_id": "nav_warn_001",
+          "timestamp": 1640996000
+        },
+        "expected_severity": "warning"
+      },
+      {
+        "name": "lost_localization_info",
+        "callback_type": "robotErrorWarning",
+        "data": {
+          "sn": "PUDU_NAV_004",
+          "error_level": "INFO",
+          "error_type": "LostLocalization",
+          "error_detail": "RecoveringPosition",
+          "error_id": "nav_info_001",
+          "timestamp": 1640996100
+        },
+        "expected_severity": "event"
+      }
+    ],
+    "hardware_errors": [
+      {
+        "name": "motor_fault_fatal",
+        "callback_type": "robotErrorWarning",
+        "data": {
+          "sn": "PUDU_HW_001",
+          "error_level": "FATAL",
+          "error_type": "MotorFault",
+          "error_detail": "DriveMotorOverheat",
+          "error_id": "hw_fatal_001",
+          "timestamp": 1640996200
+        },
+        "expected_severity": "fatal"
+      },
+      {
+        "name": "motor_fault_error",
+        "callback_type": "robotErrorWarning",
+        "data": {
+          "sn": "PUDU_HW_002",
+          "error_level": "ERROR",
+          "error_type": "MotorFault",
+          "error_detail": "EncoderFailure",
+          "error_id": "hw_error_001",
+          "timestamp": 1640996300
+        },
+        "expected_severity": "error"
+      },
+      {
+        "name": "motor_fault_warning",
+        "callback_type": "robotErrorWarning",
+        "data": {
+          "sn": "PUDU_HW_003",
+          "error_level": "WARNING",
+          "error_type": "MotorFault",
+          "error_detail": "HighCurrentDraw",
+          "error_id": "hw_warn_001",
+          "timestamp": 1640996400
+        },
+        "expected_severity": "warning"
+      },
+      {
+        "name": "motor_fault_info",
+        "callback_type": "robotErrorWarning",
+        "data": {
+          "sn": "PUDU_HW_004",
+          "error_level": "INFO",
+          "error_type": "MotorFault",
+          "error_detail": "PerformingDiagnostics",
+          "error_id": "hw_info_001",
+          "timestamp": 1640996500
+        },
+        "expected_severity": "event"
+      }
+    ],
+    "sensor_errors": [
+      {
+        "name": "sensor_failure_fatal",
+        "callback_type": "robotErrorWarning",
+        "data": {
+          "sn": "PUDU_SENSOR_001",
+          "error_level": "FATAL",
+          "error_type": "SensorFailure",
+          "error_detail": "LidarTotalFailure",
+          "error_id": "sensor_fatal_001",
+          "timestamp": 1640996600
+        },
+        "expected_severity": "fatal"
+      },
+      {
+        "name": "sensor_failure_error",
+        "callback_type": "robotErrorWarning",
+        "data": {
+          "sn": "PUDU_SENSOR_002",
+          "error_level": "ERROR",
+          "error_type": "SensorFailure",
+          "error_detail": "CameraDisconnected",
+          "error_id": "sensor_error_001",
+          "timestamp": 1640996700
+        },
+        "expected_severity": "error"
+      },
+      {
+        "name": "sensor_failure_warning",
+        "callback_type": "robotErrorWarning",
+        "data": {
+          "sn": "PUDU_SENSOR_003",
+          "error_level": "WARNING",
+          "error_type": "SensorFailure",
+          "error_detail": "UltrasonicNoisy",
+          "error_id": "sensor_warn_001",
+          "timestamp": 1640996800
+        },
+        "expected_severity": "warning"
+      },
+      {
+        "name": "sensor_failure_info",
+        "callback_type": "robotErrorWarning",
+        "data": {
+          "sn": "PUDU_SENSOR_004",
+          "error_level": "INFO",
+          "error_type": "SensorFailure",
+          "error_detail": "CalibrationRequired",
+          "error_id": "sensor_info_001",
+          "timestamp": 1640996900
+        },
+        "expected_severity": "event"
+      }
+    ],
+    "cleaning_errors": [
+      {
+        "name": "cleaning_system_fatal",
+        "callback_type": "robotErrorWarning",
+        "data": {
+          "sn": "PUDU_CLEAN_001",
+          "error_level": "FATAL",
+          "error_type": "CleaningSystemFault",
+          "error_detail": "BrushMotorBurned",
+          "error_id": "clean_fatal_001",
+          "timestamp": 1640997000
+        },
+        "expected_severity": "fatal"
+      },
+      {
+        "name": "cleaning_system_error",
+        "callback_type": "robotErrorWarning",
+        "data": {
+          "sn": "PUDU_CLEAN_002",
+          "error_level": "ERROR",
+          "error_type": "CleaningSystemFault",
+          "error_detail": "VacuumBlockage",
+          "error_id": "clean_error_001",
+          "timestamp": 1640997100
+        },
+        "expected_severity": "error"
+      },
+      {
+        "name": "cleaning_system_warning",
+        "callback_type": "robotErrorWarning",
+        "data": {
+          "sn": "PUDU_CLEAN_003",
+          "error_level": "WARNING",
+          "error_type": "CleaningSystemFault",
+          "error_detail": "DustBinFull",
+          "error_id": "clean_warn_001",
+          "timestamp": 1640997200
+        },
+        "expected_severity": "warning"
+      },
+      {
+        "name": "cleaning_system_info",
+        "callback_type": "robotErrorWarning",
+        "data": {
+          "sn": "PUDU_CLEAN_004",
+          "error_level": "INFO",
+          "error_type": "CleaningSystemFault",
+          "error_detail": "MaintenanceReminder",
+          "error_id": "clean_info_001",
+          "timestamp": 1640997300
+        },
+        "expected_severity": "event"
+      }
+    ],
+    "edge_cases": [
+      {
+        "name": "missing_error_level",
+        "callback_type": "robotErrorWarning",
+        "data": {
+          "sn": "PUDU_EDGE_001",
+          "error_type": "UnknownError",
+          "error_detail": "TestError",
+          "error_id": "edge_001",
+          "timestamp": 1640997400
+        },
+        "expected_severity": "event"
+      },
+      {
+        "name": "empty_error_type",
+        "callback_type": "robotErrorWarning",
+        "data": {
+          "sn": "PUDU_EDGE_002",
+          "error_level": "ERROR",
+          "error_type": "",
+          "error_detail": "EmptyErrorType",
+          "error_id": "edge_002",
+          "timestamp": 1640997500
+        },
+        "expected_severity": "error"
+      },
+      {
+        "name": "special_characters_in_detail",
+        "callback_type": "robotErrorWarning",
+        "data": {
+          "sn": "PUDU_EDGE_003",
+          "error_level": "WARNING",
+          "error_type": "TestError",
+          "error_detail": "Special chars: !@#$%^&*()_+{}|:<>?[]\\;'\".,/",
+          "error_id": "edge_003",
+          "timestamp": 1640997600
+        },
+        "expected_severity": "warning"
+      },
+      {
+        "name": "very_long_error_detail",
+        "callback_type": "robotErrorWarning",
+        "data": {
+          "sn": "PUDU_EDGE_004",
+          "error_level": "INFO",
+          "error_type": "VerboseError",
+          "error_detail": "This is a very long error detail message that might exceed normal database field lengths and should be handled properly by the system without causing truncation or other issues in the processing pipeline",
+          "error_id": "edge_004",
+          "timestamp": 1640997700
+        },
+        "expected_severity": "event"
+      }
+    ]
+  }

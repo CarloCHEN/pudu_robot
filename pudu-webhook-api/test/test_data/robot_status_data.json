@@ -1,0 +1,157 @@
+{
+    "valid_status_changes": [
+      {
+        "name": "robot_comes_online",
+        "callback_type": "robotStatus",
+        "data": {
+          "sn": "PUDU_TEST_001",
+          "run_status": "ONLINE",
+          "timestamp": 1640995800
+        },
+        "expected_status": "online",
+        "expected_severity": "success"
+      },
+      {
+        "name": "robot_goes_offline",
+        "callback_type": "robotStatus",
+        "data": {
+          "sn": "PUDU_TEST_002",
+          "run_status": "OFFLINE",
+          "timestamp": 1640995900
+        },
+        "expected_status": "offline",
+        "expected_severity": "error"
+      },
+      {
+        "name": "robot_starts_working",
+        "callback_type": "robotStatus",
+        "data": {
+          "sn": "PUDU_TEST_003",
+          "run_status": "WORKING",
+          "timestamp": 1640996000
+        },
+        "expected_status": "working",
+        "expected_severity": "success"
+      },
+      {
+        "name": "robot_starts_cleaning",
+        "callback_type": "robotStatus",
+        "data": {
+          "sn": "PUDU_TEST_004",
+          "run_status": "CLEANING",
+          "timestamp": 1640996100
+        },
+        "expected_status": "working",
+        "expected_severity": "success"
+      },
+      {
+        "name": "robot_becomes_idle",
+        "callback_type": "robotStatus",
+        "data": {
+          "sn": "PUDU_TEST_005",
+          "run_status": "IDLE",
+          "timestamp": 1640996200
+        },
+        "expected_status": "idle",
+        "expected_severity": "event"
+      },
+      {
+        "name": "robot_starts_charging",
+        "callback_type": "robotStatus",
+        "data": {
+          "sn": "PUDU_TEST_006",
+          "run_status": "CHARGING",
+          "timestamp": 1640996300
+        },
+        "expected_status": "charging",
+        "expected_severity": "event"
+      },
+      {
+        "name": "robot_error_state",
+        "callback_type": "robotStatus",
+        "data": {
+          "sn": "PUDU_TEST_007",
+          "run_status": "ERROR",
+          "timestamp": 1640996400
+        },
+        "expected_status": "error",
+        "expected_severity": "error"
+      },
+      {
+        "name": "robot_maintenance_mode",
+        "callback_type": "robotStatus",
+        "data": {
+          "sn": "PUDU_TEST_008",
+          "run_status": "MAINTENANCE",
+          "timestamp": 1640996500
+        },
+        "expected_status": "maintenance",
+        "expected_severity": "event"
+      }
+    ],
+    "edge_cases": [
+      {
+        "name": "unknown_status",
+        "callback_type": "robotStatus",
+        "data": {
+          "sn": "PUDU_TEST_EDGE_001",
+          "run_status": "UNKNOWN_STATUS",
+          "timestamp": 1640996600
+        },
+        "expected_status": "offline",
+        "expected_severity": "event"
+      },
+      {
+        "name": "empty_status",
+        "callback_type": "robotStatus",
+        "data": {
+          "sn": "PUDU_TEST_EDGE_002",
+          "run_status": "",
+          "timestamp": 1640996700
+        },
+        "expected_status": "offline",
+        "expected_severity": "event"
+      },
+      {
+        "name": "case_insensitive_status",
+        "callback_type": "robotStatus",
+        "data": {
+          "sn": "PUDU_TEST_EDGE_003",
+          "run_status": "online",
+          "timestamp": 1640996800
+        },
+        "expected_status": "online",
+        "expected_severity": "success"
+      },
+      {
+        "name": "missing_timestamp",
+        "callback_type": "robotStatus",
+        "data": {
+          "sn": "PUDU_TEST_EDGE_004",
+          "run_status": "ONLINE"
+        },
+        "expected_status": "online",
+        "expected_severity": "success"
+      }
+    ],
+    "invalid_cases": [
+      {
+        "name": "missing_sn",
+        "callback_type": "robotStatus",
+        "data": {
+          "run_status": "ONLINE",
+          "timestamp": 1640996900
+        },
+        "expected_error": true
+      },
+      {
+        "name": "missing_run_status",
+        "callback_type": "robotStatus",
+        "data": {
+          "sn": "PUDU_TEST_INVALID_001",
+          "timestamp": 1640997000
+        },
+        "expected_error": true
+      }
+    ]
+  }

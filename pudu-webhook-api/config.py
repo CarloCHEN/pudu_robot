@@ -1,5 +1,7 @@
 import os
 from typing import Dict, Any
+from dotenv import load_dotenv
+load_dotenv()
 
 class Config:
     """Configuration class for the Pudu callback API"""
@@ -7,7 +9,7 @@ class Config:
     # Server configuration
     HOST = os.getenv('HOST', '0.0.0.0')
     PORT = int(os.getenv('PORT', 8000))
-    DEBUG = os.getenv('DEBUG', 'False').lower() == 'false'
+    DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
 
     # Pudu configuration
     PUDU_CALLBACK_CODE = os.getenv('PUDU_CALLBACK_CODE', '')

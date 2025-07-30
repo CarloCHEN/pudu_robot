@@ -1,0 +1,273 @@
+{
+    "normal_power_levels": [
+      {
+        "name": "full_battery",
+        "callback_type": "notifyRobotPower",
+        "data": {
+          "sn": "PUDU_POWER_001",
+          "mac": "B0:0C:9D:59:16:F1",
+          "power": 100,
+          "charge_state": "full",
+          "timestamp": 1640995800
+        },
+        "expected_notification": true,
+        "expected_severity": "success"
+      },
+      {
+        "name": "high_battery",
+        "callback_type": "notifyRobotPower",
+        "data": {
+          "sn": "PUDU_POWER_002",
+          "mac": "B0:0C:9D:59:16:F2",
+          "power": 85,
+          "charge_state": "discharging",
+          "timestamp": 1640995900
+        },
+        "expected_notification": false
+      },
+      {
+        "name": "medium_battery",
+        "callback_type": "notifyRobotPower",
+        "data": {
+          "sn": "PUDU_POWER_003",
+          "mac": "B0:0C:9D:59:16:F3",
+          "power": 50,
+          "charge_state": "discharging",
+          "timestamp": 1640996000
+        },
+        "expected_notification": false
+      },
+      {
+        "name": "charging_normal",
+        "callback_type": "notifyRobotPower",
+        "data": {
+          "sn": "PUDU_POWER_004",
+          "mac": "B0:0C:9D:59:16:F4",
+          "power": 75,
+          "charge_state": "charging",
+          "timestamp": 1640996100
+        },
+        "expected_notification": false
+      }
+    ],
+    "low_battery_alerts": [
+      {
+        "name": "critical_battery_alert",
+        "callback_type": "notifyRobotPower",
+        "data": {
+          "sn": "PUDU_POWER_CRITICAL_001",
+          "mac": "B0:0C:9D:59:16:F5",
+          "power": 3,
+          "charge_state": "discharging",
+          "timestamp": 1640996200
+        },
+        "expected_notification": true,
+        "expected_severity": "fatal"
+      },
+      {
+        "name": "critical_battery_below_5",
+        "callback_type": "notifyRobotPower",
+        "data": {
+          "sn": "PUDU_POWER_CRITICAL_002",
+          "mac": "B0:0C:9D:59:16:F6",
+          "power": 1,
+          "charge_state": "discharging",
+          "timestamp": 1640996250
+        },
+        "expected_notification": true,
+        "expected_severity": "fatal"
+      },
+      {
+        "name": "low_battery_alert",
+        "callback_type": "notifyRobotPower",
+        "data": {
+          "sn": "PUDU_POWER_LOW_001",
+          "mac": "B0:0C:9D:59:16:F7",
+          "power": 8,
+          "charge_state": "discharging",
+          "timestamp": 1640996300
+        },
+        "expected_notification": true,
+        "expected_severity": "error"
+      },
+      {
+        "name": "warning_battery_level",
+        "callback_type": "notifyRobotPower",
+        "data": {
+          "sn": "PUDU_POWER_WARN_001",
+          "mac": "B0:0C:9D:59:16:F8",
+          "power": 15,
+          "charge_state": "discharging",
+          "timestamp": 1640996400
+        },
+        "expected_notification": true,
+        "expected_severity": "warning"
+      },
+      {
+        "name": "boundary_low_battery",
+        "callback_type": "notifyRobotPower",
+        "data": {
+          "sn": "PUDU_POWER_BOUNDARY_001",
+          "mac": "B0:0C:9D:59:16:F9",
+          "power": 19.9,
+          "charge_state": "discharging",
+          "timestamp": 1640996500
+        },
+        "expected_notification": true,
+        "expected_severity": "warning"
+      }
+    ],
+    "charging_scenarios": [
+      {
+        "name": "charging_from_critical",
+        "callback_type": "notifyRobotPower",
+        "data": {
+          "sn": "PUDU_POWER_CHARGE_001",
+          "mac": "B0:0C:9D:59:16:FA",
+          "power": 5,
+          "charge_state": "charging",
+          "timestamp": 1640996600
+        },
+        "expected_notification": false,
+        "note": "No notification when charging at low level"
+      },
+      {
+        "name": "charging_complete",
+        "callback_type": "notifyRobotPower",
+        "data": {
+          "sn": "PUDU_POWER_CHARGE_002",
+          "mac": "B0:0C:9D:59:16:FB",
+          "power": 100,
+          "charge_state": "charging",
+          "timestamp": 1640996700
+        },
+        "expected_notification": true,
+        "expected_severity": "success"
+      },
+      {
+        "name": "nearly_full_charging",
+        "callback_type": "notifyRobotPower",
+        "data": {
+          "sn": "PUDU_POWER_CHARGE_003",
+          "mac": "B0:0C:9D:59:16:FC",
+          "power": 95,
+          "charge_state": "charging",
+          "timestamp": 1640996800
+        },
+        "expected_notification": true,
+        "expected_severity": "success"
+      },
+      {
+        "name": "charging_stopped",
+        "callback_type": "notifyRobotPower",
+        "data": {
+          "sn": "PUDU_POWER_CHARGE_004",
+          "mac": "B0:0C:9D:59:16:FD",
+          "power": 80,
+          "charge_state": "disconnected",
+          "timestamp": 1640996900
+        },
+        "expected_notification": false
+      }
+    ],
+    "edge_cases": [
+      {
+        "name": "zero_battery",
+        "callback_type": "notifyRobotPower",
+        "data": {
+          "sn": "PUDU_POWER_EDGE_001",
+          "mac": "B0:0C:9D:59:16:FE",
+          "power": 0,
+          "charge_state": "critical",
+          "timestamp": 1640997000
+        },
+        "expected_notification": true,
+        "expected_severity": "fatal"
+      },
+      {
+        "name": "over_100_battery",
+        "callback_type": "notifyRobotPower",
+        "data": {
+          "sn": "PUDU_POWER_EDGE_002",
+          "mac": "B0:0C:9D:59:16:FF",
+          "power": 105,
+          "charge_state": "overcharge",
+          "timestamp": 1640997100
+        },
+        "expected_notification": false,
+        "note": "Invalid battery level should be handled gracefully"
+      },
+      {
+        "name": "negative_battery",
+        "callback_type": "notifyRobotPower",
+        "data": {
+          "sn": "PUDU_POWER_EDGE_003",
+          "mac": "B0:0C:9D:59:17:00",
+          "power": -5,
+          "charge_state": "error",
+          "timestamp": 1640997200
+        },
+        "expected_notification": false,
+        "note": "Invalid negative battery level"
+      },
+      {
+        "name": "missing_power_level",
+        "callback_type": "notifyRobotPower",
+        "data": {
+          "sn": "PUDU_POWER_EDGE_004",
+          "mac": "B0:0C:9D:59:17:01",
+          "charge_state": "unknown",
+          "timestamp": 1640997300
+        },
+        "expected_notification": false
+      },
+      {
+        "name": "string_power_level",
+        "callback_type": "notifyRobotPower",
+        "data": {
+          "sn": "PUDU_POWER_EDGE_005",
+          "mac": "B0:0C:9D:59:17:02",
+          "power": "75",
+          "charge_state": "discharging",
+          "timestamp": 1640997400
+        },
+        "expected_notification": false,
+        "note": "String power level should be handled"
+      },
+      {
+        "name": "null_power_level",
+        "callback_type": "notifyRobotPower",
+        "data": {
+          "sn": "PUDU_POWER_EDGE_006",
+          "mac": "B0:0C:9D:59:17:03",
+          "power": null,
+          "charge_state": "unknown",
+          "timestamp": 1640997500
+        },
+        "expected_notification": false
+      },
+      {
+        "name": "empty_charge_state",
+        "callback_type": "notifyRobotPower",
+        "data": {
+          "sn": "PUDU_POWER_EDGE_007",
+          "mac": "B0:0C:9D:59:17:04",
+          "power": 50,
+          "charge_state": "",
+          "timestamp": 1640997600
+        },
+        "expected_notification": false
+      },
+      {
+        "name": "missing_mac_address",
+        "callback_type": "notifyRobotPower",
+        "data": {
+          "sn": "PUDU_POWER_EDGE_008",
+          "power": 60,
+          "charge_state": "discharging",
+          "timestamp": 1640997700
+        },
+        "expected_notification": false
+      }
+    ]
+  }

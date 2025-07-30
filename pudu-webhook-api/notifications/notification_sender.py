@@ -171,7 +171,7 @@ def handle_robot_status_notification(robot_sn: str, data: dict) -> Tuple[str, st
 
 def handle_robot_error_notification(robot_sn: str, data: dict) -> Tuple[str, str, str, str]:
     """Handle robot error/warning notifications"""
-    error_level = data.get('error_level', 'INFO').upper()
+    error_level = data.get('error_level', 'EVENT').upper()
     error_type = data.get('error_type', 'Unknown Error')
     error_detail = data.get('error_detail', '')
 
@@ -181,22 +181,22 @@ def handle_robot_error_notification(robot_sn: str, data: dict) -> Tuple[str, str
 
     title = readable_error_type
 
-    if error_level == 'FATAL':
+    if 'FATAL' in error_level:
         content = f"Robot: {robot_sn}; FATAL: {readable_error_type} - {readable_error_detail}"
         severity = SEVERITY_LEVELS['fatal']
         status = STATUS_TAGS['failed']
 
-    elif error_level == 'ERROR':
+    elif 'ERROR' in error_level:
         content = f"Robot: {robot_sn}; ERROR: {readable_error_type} - {readable_error_detail}"
         severity = SEVERITY_LEVELS['error']
         status = STATUS_TAGS['abnormal']
 
-    elif error_level == 'WARNING':
+    elif 'WARNING' in error_level:
         content = f"Robot: {robot_sn}; WARNING: {readable_error_type} - {readable_error_detail}"
         severity = SEVERITY_LEVELS['warning']
         status = STATUS_TAGS['warning']
 
-    else:  # INFO or other
+    else:  # EVENT or other
         content = f"Robot: {robot_sn}; EVENT: {readable_error_type} - {readable_error_detail}"
         severity = SEVERITY_LEVELS['event']
         status = STATUS_TAGS['normal']

@@ -1,18 +1,13 @@
 from flask import Flask, request, jsonify
 import logging
 import json
-import time
+from werkzeug.exceptions import BadRequest
 from datetime import datetime
-from dotenv import load_dotenv
-
 from callback_handler import CallbackHandler
 from models import CallbackResponse, CallbackStatus
 from config import Config
 from database_writer import DatabaseWriter
 from notifications import NotificationService, send_webhook_notification
-
-# Load environment variables
-load_dotenv()
 
 # Configure logging
 logging.basicConfig(
@@ -65,7 +60,14 @@ def pudu_webhook():
             ).to_dict()), 400
 
         # Parse JSON body
-        data = request.get_json()
+        try:
+            data = request.get_json()
+        except BadRequest:
+            logger.error("Malformed JSON received")
+            return jsonify(CallbackResponse(
+                status=CallbackStatus.ERROR,
+                message="Malformed JSON"
+            ).to_dict()), 400
         logger.info(f"Callback data: {json.dumps(data, indent=2)}")
 
         # Lowercase all headers for consistent access
@@ -108,20 +110,18 @@ def pudu_webhook():
         # Write to database if writer is available
         if database_writer:
             try:
-                print(f"Writing to database: {data}")
-                # callback_handler.write_to_database(data, database_writer)
+                callback_handler.write_to_database(data, database_writer)
             except Exception as e:
                 logger.error(f"Failed to write callback to database: {e}")
 
         # Send notification if service is available
         if notification_service:
             try:
-                print(f"Sending notification: {data}")
-                # send_webhook_notification(
-                #     callback_type=data.get('callback_type'),
-                #     callback_data=data.get('data', {}),
-                #     notification_service=notification_service
-                # )
+                send_webhook_notification(
+                    callback_type=data.get('callback_type'),
+                    callback_data=data.get('data', {}),
+                    notification_service=notification_service
+                )
             except Exception as e:
                 logger.error(f"Failed to send notification: {e}")
 
@@ -135,7 +135,7 @@ def pudu_webhook():
             message=f"Internal server error: {str(e)}"
         ).to_dict()), 500
 
-# curl -X GET "http://10.0.0.204:8000/api/pudu/webhook/health"
+# curl -X GET "http://34.230.84.10:8000/api/pudu/webhook/health"
 @app.route('/api/pudu/webhook/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
@@ -148,7 +148,7 @@ def health_check():
     })
 
 if __name__ == '__main__':
-    logger.info("Starting Pudu Callback API Server...")
+    logger.info("Starting Pudu Robot Callback API Server...")
     logger.info(f"Notification service: {'✅ Enabled' if notification_service else '❌ Disabled'}")
     logger.info(f"Database writer: {'✅ Enabled' if database_writer else '❌ Disabled'}")
     app.run(host=Config.HOST, port=Config.PORT, debug=Config.DEBUG)

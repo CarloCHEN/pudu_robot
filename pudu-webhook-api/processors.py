@@ -28,6 +28,11 @@ class RobotStatusProcessor(BaseProcessor):
     """Processor for robot status callbacks"""
 
     def process(self, data: Dict[str, Any]) -> CallbackResponse:
+        if data is None or data == {}:
+            return CallbackResponse(
+                status=CallbackStatus.ERROR,
+                message="Invalid data"
+            )
         try:
             robot_info = self.extract_robot_info(data)
             status = data.get('run_status', '').lower()
@@ -166,6 +171,11 @@ class RobotPoseProcessor(BaseProcessor):
     """Processor for robot pose/position callbacks"""
 
     def process(self, data: Dict[str, Any]) -> CallbackResponse:
+        if data is None or data == {}:
+            return CallbackResponse(
+                status=CallbackStatus.ERROR,
+                message="Invalid data"
+            )
         try:
             robot_info = self.extract_robot_info(data)
 
@@ -217,15 +227,26 @@ class RobotPowerProcessor(BaseProcessor):
     """Processor for robot power/battery callbacks"""
 
     def process(self, data: Dict[str, Any]) -> CallbackResponse:
+        if data is None or data == {}:
+            return CallbackResponse(
+                status=CallbackStatus.ERROR,
+                message="Invalid data"
+            )
         try:
             robot_info = self.extract_robot_info(data)
+            # Extract power information
+            power_value = data.get('power', 0)
+            try:
+                power_value = int(power_value)
+            except (ValueError, TypeError):
+                power_value = 0  # Fallback if conversion fails
 
             # Extract power information
             power_info = PowerInfo(
                 robot_sn=data.get('sn', ''),
                 robot_mac=data.get('mac', ''),
                 charge_state=data.get('charge_state', '').lower().strip(),
-                power=data.get('power', 0),
+                power=power_value,
                 timestamp=data.get('timestamp', int(time.time()))
             )
 
@@ -237,7 +258,7 @@ class RobotPowerProcessor(BaseProcessor):
                     self._handle_critical_battery(robot_info, power_info)
                 elif power_info.power <= 20 and power_info.charge_state != 'charging':
                     self._handle_low_battery(robot_info, power_info)
-                elif power_info.battery_level >= 95 and power_info.is_charging:
+                elif power_info.power >= 95 and power_info.charge_state == 'charging':
                     self._handle_battery_full(robot_info, power_info)
 
             return CallbackResponse(

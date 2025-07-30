@@ -1,0 +1,198 @@
+{
+    "normal_positions": [
+      {
+        "name": "origin_position",
+        "callback_type": "notifyRobotPose",
+        "data": {
+          "sn": "PUDU_POSE_001",
+          "mac": "B0:0C:9D:59:16:E1",
+          "x": 0.0,
+          "y": 0.0,
+          "yaw": 0.0,
+          "timestamp": 1640995800
+        }
+      },
+      {
+        "name": "typical_office_position",
+        "callback_type": "notifyRobotPose",
+        "data": {
+          "sn": "PUDU_POSE_002",
+          "mac": "B0:0C:9D:59:16:E2",
+          "x": 15.5,
+          "y": 8.2,
+          "yaw": 90.5,
+          "timestamp": 1640995900
+        }
+      },
+      {
+        "name": "corridor_position",
+        "callback_type": "notifyRobotPose",
+        "data": {
+          "sn": "PUDU_POSE_003",
+          "mac": "B0:0C:9D:59:16:E3",
+          "x": -5.7,
+          "y": 12.3,
+          "yaw": 180.0,
+          "timestamp": 1640996000
+        }
+      },
+      {
+        "name": "room_corner",
+        "callback_type": "notifyRobotPose",
+        "data": {
+          "sn": "PUDU_POSE_004",
+          "mac": "B0:0C:9D:59:16:E4",
+          "x": 25.8,
+          "y": -10.1,
+          "yaw": 270.75,
+          "timestamp": 1640996100
+        }
+      }
+    ],
+    "boundary_positions": [
+      {
+        "name": "large_positive_coordinates",
+        "callback_type": "notifyRobotPose",
+        "data": {
+          "sn": "PUDU_POSE_BOUNDARY_001",
+          "mac": "B0:0C:9D:59:16:E5",
+          "x": 999.99,
+          "y": 999.99,
+          "yaw": 359.99,
+          "timestamp": 1640996200
+        }
+      },
+      {
+        "name": "large_negative_coordinates",
+        "callback_type": "notifyRobotPose",
+        "data": {
+          "sn": "PUDU_POSE_BOUNDARY_002",
+          "mac": "B0:0C:9D:59:16:E6",
+          "x": -999.99,
+          "y": -999.99,
+          "yaw": -180.0,
+          "timestamp": 1640996300
+        }
+      },
+      {
+        "name": "full_rotation_positive",
+        "callback_type": "notifyRobotPose",
+        "data": {
+          "sn": "PUDU_POSE_BOUNDARY_003",
+          "mac": "B0:0C:9D:59:16:E7",
+          "x": 10.0,
+          "y": 10.0,
+          "yaw": 360.0,
+          "timestamp": 1640996400
+        }
+      },
+      {
+        "name": "full_rotation_negative",
+        "callback_type": "notifyRobotPose",
+        "data": {
+          "sn": "PUDU_POSE_BOUNDARY_004",
+          "mac": "B0:0C:9D:59:16:E8",
+          "x": 10.0,
+          "y": 10.0,
+          "yaw": -360.0,
+          "timestamp": 1640996500
+        }
+      }
+    ],
+    "precision_positions": [
+      {
+        "name": "high_precision_coordinates",
+        "callback_type": "notifyRobotPose",
+        "data": {
+          "sn": "PUDU_POSE_PRECISION_001",
+          "mac": "B0:0C:9D:59:16:E9",
+          "x": 12.123456789,
+          "y": -7.987654321,
+          "yaw": 45.123456789,
+          "timestamp": 1640996600
+        }
+      },
+      {
+        "name": "very_small_movement",
+        "callback_type": "notifyRobotPose",
+        "data": {
+          "sn": "PUDU_POSE_PRECISION_002",
+          "mac": "B0:0C:9D:59:16:EA",
+          "x": 0.001,
+          "y": 0.001,
+          "yaw": 0.001,
+          "timestamp": 1640996700
+        }
+      },
+      {
+        "name": "micro_adjustments",
+        "callback_type": "notifyRobotPose",
+        "data": {
+          "sn": "PUDU_POSE_PRECISION_003",
+          "mac": "B0:0C:9D:59:16:EB",
+          "x": 15.000001,
+          "y": 8.000001,
+          "yaw": 90.000001,
+          "timestamp": 1640996800
+        }
+      }
+    ],
+    "edge_cases": [
+      {
+        "name": "missing_mac_address",
+        "callback_type": "notifyRobotPose",
+        "data": {
+          "sn": "PUDU_POSE_EDGE_001",
+          "x": 10.0,
+          "y": 10.0,
+          "yaw": 45.0,
+          "timestamp": 1640996900
+        }
+      },
+      {
+        "name": "missing_coordinates",
+        "callback_type": "notifyRobotPose",
+        "data": {
+          "sn": "PUDU_POSE_EDGE_002",
+          "mac": "B0:0C:9D:59:16:EC",
+          "yaw": 45.0,
+          "timestamp": 1640997000
+        }
+      },
+      {
+        "name": "string_coordinates",
+        "callback_type": "notifyRobotPose",
+        "data": {
+          "sn": "PUDU_POSE_EDGE_003",
+          "mac": "B0:0C:9D:59:16:ED",
+          "x": "15.5",
+          "y": "8.2",
+          "yaw": "90.5",
+          "timestamp": 1640997100
+        }
+      },
+      {
+        "name": "null_values",
+        "callback_type": "notifyRobotPose",
+        "data": {
+          "sn": "PUDU_POSE_EDGE_004",
+          "mac": "B0:0C:9D:59:16:EE",
+          "x": null,
+          "y": null,
+          "yaw": null,
+          "timestamp": 1640997200
+        }
+      },
+      {
+        "name": "missing_timestamp",
+        "callback_type": "notifyRobotPose",
+        "data": {
+          "sn": "PUDU_POSE_EDGE_005",
+          "mac": "B0:0C:9D:59:16:EF",
+          "x": 10.0,
+          "y": 10.0,
+          "yaw": 45.0
+        }
+      }
+    ]
+  }

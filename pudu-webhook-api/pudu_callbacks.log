@@ -1,11 +1,40 @@
-2025-07-29 11:20:32,241 - __main__ - INFO - Database writer initialized successfully
-2025-07-29 11:20:32,242 - notifications.notification_service - INFO - Using environment variables for notification settings
-2025-07-29 11:20:32,242 - notifications.notification_service - INFO - NotificationService initialized with host: alb-streamnexus-demo...
-2025-07-29 11:20:32,242 - __main__ - INFO - Notification service initialized successfully
-2025-07-29 11:20:32,243 - __main__ - INFO - Starting Pudu Callback API Server...
-2025-07-29 11:20:32,243 - __main__ - INFO - Notification service: ✅ Enabled
-2025-07-29 11:20:32,243 - __main__ - INFO - Database writer: ✅ Enabled
-2025-07-29 11:20:32,266 - werkzeug - WARNING -  * Running on all addresses.
+2025-07-29 16:28:40,791 - __main__ - INFO - Database writer initialized successfully
+2025-07-29 16:28:40,791 - notifications.notification_service - INFO - Using environment variables for notification settings
+2025-07-29 16:28:40,791 - notifications.notification_service - INFO - NotificationService initialized with host: alb-streamnexus-demo...
+2025-07-29 16:28:40,791 - __main__ - INFO - Notification service initialized successfully
+2025-07-29 16:28:40,792 - __main__ - INFO - Starting Pudu Callback API Server...
+2025-07-29 16:28:40,792 - __main__ - INFO - Notification service: ✅ Enabled
+2025-07-29 16:28:40,792 - __main__ - INFO - Database writer: ✅ Enabled
+2025-07-29 16:28:40,800 - werkzeug - WARNING -  * Running on all addresses.
    WARNING: This is a development server. Do not use it in a production deployment.
-2025-07-29 11:20:32,267 - werkzeug - INFO -  * Running on http://10.0.0.204:8000/ (Press CTRL+C to quit)
-2025-07-29 11:20:52,463 - werkzeug - INFO - 10.0.0.204 - - [29/Jul/2025 11:20:52] "GET /api/pudu/webhook/health HTTP/1.1" 200 -
+2025-07-29 16:28:40,800 - werkzeug - INFO -  * Running on http://10.0.0.204:8000/ (Press CTRL+C to quit)
+2025-07-29 16:32:32,814 - __main__ - INFO - Database writer initialized successfully
+2025-07-29 16:32:32,815 - notifications.notification_service - INFO - Using environment variables for notification settings
+2025-07-29 16:32:32,815 - notifications.notification_service - INFO - NotificationService initialized with host: alb-streamnexus-demo...
+2025-07-29 16:32:32,815 - __main__ - INFO - Notification service initialized successfully
+2025-07-29 16:32:32,816 - __main__ - INFO - Starting Pudu Callback API Server...
+2025-07-29 16:32:32,816 - __main__ - INFO - Notification service: ✅ Enabled
+2025-07-29 16:32:32,816 - __main__ - INFO - Database writer: ✅ Enabled
+2025-07-29 16:32:32,820 - werkzeug - WARNING -  * Running on all addresses.
+   WARNING: This is a development server. Do not use it in a production deployment.
+2025-07-29 16:32:32,820 - werkzeug - INFO -  * Running on http://10.0.0.204:8000/ (Press CTRL+C to quit)
+2025-07-29 16:32:59,405 - __main__ - INFO - Database writer initialized successfully
+2025-07-29 16:32:59,405 - notifications.notification_service - INFO - Using environment variables for notification settings
+2025-07-29 16:32:59,405 - notifications.notification_service - INFO - NotificationService initialized with host: alb-streamnexus-demo...
+2025-07-29 16:32:59,406 - __main__ - INFO - Notification service initialized successfully
+2025-07-29 16:32:59,406 - __main__ - INFO - Starting Pudu Callback API Server...
+2025-07-29 16:32:59,406 - __main__ - INFO - Notification service: ✅ Enabled
+2025-07-29 16:32:59,406 - __main__ - INFO - Database writer: ✅ Enabled
+2025-07-29 16:32:59,412 - werkzeug - WARNING -  * Running on all addresses.
+   WARNING: This is a development server. Do not use it in a production deployment.
+2025-07-29 16:32:59,412 - werkzeug - INFO -  * Running on http://10.0.0.204:8000/ (Press CTRL+C to quit)
+2025-07-29 16:33:48,416 - __main__ - INFO - Database writer initialized successfully
+2025-07-29 16:33:48,417 - notifications.notification_service - INFO - Using environment variables for notification settings
+2025-07-29 16:33:48,417 - notifications.notification_service - INFO - NotificationService initialized with host: alb-streamnexus-demo...
+2025-07-29 16:33:48,417 - __main__ - INFO - Notification service initialized successfully
+2025-07-29 16:33:48,418 - __main__ - INFO - Starting Pudu Callback API Server...
+2025-07-29 16:33:48,418 - __main__ - INFO - Notification service: ✅ Enabled
+2025-07-29 16:33:48,418 - __main__ - INFO - Database writer: ✅ Enabled
+2025-07-29 16:33:48,423 - werkzeug - WARNING -  * Running on all addresses.
+   WARNING: This is a development server. Do not use it in a production deployment.
+2025-07-29 16:33:48,423 - werkzeug - INFO -  * Running on http://10.0.0.204:8000/ (Press CTRL+C to quit)

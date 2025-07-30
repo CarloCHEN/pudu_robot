@@ -7,7 +7,7 @@ import time
 logger = logging.getLogger(__name__)
 
 class DatabaseWriter:
-    """Handles writing callback data to RDS databases"""
+    """Handles writing callback data to RDS database"""
 
     def __init__(self, config_path: str = "database_config.yaml", credentials_path: str = "credentials.yaml"):
         self.config = DatabaseConfig(config_path)
