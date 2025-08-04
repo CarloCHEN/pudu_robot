@@ -37,3 +37,7 @@ class DatabaseConfig:
     def get_table_configs(self) -> Dict[str, List[Dict]]:
         """Get all table configurations grouped by table type"""
         return self.config.get("tables", {})
+
+    def get_notification_needed(self) -> List[str]:
+        """Get list of databases that notification is needed"""
+        return self.config.get("notification_needed", [])

@@ -5,6 +5,81 @@ from .utils import convert_technical_string
 
 # 5 api functions: get_location_table, get_robot_status_table, get_robot_table (deprecated), get_events_table, get_schedule_table, get_charging_table, get_task_overview_data (deprecated)
 
+def get_robot_status(sn):
+    """
+    Get robot status and task information.
+
+    Args:
+        sn: Robot serial number
+
+    Returns:
+        dict: {
+            'is_in_task': bool,
+            'task_info': dict or None,
+            'position': dict
+        }
+    """
+    # Example usage:
+    # status = get_robot_status(sn)
+    # print(f"Robot in task: {status['is_in_task']}")
+    # if status['is_in_task']:
+    #     print(f"Task ID: {status['task_info']['task_id']}")
+    #     print(f"Report ID: {status['task_info']['report_id']}")
+    #     print(f"Map: {status['task_info']['map']['name']}; level: {status['task_info']['map']['lv']}; floor: {status['task_info']['map']['floor']}")
+    # print(f"Position: {status['position']['x']}, {status['position']['y']}, {status['position']['z']}")
+
+    try:
+        # Call the robot API
+        response = get_robot_details(sn)
+
+        # Check if response is valid
+        if not response or 'data' not in response:
+            return {
+                'is_in_task': False,
+                'task_info': None,
+                'position': None
+            }
+
+        data = response['data']
+
+        # Extract position (always available)
+        position = data.get('position', {})
+
+        # Check if robot is in task
+        cleanbot = data.get('cleanbot', {})
+        clean_data = cleanbot.get('clean')
+
+        # Robot is in task if clean data exists and is not None/empty
+        is_in_task = clean_data is not None and clean_data != {}
+
+        task_info = None
+        if is_in_task:
+            # Extract task information
+            task_info = {
+                'task_id': clean_data.get('task', {}).get('task_id'),
+                'report_id': clean_data.get('report_id'),
+                'map': {
+                    'name': clean_data.get('map', {}).get('name'),
+                    'lv': clean_data.get('map', {}).get('lv'),
+                    'floor': clean_data.get('map', {}).get('floor')
+                }
+            }
+
+        return {
+            'is_in_task': is_in_task,
+            'task_info': task_info,
+            'position': position
+        }
+
+    except Exception as e:
+        # Handle any errors gracefully
+        print(f"Error getting robot status: {e}")
+        return {
+            'is_in_task': False,
+            'task_info': None,
+            'position': None
+        }
+
 def get_location_table():
     """
     Get the table for locations with location_id and location_name.
@@ -21,7 +96,7 @@ def get_robot_status_table(location_id=None, robot_sn=None):
     Get a simplified table for robots with basic information.
     Only uses get_robot_details() to get robot SN, nickname, status, and location info.
     """
-    robot_df = pd.DataFrame(columns=['Location ID', 'Robot SN', 'Robot Name', 'Robot Type', 'Water Level', 'Sewage Level', 'Battery Level', 'Status'])
+    robot_df = pd.DataFrame(columns=['Location ID', 'Robot SN', 'Robot Name', 'Robot Type', 'Water Level', 'Sewage Level', 'Battery Level', 'x', 'y', 'z', 'Status'])
     all_shops = get_list_stores()['list']
 
     for shop in all_shops:

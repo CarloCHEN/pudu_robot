@@ -40,6 +40,10 @@ class DatabaseConfig:
         """Get list of all databases"""
         return self.config.get('databases', [])
 
+    def get_notification_needed(self) -> List[str]:
+        """Get list of databases that notification is needed"""
+        return self.config.get('notification_needed', [])
+
 def initialize_tables_from_config(config: DatabaseConfig, table_type: str) -> List[RDSTable]:
     """Initialize RDS tables based on configuration for a specific table type"""
     tables = []
@@ -103,8 +107,6 @@ def prepare_df_for_database(df, columns_to_remove=[]):
     logger.debug(f"Prepared DataFrame with {processed_df.shape[0]} rows and {processed_df.shape[1]} columns")
     return processed_df
 
-
-
 def insert_to_databases_with_change_detection(df, tables: List[RDSTable], table_type: str):
     """Insert data to multiple database tables with change detection"""
     if df.shape[0] == 0:
@@ -130,10 +132,8 @@ def insert_to_databases_with_change_detection(df, tables: List[RDSTable], table_
                 table.batch_insert(data_list)
                 successful_inserts += 1
                 logger.info(f"✅ Successfully inserted {len(data_list)} records into {table.database_name}.{table.table_name}")
-
-                # Merge changes from this table (use first table's changes as reference)
-                if not all_changes:
-                    all_changes = changes
+                # add changes to all_changes
+                all_changes[tuple([table.database_name, table.table_name])] = changes
             else:
                 logger.info(f"ℹ️ No changes detected for {table.database_name}.{table.table_name}, skipping insert")
                 successful_inserts += 1  # Count as successful since no changes needed
@@ -163,8 +163,6 @@ def insert_to_databases_with_change_detection(df, tables: List[RDSTable], table_
         logger.warning(f"⚠️ WARNING: No data was successfully inserted to any {table_type} tables!")
 
     return successful_inserts, failed_inserts, all_changes
-
-
 
 def get_location_data():
     """Fetch location data from API"""
@@ -220,6 +218,7 @@ class App:
         logger.info(f"Initializing App with config: {config_path}")
         self.config = DatabaseConfig(config_path)
         self.notification_service = NotificationService()
+        self.list_of_db_notification_needed = self.config.get_notification_needed()
 
         # Initialize tables for each type
         self.location_tables = initialize_tables_from_config(self.config, 'location')
@@ -252,31 +251,35 @@ class App:
             logger.info("=" * 50)
             logger.info("📋 Processing location data...")
             location_data = get_location_data()
-            successful, failed, changes = insert_to_databases_with_change_detection(location_data, self.location_tables, 'location')
+            successful, failed, all_changes = insert_to_databases_with_change_detection(location_data, self.location_tables, 'location')
             pipeline_stats['total_successful_inserts'] += successful
             pipeline_stats['total_failed_inserts'] += failed
 
             # Send notifications only for actual changes
-            if successful > 0 and changes:
-                notif_success, notif_failed = send_change_based_notifications(
-                    self.notification_service, changes, 'location'
-                )
-                pipeline_stats['total_successful_notifications'] += notif_success
-                pipeline_stats['total_failed_notifications'] += notif_failed
+            if successful > 0 and all_changes:
+                for (database_name, table_name), changes in all_changes.items():
+                    if database_name in self.list_of_db_notification_needed:
+                        notif_success, notif_failed = send_change_based_notifications(
+                            self.notification_service, database_name, table_name, changes, 'location'
+                        )
+                        pipeline_stats['total_successful_notifications'] += notif_success
+                        pipeline_stats['total_failed_notifications'] += notif_failed
 
             # Fetch and insert robot status data
             logger.info("=" * 50)
             logger.info("📋 Processing robot status data...")
             robot_status_data = get_robot_status_data()
-            successful, failed, changes = insert_to_databases_with_change_detection(robot_status_data, self.robot_status_tables, 'robot_status')
+            successful, failed, all_changes = insert_to_databases_with_change_detection(robot_status_data, self.robot_status_tables, 'robot_status')
             pipeline_stats['total_successful_inserts'] += successful
             pipeline_stats['total_failed_inserts'] += failed
 
             # Send notifications only for actual changes
-            if successful > 0 and changes:
-                notif_success, notif_failed = send_change_based_notifications(
-                    self.notification_service, changes, 'robot_status'
-                )
+            if successful > 0 and all_changes:
+                for (database_name, table_name), changes in all_changes.items():
+                    if database_name in self.list_of_db_notification_needed:
+                        notif_success, notif_failed = send_change_based_notifications(
+                            self.notification_service, database_name, table_name, changes, 'robot_status'
+                        )
                 pipeline_stats['total_successful_notifications'] += notif_success
                 pipeline_stats['total_failed_notifications'] += notif_failed
 
@@ -284,16 +287,18 @@ class App:
             logger.info("=" * 50)
             logger.info("📋 Processing robot task data...")
             task_data = get_robot_task_data(start_time, end_time)
-            successful, failed, changes = insert_to_databases_with_change_detection(task_data, self.task_tables, 'robot_task')
+            successful, failed, all_changes = insert_to_databases_with_change_detection(task_data, self.task_tables, 'robot_task')
             pipeline_stats['total_successful_inserts'] += successful
             pipeline_stats['total_failed_inserts'] += failed
 
             # Send notifications only for actual changes
-            if successful > 0 and changes:
-                notif_success, notif_failed = send_change_based_notifications(
-                    self.notification_service, changes, 'robot_task',
-                    time_range=f"{start_time} to {end_time}"
-                )
+            if successful > 0 and all_changes:
+                for (database_name, table_name), changes in all_changes.items():
+                    if database_name in self.list_of_db_notification_needed:
+                        notif_success, notif_failed = send_change_based_notifications(
+                            self.notification_service, database_name, table_name, changes, 'robot_task',
+                            time_range=f"{start_time} to {end_time}"
+                        )
                 pipeline_stats['total_successful_notifications'] += notif_success
                 pipeline_stats['total_failed_notifications'] += notif_failed
 
@@ -310,16 +315,18 @@ class App:
             logger.info("=" * 50)
             logger.info("🔋 Processing robot charging data...")
             charging_data = get_robot_charging_data(start_time, end_time)
-            successful, failed, changes = insert_to_databases_with_change_detection(charging_data, self.charging_tables, 'robot_charging')
+            successful, failed, all_changes = insert_to_databases_with_change_detection(charging_data, self.charging_tables, 'robot_charging')
             pipeline_stats['total_successful_inserts'] += successful
             pipeline_stats['total_failed_inserts'] += failed
 
             # Send notifications only for actual changes
-            if successful > 0 and changes:
-                notif_success, notif_failed = send_change_based_notifications(
-                    self.notification_service, changes, 'robot_charging',
-                    time_range=f"{start_time} to {end_time}"
-                )
+            if successful > 0 and all_changes:
+                for (database_name, table_name), changes in all_changes.items():
+                    if database_name in self.list_of_db_notification_needed:
+                        notif_success, notif_failed = send_change_based_notifications(
+                            self.notification_service, database_name, table_name, changes, 'robot_charging',
+                            time_range=f"{start_time} to {end_time}"
+                        )
                 pipeline_stats['total_successful_notifications'] += notif_success
                 pipeline_stats['total_failed_notifications'] += notif_failed
 
@@ -327,16 +334,18 @@ class App:
             logger.info("=" * 50)
             logger.info("🚨 Processing robot event data...")
             event_data = get_robot_event_data(start_time, end_time)
-            successful, failed, changes = insert_to_databases_with_change_detection(event_data, self.event_tables, 'robot_events')
+            successful, failed, all_changes = insert_to_databases_with_change_detection(event_data, self.event_tables, 'robot_events')
             pipeline_stats['total_successful_inserts'] += successful
             pipeline_stats['total_failed_inserts'] += failed
 
             # Send notifications only for actual changes
-            if successful > 0 and changes:
-                notif_success, notif_failed = send_change_based_notifications(
-                    self.notification_service, changes, 'robot_events',
-                    time_range=f"{start_time} to {end_time}"
-                )
+            if successful > 0 and all_changes:
+                for (database_name, table_name), changes in all_changes.items():
+                    if database_name in self.list_of_db_notification_needed:
+                        notif_success, notif_failed = send_change_based_notifications(
+                            self.notification_service, database_name, table_name, changes, 'robot_events',
+                            time_range=f"{start_time} to {end_time}"
+                        )
                 pipeline_stats['total_successful_notifications'] += notif_success
                 pipeline_stats['total_failed_notifications'] += notif_failed
 
@@ -401,6 +410,7 @@ class App:
         """Get a summary of the current configuration"""
         summary = {
             'databases': self.config.get_databases(),
+            'notification_needed': self.config.get_notification_needed(),
             'table_counts': {
                 'robot_status': len(self.robot_status_tables),
                 'robot_task': len(self.task_tables),

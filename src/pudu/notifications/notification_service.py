@@ -42,7 +42,7 @@ class NotificationService:
         logger.info(f"NotificationService initialized with host: {self.api_host[:20]}...")
 
     def send_notification(self, robot_id: str, notification_type: str, title: str, content: str,
-                         severity: str, status: str) -> bool:
+                         severity: str, status: str, payload: dict) -> bool:
         """
         Send notification to web API with severity and status
 
@@ -58,19 +58,20 @@ class NotificationService:
             # Use HTTP connection (change to HTTPSConnection if you move to HTTPS)
             conn = http.client.HTTPConnection(self.api_host)
 
-            # Build payload - include status if provided
-            payload_data = {
+            # Build data - include status if provided
+            notification_data = {
                 "robotId": robot_id,
-                "notificationType": notification_type, # robotStatus, robot_status, robot_task, robotTask
+                "notificationType": notification_type,
                 "title": title,
                 "content": content,
                 "severity": severity,
-                "priority": status, # priority
+                "status": status,
+                "payload": payload # for identifying the record in the database
             }
 
-            payload = json.dumps(payload_data)
+            notification_data_json = json.dumps(notification_data)
 
-            conn.request("POST", self.endpoint, payload, self.headers)
+            conn.request("POST", self.endpoint, notification_data_json, self.headers)
             res = conn.getresponse()
             data = res.read()
 

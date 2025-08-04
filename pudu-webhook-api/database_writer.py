@@ -34,6 +34,8 @@ class DatabaseWriter:
     def write_robot_status(self, robot_sn: str, status_data: Dict[str, Any]):
         """Write robot status data to mnt_robots_management table"""
         table_configs = self.config.get_table_configs().get("robot_status", [])
+        database_names = set()
+        table_names = set()
 
         if not table_configs:
             logger.warning("No robot_status table configurations found")
@@ -49,20 +51,25 @@ class DatabaseWriter:
             try:
                 db_conn = self._get_connection(table_config["database"])
                 batch_insert(db_conn["cursor"], table_config["table_name"], [db_data], table_config["primary_keys"])
+                database_names.add(table_config["database"])
+                table_names.add(table_config["table_name"])
                 logger.info(f"Updated robot status for {robot_sn} in {table_config['database']}.{table_config['table_name']}")
             except Exception as e:
                 logger.error(f"Failed to write robot status to {table_config['database']}.{table_config['table_name']}: {e}")
 
+        return list(database_names), list(table_names)
+
     def write_robot_pose(self, robot_sn: str, pose_data: Dict[str, Any]):
         """Write robot pose data to mnt_robots_management table"""
         table_configs = self.config.get_table_configs().get("robot_status", [])
-
+        database_names = set()
+        table_names = set()
         if not table_configs:
             logger.warning("No robot_status table configurations found")
             return
 
         # Prepare data for database insertion
-        db_data = {"robot_sn": robot_sn, "x": pose_data.get("x"), "y": pose_data.get("y")}
+        db_data = {"robot_sn": robot_sn, "x": pose_data.get("x"), "y": pose_data.get("y"), "z": pose_data.get("z")}
 
         # Remove None values
         db_data = {k: v for k, v in db_data.items() if v is not None}
@@ -71,14 +78,19 @@ class DatabaseWriter:
             try:
                 db_conn = self._get_connection(table_config["database"])
                 batch_insert(db_conn["cursor"], table_config["table_name"], [db_data], table_config["primary_keys"])
+                database_names.add(table_config["database"])
+                table_names.add(table_config["table_name"])
                 logger.info(f"Updated robot pose for {robot_sn} in {table_config['database']}.{table_config['table_name']}")
             except Exception as e:
                 logger.error(f"Failed to write robot pose to {table_config['database']}.{table_config['table_name']}: {e}")
 
+        return list(database_names), list(table_names)
+
     def write_robot_power(self, robot_sn: str, power_data: Dict[str, Any]):
         """Write robot power data to mnt_robots_management table"""
         table_configs = self.config.get_table_configs().get("robot_status", [])
-
+        database_names = set()
+        table_names = set()
         if not table_configs:
             logger.warning("No robot_status table configurations found")
             return
@@ -93,14 +105,19 @@ class DatabaseWriter:
             try:
                 db_conn = self._get_connection(table_config["database"])
                 batch_insert(db_conn["cursor"], table_config["table_name"], [db_data], table_config["primary_keys"])
+                database_names.add(table_config["database"])
+                table_names.add(table_config["table_name"])
                 logger.info(f"Updated robot power for {robot_sn} in {table_config['database']}.{table_config['table_name']}")
             except Exception as e:
                 logger.error(f"Failed to write robot power to {table_config['database']}.{table_config['table_name']}: {e}")
 
+        return list(database_names), list(table_names)
+
     def write_robot_event(self, robot_sn: str, event_data: Dict[str, Any]):
         """Write robot event data to mnt_robot_events table"""
         table_configs = self.config.get_table_configs().get("robot_events", [])
-
+        database_names = set()
+        table_names = set()
         if not table_configs:
             logger.warning("No robot_events table configurations found")
             return
@@ -109,6 +126,7 @@ class DatabaseWriter:
         db_data = {
             "robot_sn": robot_sn,
             "event_id": event_data.get("error_id", ""),
+            "error_id": event_data.get("error_id", ""),
             "event_level": event_data.get("error_level", "").lower(),
             "event_type": event_data.get("error_type", ""),
             "event_detail": event_data.get("error_detail", ""),
@@ -123,9 +141,13 @@ class DatabaseWriter:
             try:
                 db_conn = self._get_connection(table_config["database"])
                 batch_insert(db_conn["cursor"], table_config["table_name"], [db_data], table_config["primary_keys"])
+                database_names.add(table_config["database"])
+                table_names.add(table_config["table_name"])
                 logger.info(f"Inserted robot event for {robot_sn} in {table_config['database']}.{table_config['table_name']}")
             except Exception as e:
                 logger.error(f"Failed to write robot event to {table_config['database']}.{table_config['table_name']}: {e}")
+
+        return list(database_names), list(table_names)
 
     def close_all_connections(self):
         """Close all database connections"""

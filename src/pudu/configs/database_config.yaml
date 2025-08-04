@@ -1,3 +1,4 @@
+---
 # Database Configuration for Robot Data Pipeline
 # This file defines which tables to write to in which databases
 
@@ -5,6 +6,10 @@
 databases:
   - "ry-vue"
   - "foxx_irvine_office_test"
+
+# List of databases that notification is needed
+notification_needed:
+  - "ry-vue"
 
 # Table configurations grouped by data type
 tables:

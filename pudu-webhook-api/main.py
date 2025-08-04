@@ -7,6 +7,7 @@ from werkzeug.exceptions import BadRequest
 
 from callback_handler import CallbackHandler
 from config import Config
+from database_config import DatabaseConfig
 from database_writer import DatabaseWriter
 from models import CallbackResponse, CallbackStatus
 from notifications import NotificationService, send_webhook_notification
@@ -92,20 +93,32 @@ def pudu_webhook():
         # Write to database if writer is available
         if database_writer:
             try:
-                callback_handler.write_to_database(data, database_writer)
+                database_names, table_names, primary_key_values = callback_handler.write_to_database(data, database_writer)
             except Exception as e:
                 logger.error(f"Failed to write callback to database: {e}")
 
         # Send notification if service is available
         if notification_service:
-            try:
-                send_webhook_notification(
-                    callback_type=data.get("callback_type"),
-                    callback_data=data.get("data", {}),
-                    notification_service=notification_service,
-                )
-            except Exception as e:
-                logger.error(f"Failed to send notification: {e}")
+            config = DatabaseConfig()
+            list_of_db_notification_needed = config.get_notification_needed()
+            for database_name, table_name in zip(database_names, table_names):
+
+                if database_name in list_of_db_notification_needed:
+                    payload = {
+                        "database_name": database_name,
+                        "table_name": table_name,
+                        "primary_key_values": primary_key_values
+                    }
+                    logger.info(f"Sending notification for {database_name}.{table_name} with payload: {payload}")
+                    try:
+                        send_webhook_notification(
+                            callback_type=data.get("callback_type"),
+                            callback_data=data.get("data", {}),
+                            payload=payload,
+                            notification_service=notification_service
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to send notification for {database_name}.{table_name}: {e}")
 
         # Return result
         return jsonify(response.to_dict()), 200 if response.status == CallbackStatus.SUCCESS else 400

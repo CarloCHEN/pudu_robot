@@ -183,8 +183,8 @@ def get_severity_and_status_for_location(change_type: str, changed_fields: list)
     else:
         return SEVERITY_LEVELS['event'], STATUS_TAGS['normal']
 
-def send_change_based_notifications(notification_service: NotificationService, changes_dict: Dict[str, Dict],
-                                 data_type: str, time_range: str = ""):
+def send_change_based_notifications(notification_service: NotificationService, database_name: str, table_name: str,
+                                    changes_dict: Dict[str, Dict], data_type: str, time_range: str = ""):
     """Send individual notifications for each record that has actual data changes"""
     if not changes_dict:
         logger.info(f"No changes detected for {data_type}, no notifications sent")
@@ -203,6 +203,13 @@ def send_change_based_notifications(notification_service: NotificationService, c
     for unique_id, change_info in changes_dict.items():
         try:
             robot_id = change_info.get('robot_id', 'unknown')
+            primary_key_values = change_info.get('primary_key_values', {})
+            payload = {
+                "database_name": database_name,
+                "table_name": table_name,
+                "primary_key_values": primary_key_values
+            }
+
             if should_skip_notification(data_type, change_info):
                 logger.info(f"Skipping notification for {unique_id} because it should be skipped")
                 continue
@@ -224,7 +231,8 @@ def send_change_based_notifications(notification_service: NotificationService, c
                 title=formatted_title,
                 content=content,
                 severity=severity,
-                status=status
+                status=status,
+                payload=payload # for identifying the record in the database
             ):
                 successful_notifications += 1
                 logger.debug(f"✅ Sent notification for {unique_id}: {formatted_title} (severity: {severity}, status: {status})")

@@ -17,7 +17,6 @@ class IconManager:
 
     def _load_icons_config(self, config_path: Optional[str]):
         """Load icons configuration from YAML file"""
-
         # environment variable (Lambda/production)
         if not config_path:
             config_path = os.getenv("ICONS_CONFIG_PATH", "icons.yaml")

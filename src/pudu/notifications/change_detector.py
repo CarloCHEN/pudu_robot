@@ -287,7 +287,7 @@ def values_are_equivalent(old_value, new_value, field_name: str = None) -> bool:
         # One is null/nan, the other should also be considered null-equivalent
         old_str = str(old_value) if old_value is not None else 'NULL'
         new_str = str(new_value) if new_value is not None else 'NULL'
-        null_equivalents = ['NULL', 'None', 'nan', '0', '0.0', '0.00', 'null']
+        null_equivalents = ['NULL', 'None', 'nan', '', 'null']
         return any(old_str.lower() in null_equivalents and new_str.lower() in null_equivalents for _ in [1])
 
     # Special handling for decimal fields - normalize both values to same precision

@@ -37,7 +37,6 @@ def monitor_support_tickets(databases: List[RDSDatabase], function_name):
     try:
         logger.info("🎫 Checking for new support tickets...")
         ticket_count = 0
-
         for database in databases:
             logger.info(f"🔍 Checking for new support tickets in {database.database_name}")
             new_tickets = get_support_tickets_table(database)
@@ -48,7 +47,7 @@ def monitor_support_tickets(databases: List[RDSDatabase], function_name):
                 ticket_count += count
                 logger.info(f"🚨 Found {count} new support ticket(s) requiring attention!")
 
-            if ticket_count > 0:
+            if count > 0:
                 send_support_ticket_notification_batch(function_name, database.database_name, new_tickets)
 
                 # Reset flags after successful notification

@@ -73,6 +73,7 @@ class CallbackHandler:
             callback_type = data.get("callback_type")
             callback_data = data.get("data", {})
             robot_sn = callback_data.get("sn", "")
+            primary_key_values = dict()
 
             if not robot_sn:
                 logger.warning("No robot SN found in callback data")
@@ -83,16 +84,18 @@ class CallbackHandler:
                     "status": callback_data.get("run_status", "").lower(),
                     "timestamp": callback_data.get("timestamp"),
                 }
-                database_writer.write_robot_status(robot_sn, status_data)
+                database_names, table_names = database_writer.write_robot_status(robot_sn, status_data)
+                primary_key_values['robot_sn'] = robot_sn
 
             elif callback_type == "notifyRobotPose":
                 pose_data = {
                     "x": callback_data.get("x"),
                     "y": callback_data.get("y"),
-                    "yaw": callback_data.get("yaw"),
+                    "z": callback_data.get("yaw"),
                     "timestamp": callback_data.get("timestamp"),
                 }
-                database_writer.write_robot_pose(robot_sn, pose_data)
+                database_names, table_names = database_writer.write_robot_pose(robot_sn, pose_data)
+                primary_key_values['robot_sn'] = robot_sn
 
             elif callback_type == "notifyRobotPower":
                 power_data = {
@@ -100,7 +103,8 @@ class CallbackHandler:
                     "charge_state": callback_data.get("charge_state"),
                     "timestamp": callback_data.get("timestamp"),
                 }
-                database_writer.write_robot_power(robot_sn, power_data)
+                database_names, table_names = database_writer.write_robot_power(robot_sn, power_data)
+                primary_key_values['robot_sn'] = robot_sn
 
             elif callback_type == "robotErrorWarning":
                 event_data = {
@@ -110,7 +114,11 @@ class CallbackHandler:
                     "error_id": callback_data.get("error_id"),
                     "timestamp": callback_data.get("timestamp"),
                 }
-                database_writer.write_robot_event(robot_sn, event_data)
+                database_names, table_names = database_writer.write_robot_event(robot_sn, event_data)
+                primary_key_values['robot_sn'] = robot_sn
+                primary_key_values['event_id'] = callback_data.get("error_id")
+
+            return database_names, table_names, primary_key_values
 
         except Exception as e:
             logger.error(f"Error writing callback to database: {str(e)}")

@@ -29,7 +29,7 @@ STATUS_TAGS = {
 }
 
 
-def send_webhook_notification(callback_type: str, callback_data: dict, notification_service: NotificationService) -> bool:
+def send_webhook_notification(callback_type: str, callback_data: dict, payload: dict, notification_service: NotificationService) -> bool:
     """
     Send notification for webhook callbacks
 
@@ -75,6 +75,7 @@ def send_webhook_notification(callback_type: str, callback_data: dict, notificat
             content=content,
             severity=severity,
             status=status,
+            payload=payload
         )
 
         if success:
