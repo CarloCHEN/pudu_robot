@@ -25,11 +25,11 @@ class DatabaseConfig:
     def _get_default_config(self) -> dict:
         """Default configuration for webhook database operations"""
         return {
-            "databases": ["ry-vue"],
+            "databases": ["foxx_irvine_office"],
             "tables": {
-                "robot_status": [{"database": "ry-vue", "table_name": "mnt_robots_management", "primary_keys": ["robot_sn"]}],
+                "robot_status": [{"database": "foxx_irvine_office", "table_name": "mnt_robots_management", "primary_keys": ["robot_sn"]}],
                 "robot_events": [
-                    {"database": "ry-vue", "table_name": "mnt_robot_events", "primary_keys": ["robot_sn", "event_id"]}
+                    {"database": "foxx_irvine_office", "table_name": "mnt_robot_events", "primary_keys": ["robot_sn", "event_id"]}
                 ],
             },
         }

@@ -45,11 +45,10 @@ test/
 
 ```bash
 # Run complete test suite (excluding endpoint tests)
-cd test
-python run_tests.py
+python test/run_tests.py
 
 # Run all tests including webhook endpoint tests (requires running server)
-python run_tests.py --include-endpoint
+python test/run_tests.py --include-endpoint
 ```
 
 ### 2. Run Specific Test Categories
@@ -196,25 +195,22 @@ print(curl_command)
 
 ### Basic Test Run
 ```bash
-cd test
-python run_tests.py
+python test/run_tests.py
 ```
 
 ### Full Validation (with running server)
 ```bash
 # Terminal 1: Start webhook server
 cd pudu-webhook-api
-python main.py
+python test/test_main.py
 
 # Terminal 2: Run all tests
-cd test
-python run_tests.py --include-endpoint --verbose
+python test/run_tests.py --include-endpoint --verbose
 ```
 
 ### Quick Unit Test
 ```bash
-cd test
-python unit/test_processors.py
+python test/unit/test_processors.py
 ```
 
 ### Manual Webhook Test
@@ -381,11 +377,10 @@ python unit/test_notification_sender.py # After notification changes
 ```bash
 # Start webhook server in test mode
 cd ..
-python main.py
+python test/test_main.py
 
 # Run endpoint tests in another terminal
-cd test
-python run_tests.py --include-endpoint
+python test/run_tests.py --include-endpoint
 ```
 
 ## 🚨 Troubleshooting
@@ -395,8 +390,7 @@ python run_tests.py --include-endpoint
 #### "Module not found" errors
 ```bash
 # Ensure you're running from the test directory
-cd test
-python run_tests.py
+python test/run_tests.py
 ```
 
 #### Mock database validation failures
@@ -410,7 +404,7 @@ python run_tests.py
 - Verify icon configuration if using custom icons
 
 #### Endpoint test failures
-- Ensure webhook server is running: `python main.py`
+- Ensure webhook server is running: `python test_main.py`
 - Check server is accessible on localhost:8000
 - Verify callback code in server matches test configuration
 - Ensure mock services are properly configured in server
@@ -418,7 +412,7 @@ python run_tests.py
 ### Debug Mode
 ```bash
 # Run with maximum verbosity
-python run_tests.py --verbose --log-level DEBUG
+python test/run_tests.py --verbose --log-level DEBUG
 
 # This will show:
 # - Detailed request/response data

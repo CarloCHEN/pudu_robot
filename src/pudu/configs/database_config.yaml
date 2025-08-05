@@ -4,22 +4,22 @@
 
 # List of all databases used
 databases:
-  - "ry-vue"
+  - "foxx_irvine_office"
   - "foxx_irvine_office_test"
 
 # List of databases that notification is needed
 notification_needed:
-  - "ry-vue"
+  - "foxx_irvine_office"
 
 # Table configurations grouped by data type
 tables:
   # Location Table
   location:
-    - database: "ry-vue"
+    - database: "foxx_irvine_office"
       table_name: "pro_building_info"
       primary_keys: ["building_id"]
       fields: null  # Use all fields from the DataFrame
-      description: "Building info table in ry-vue database"
+      description: "Building info table in foxx irvine office database"
 
     - database: "foxx_irvine_office_test"
       table_name: "pro_building_info"
@@ -29,11 +29,11 @@ tables:
 
   # Robot Status Table
   robot_status:
-    - database: "ry-vue"
+    - database: "foxx_irvine_office"
       table_name: "mnt_robots_management"
       primary_keys: ["robot_sn"]
       fields: null  # Use all fields from the DataFrame
-      description: "Main robot status table in ry-vue database"
+      description: "Main robot status table in foxx irvine office database"
 
     - database: "foxx_irvine_office_test"
       table_name: "mnt_robots_management"
@@ -43,11 +43,11 @@ tables:
 
   # Robot Task Tables
   robot_task:
-    - database: "ry-vue"
+    - database: "foxx_irvine_office"
       table_name: "mnt_robots_task"
       primary_keys: ["robot_sn", "task_name", "start_time"]
       fields: null  # Use all fields from the DataFrame
-      description: "Main robot task tracking table in ry-vue database"
+      description: "Main robot task tracking table in foxx irvine office database"
 
     - database: "foxx_irvine_office_test"
       table_name: "mnt_robots_task"
@@ -57,11 +57,11 @@ tables:
 
   # Robot Task Overview Tables - not used
   robot_task_overview:
-    - database: "ry-vue"
+    - database: "foxx_irvine_office"
       table_name: "mnt_robots_task_overview"
       primary_keys: ["robot_sn", "day", "hour"]
       fields: null
-      description: "Hourly task overview aggregation in ry-vue database"
+      description: "Hourly task overview aggregation in foxx irvine office database"
 
     - database: "foxx_irvine_office_test"
       table_name: "mnt_robots_task_overview"
@@ -71,11 +71,11 @@ tables:
 
   # Robot Charging Tables
   robot_charging:
-    - database: "ry-vue"
+    - database: "foxx_irvine_office"
       table_name: "mnt_robots_charging_sessions"
       primary_keys: ["robot_sn", "start_time", "end_time"]
       fields: null
-      description: "Robot charging session data in ry-vue database"
+      description: "Robot charging session data in foxx irvine office database"
 
     - database: "foxx_irvine_office_test"
       table_name: "mnt_robots_charging_sessions"
@@ -85,11 +85,11 @@ tables:
 
   # Robot Events Tables
   robot_events:
-    - database: "ry-vue"
+    - database: "foxx_irvine_office"
       table_name: "mnt_robot_events"
       primary_keys: ["robot_sn", "event_id"]
       fields: null
-      description: "Robot events and errors in ry-vue database"
+      description: "Robot events and errors in foxx irvine office database"
 
     - database: "foxx_irvine_office_test"
       table_name: "mnt_robot_events"
@@ -106,7 +106,7 @@ tables:
       description: "Support ticket timeline monitoring"
       read_only: false
 
-    - database: "ry-vue"
+    - database: "foxx_irvine_office"
       table_name: "mnt_robot_report_timeline"
       primary_keys: ["id"]
       fields: null
@@ -121,7 +121,7 @@ tables:
       description: "Support ticket event reports"
       read_only: false
 
-    - database: "ry-vue"
+    - database: "foxx_irvine_office"
       table_name: "mnt_robot_event_reports"
       primary_keys: ["id"]
       fields: null

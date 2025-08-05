@@ -70,7 +70,7 @@ class MockNotificationService:
         logger.info(f"Mock Endpoint: {self.endpoint}")
 
     def send_notification(
-        self, robot_id: str, notification_type: str, title: str, content: str, severity: str, status: str
+        self, robot_id: str, notification_type: str, title: str, content: str, severity: str, status: str, payload: dict
     ) -> bool:
         """
         Mock send notification that captures and validates notification data
@@ -80,19 +80,20 @@ class MockNotificationService:
             mock_conn = MockHTTPConnection(self.api_host)
 
             # Build payload exactly like real service
-            payload_data = {
+            notification_data = {
                 "robotId": robot_id,
                 "notificationType": notification_type,
                 "title": title,
                 "content": content,
                 "severity": severity,
                 "status": status,
+                "payload": payload
             }
 
-            payload = json.dumps(payload_data)
+            notification_data_json = json.dumps(notification_data)
 
             # Simulate request
-            mock_conn.request("POST", self.endpoint, payload, self.headers)
+            mock_conn.request("POST", self.endpoint, notification_data_json, self.headers)
             response = mock_conn.getresponse()
 
             # Store notification details for testing
@@ -103,7 +104,7 @@ class MockNotificationService:
                 "content": content,
                 "severity": severity,
                 "status": status,
-                "payload": payload_data,
+                "payload": payload,
                 "success": response.status == 200,
             }
 

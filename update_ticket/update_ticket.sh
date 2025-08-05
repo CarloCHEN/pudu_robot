@@ -22,14 +22,14 @@ show_usage() {
     echo "  report_id      - The report ID to update"
     echo "  status_message - The status message to add (or --history to view timeline)"
     echo "  user_id        - Optional: User ID creating this entry (default: system)"
-    echo "  database       - Optional: Specific database to target (ry-vue, foxx_irvine_office_test)"
+    echo "  database       - Optional: Specific database to target (foxx_irvine_office, foxx_irvine_office_test)"
     echo ""
     echo "Examples:"
     echo "  $0 12345 \"Email sent to customer\""
     echo "  $0 12345 \"Issue resolved\" admin_001"
-    echo "  $0 12345 \"Customer contacted\" admin_001 ry-vue"
+    echo "  $0 12345 \"Customer contacted\" admin_001 foxx_irvine_office"
     echo "  $0 12345 --history"
-    echo "  $0 12345 --history ry-vue"
+    echo "  $0 12345 --history foxx_irvine_office"
 }
 
 # Check arguments

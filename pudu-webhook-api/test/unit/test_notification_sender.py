@@ -2,11 +2,8 @@
 Unit tests for notification sender functionality
 """
 
-import os
 import sys
 from pathlib import Path
-
-import pytest
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -22,11 +19,11 @@ class MockNotificationSender:
     def __init__(self, mock_service):
         self.mock_service = mock_service
 
-    def send_webhook_notification(self, callback_type: str, callback_data: dict, notification_service) -> bool:
+    def send_webhook_notification(self, callback_type: str, callback_data: dict, payload: dict, notification_service) -> bool:
         """Send notification using mock service"""
         from notifications.notification_sender import send_webhook_notification
 
-        return send_webhook_notification(callback_type, callback_data, notification_service)
+        return send_webhook_notification(callback_type, callback_data, payload, notification_service)
 
     def generate_webhook_notification_content(self, callback_type: str, callback_data: dict):
         """Generate notification content"""
@@ -61,8 +58,14 @@ class TestNotificationSender:
             # Clear previous notifications
             self.mock_service.clear_notifications()
 
+            payload = {
+                "database_name": "foxx_irvine_office_test",
+                "table_name": "robot_status",
+                "primary_key_values": {"robot_sn": robot_sn}
+            }
+
             # Send notification
-            success = self.sender.send_webhook_notification(callback_type, callback_data, self.mock_service)
+            success = self.sender.send_webhook_notification(callback_type, callback_data, payload, self.mock_service)
 
             # Validate notification was sent
             assert success == True
@@ -101,8 +104,14 @@ class TestNotificationSender:
             # Clear previous notifications
             self.mock_service.clear_notifications()
 
+            payload = {
+                "database_name": "foxx_irvine_office_test",
+                "table_name": "robot_events",
+                "primary_key_values": {"robot_sn": robot_sn, "event_id": callback_data["error_id"]}
+            }
+
             # Send notification
-            success = self.sender.send_webhook_notification(callback_type, callback_data, self.mock_service)
+            success = self.sender.send_webhook_notification(callback_type, callback_data, payload, self.mock_service)
 
             # Validate notification was sent
             assert success == True
@@ -135,8 +144,14 @@ class TestNotificationSender:
             # Clear previous notifications
             self.mock_service.clear_notifications()
 
+            payload = {
+                "database_name": "foxx_irvine_office_test",
+                "table_name": "robot_status",
+                "primary_key_values": {"robot_sn": robot_sn}
+            }
+
             # Send notification
-            success = self.sender.send_webhook_notification(callback_type, callback_data, self.mock_service)
+            success = self.sender.send_webhook_notification(callback_type, callback_data, payload, self.mock_service)
 
             if case.get("expected_notification", True):
                 # Should send notification
@@ -176,7 +191,12 @@ class TestNotificationSender:
             self.mock_service.clear_notifications()
 
             # Send notification (should be skipped)
-            success = self.sender.send_webhook_notification(callback_type, callback_data, self.mock_service)
+            payload = {
+                "database_name": "foxx_irvine_office_test",
+                "table_name": "robot_status",
+                "primary_key_values": {"robot_sn": robot_sn}
+            }
+            success = self.sender.send_webhook_notification(callback_type, callback_data, payload, self.mock_service)
 
             # Should succeed but not send notification
             assert success == True

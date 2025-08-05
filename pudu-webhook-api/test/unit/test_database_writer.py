@@ -40,7 +40,7 @@ class TestDatabaseWriter:
             self.db_writer.clear_written_data()
 
             # Write status
-            self.db_writer.write_robot_status(robot_sn, status_data)
+            database_names, table_names = self.db_writer.write_robot_status(robot_sn, status_data)
 
             # Validate write
             written_data = self.db_writer.get_written_data()
@@ -70,7 +70,7 @@ class TestDatabaseWriter:
             self.db_writer.clear_written_data()
 
             # Write pose
-            self.db_writer.write_robot_pose(robot_sn, pose_data)
+            database_names, table_names = self.db_writer.write_robot_pose(robot_sn, pose_data)
 
             # Validate write
             written_data = self.db_writer.get_written_data()
@@ -99,7 +99,7 @@ class TestDatabaseWriter:
             self.db_writer.clear_written_data()
 
             # Write power
-            self.db_writer.write_robot_power(robot_sn, power_data)
+            database_names, table_names = self.db_writer.write_robot_power(robot_sn, power_data)
 
             # Validate write
             written_data = self.db_writer.get_written_data()
@@ -137,7 +137,7 @@ class TestDatabaseWriter:
             self.db_writer.clear_written_data()
 
             # Write event
-            self.db_writer.write_robot_event(robot_sn, event_data)
+            database_names, table_names = self.db_writer.write_robot_event(robot_sn, event_data)
 
             # Validate write
             written_data = self.db_writer.get_written_data()

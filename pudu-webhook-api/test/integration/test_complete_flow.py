@@ -3,10 +3,9 @@ Complete end-to-end flow tests
 Tests the entire webhook processing pipeline with mock services
 """
 
-import os
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -50,12 +49,12 @@ class TestCompleteFlow:
                 assert callback_response.status.value == "success"
 
                 # Step 2: Write to database
-                self.callback_handler.write_to_database(case, self.mock_db_writer)
+                database_names, table_names, primary_key_values = self.callback_handler.write_to_database(case, self.mock_db_writer)
 
                 # Step 3: Send notification (using mock import)
                 with patch("notifications.notification_sender.send_webhook_notification") as mock_sender:
 
-                    def mock_send_notification(callback_type, callback_data, notification_service):
+                    def mock_send_notification(callback_type, callback_data, payload, notification_service):
                         # Simulate notification sending
                         robot_sn = callback_data.get("sn")
                         if robot_sn:
@@ -66,11 +65,19 @@ class TestCompleteFlow:
                                 content=f"Robot {robot_sn} status changed",
                                 severity=case.get("expected_severity", "event"),
                                 status=case.get("expected_status", "normal"),
+                                payload=payload
                             )
                         return False
 
                     mock_sender.side_effect = mock_send_notification
-                    notification_sent = mock_sender(case["callback_type"], case["data"], self.mock_notification_service)
+                    for database_name, table_name in zip(database_names, table_names):
+                        payload = {
+                            "database_name": database_name,
+                            "table_name": table_name,
+                            "primary_key_values": primary_key_values
+                        }
+                        notification_sent = mock_sender(case["callback_type"], case["data"], payload, self.mock_notification_service)
+                        assert notification_sent == True
 
                 # Validate complete flow
                 flow_success = True
@@ -93,7 +100,7 @@ class TestCompleteFlow:
 
                 # Check notification
                 sent_notifications = self.mock_notification_service.get_sent_notifications(case["data"]["sn"])
-                if len(sent_notifications) == 0:
+                if len(sent_notifications) != len(database_names):
                     flow_success = False
                     flow_details["notification_send"] = "Failed"
                 else:
@@ -137,7 +144,7 @@ class TestCompleteFlow:
                 callback_response = self.callback_handler.process_callback(case)
 
                 # Step 2: Write to database
-                self.callback_handler.write_to_database(case, self.mock_db_writer)
+                database_names, table_names, primary_key_values = self.callback_handler.write_to_database(case, self.mock_db_writer)
 
                 # Step 3: Send notification
                 with patch("notifications.notification_sender.send_webhook_notification") as mock_sender:
@@ -154,9 +161,14 @@ class TestCompleteFlow:
                                 status="abnormal",
                             )
                         return False
-
-                    mock_sender.side_effect = mock_send_notification
-                    notification_sent = mock_sender(case["callback_type"], case["data"], self.mock_notification_service)
+                    for database_name, table_name in zip(database_names, table_names):
+                        payload = {
+                            "database_name": database_name,
+                            "table_name": table_name,
+                            "primary_key_values": primary_key_values
+                        }
+                        notification_sent = mock_sender(case["callback_type"], case["data"], payload, self.mock_notification_service)
+                        assert notification_sent == True
 
                 # Validate complete flow
                 flow_success = True
@@ -175,7 +187,7 @@ class TestCompleteFlow:
 
                 # Check notification
                 sent_notifications = self.mock_notification_service.get_sent_notifications(case["data"]["sn"])
-                if len(sent_notifications) == 0:
+                if len(sent_notifications) != len(database_names):
                     flow_success = False
                     flow_details["notification_send"] = "Failed"
 
@@ -210,7 +222,7 @@ class TestCompleteFlow:
                 callback_response = self.callback_handler.process_callback(case)
 
                 # Step 2: Write to database
-                self.callback_handler.write_to_database(case, self.mock_db_writer)
+                database_names, table_names, primary_key_values = self.callback_handler.write_to_database(case, self.mock_db_writer)
 
                 # Step 3: Send notification
                 with patch("notifications.notification_sender.send_webhook_notification") as mock_sender:
@@ -230,7 +242,14 @@ class TestCompleteFlow:
                         return True  # Return True even if no notification needed
 
                     mock_sender.side_effect = mock_send_notification
-                    notification_sent = mock_sender(case["callback_type"], case["data"], self.mock_notification_service)
+                    for database_name, table_name in zip(database_names, table_names):
+                        payload = {
+                            "database_name": database_name,
+                            "table_name": table_name,
+                            "primary_key_values": primary_key_values
+                        }
+                        notification_sent = mock_sender(case["callback_type"], case["data"], payload, self.mock_notification_service)
+                        assert notification_sent == True
 
                 # Validate complete flow
                 flow_success = True
@@ -250,7 +269,7 @@ class TestCompleteFlow:
                 # Check notification (only if expected)
                 sent_notifications = self.mock_notification_service.get_sent_notifications(case["data"]["sn"])
                 if case.get("expected_notification", False):
-                    if len(sent_notifications) == 0:
+                    if len(sent_notifications) != len(database_names):
                         flow_success = False
                         flow_details["notification_send"] = "Failed - Expected notification"
                 else:
@@ -306,19 +325,26 @@ class TestCompleteFlow:
                     processed_callbacks += 1
 
                 # Write to database
-                self.callback_handler.write_to_database(callback, self.mock_db_writer)
+                database_names, table_names, primary_key_values = self.callback_handler.write_to_database(callback, self.mock_db_writer)
 
                 # Simulate notification (simplified)
                 robot_sn = callback["data"].get("sn")
                 if robot_sn and callback["callback_type"] != "notifyRobotPose":
-                    self.mock_notification_service.send_notification(
-                        robot_id=robot_sn,
-                        notification_type="robot_status",
-                        title=f"Mixed Test {callback['callback_type']}",
-                        content=f"Robot {robot_sn} callback processed",
-                        severity="event",
-                        status="normal",
-                    )
+                    for database_name, table_name in zip(database_names, table_names):
+                        payload = {
+                            "database_name": database_name,
+                            "table_name": table_name,
+                            "primary_key_values": primary_key_values
+                        }
+                        self.mock_notification_service.send_notification(
+                            robot_id=robot_sn,
+                            notification_type="robot_status",
+                            title=f"Mixed Test {callback['callback_type']}",
+                            content=f"Robot {robot_sn} callback processed",
+                            severity="event",
+                            status="normal",
+                            payload=payload
+                        )
 
             except Exception as e:
                 print(f"    ❌ Error processing callback {i+1}: {e}")
@@ -379,7 +405,7 @@ class TestCompleteFlow:
 
                 # Try database write (should handle gracefully)
                 try:
-                    self.callback_handler.write_to_database(scenario, self.mock_db_writer)
+                    database_names, table_names, primary_key_values = self.callback_handler.write_to_database(scenario, self.mock_db_writer)
                 except Exception as db_error:
                     print(f"    📝 Database write handled error: {db_error}")
 
@@ -422,17 +448,24 @@ class TestCompleteFlow:
 
         # Process through complete pipeline
         callback_response = self.callback_handler.process_callback(test_callback)
-        self.callback_handler.write_to_database(test_callback, self.mock_db_writer)
+        database_names, table_names, primary_key_values = self.callback_handler.write_to_database(test_callback, self.mock_db_writer)
 
         # Send mock notification
-        self.mock_notification_service.send_notification(
-            robot_id="CONSISTENCY_TEST_ROBOT",
-            notification_type="robot_status",
-            title="Robot Online",
-            content="Robot CONSISTENCY_TEST_ROBOT is now online",
-            severity="success",
-            status="online",
-        )
+        for database_name, table_name in zip(database_names, table_names):
+            payload = {
+                "database_name": database_name,
+                "table_name": table_name,
+                "primary_key_values": primary_key_values
+            }
+            self.mock_notification_service.send_notification(
+                robot_id="CONSISTENCY_TEST_ROBOT",
+                notification_type="robot_status",
+                title="Robot Online",
+                content="Robot CONSISTENCY_TEST_ROBOT is now online",
+                severity="success",
+                status="online",
+                payload=payload
+            )
 
         # Validate data consistency
         consistency_checks = {
@@ -518,19 +551,26 @@ class TestCompleteFlow:
                     processed_count += 1
 
                 # Write to database
-                self.callback_handler.write_to_database(callback, self.mock_db_writer)
+                database_names, table_names, primary_key_values = self.callback_handler.write_to_database(callback, self.mock_db_writer)
 
                 # Send notification
                 robot_sn = callback["data"].get("sn")
                 if robot_sn:
-                    self.mock_notification_service.send_notification(
-                        robot_id=robot_sn,
-                        notification_type="robot_status",
-                        title="Performance Test",
-                        content=f"Robot {robot_sn} status update",
-                        severity="event",
-                        status="normal",
-                    )
+                    for database_name, table_name in zip(database_names, table_names):
+                        payload = {
+                            "database_name": database_name,
+                            "table_name": table_name,
+                            "primary_key_values": primary_key_values
+                        }
+                        self.mock_notification_service.send_notification(
+                            robot_id=robot_sn,
+                            notification_type="robot_status",
+                            title="Performance Test",
+                            content=f"Robot {robot_sn} status update",
+                            severity="event",
+                            status="normal",
+                            payload=payload
+                        )
 
             except Exception as e:
                 print(f"    ⚠️ Error processing callback: {e}")

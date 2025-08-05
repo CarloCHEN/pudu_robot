@@ -8,7 +8,7 @@ Can be called from terminal or imported as a module.
 Usage:
     python support_timeline_api.py --report-id 12345 --status "Email sent to customer"
     python support_timeline_api.py --report-id 12345 --status "Issue resolved" --user-id admin_001
-    python support_timeline_api.py --report-id 12345 --database "ry-vue" --status "Customer contacted"
+    python support_timeline_api.py --report-id 12345 --database "foxx_irvine_office" --status "Customer contacted"
     python support_timeline_api.py --report-id 12345 --history
 """
 
@@ -317,7 +317,7 @@ def main():
         Examples:
           python support_timeline_api.py --report-id 12345 --status "Email sent to customer"
           python support_timeline_api.py --report-id 12345 --status "Issue resolved" --user-id admin_001
-          python support_timeline_api.py --report-id 12345 --database "ry-vue" --status "Customer contacted"
+          python support_timeline_api.py --report-id 12345 --database "foxx_irvine_office" --status "Customer contacted"
           python support_timeline_api.py --report-id 12345 --history
           python support_timeline_api.py --report-id 12345 --history --database "foxx_irvine_office_test"
         """

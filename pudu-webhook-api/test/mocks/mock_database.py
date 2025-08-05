@@ -83,11 +83,11 @@ class MockDatabaseWriter:
     def _get_default_config(self) -> Dict:
         """Default configuration matching the real system"""
         return {
-            "databases": ["ry-vue"],
+            "databases": ["foxx_irvine_office"],
             "tables": {
-                "robot_status": [{"database": "ry-vue", "table_name": "mnt_robots_management", "primary_keys": ["robot_sn"]}],
+                "robot_status": [{"database": "foxx_irvine_office", "table_name": "mnt_robots_management", "primary_keys": ["robot_sn"]}],
                 "robot_events": [
-                    {"database": "ry-vue", "table_name": "mnt_robot_events", "primary_keys": ["robot_sn", "event_id"]}
+                    {"database": "foxx_irvine_office", "table_name": "mnt_robot_events", "primary_keys": ["robot_sn", "event_id"]}
                 ],
             },
         }
@@ -121,7 +121,7 @@ class MockDatabaseWriter:
                 },
             },
             "mnt_robot_events": {
-                "fields": ["robot_sn", "event_id", "event_level", "event_type", "event_detail", "task_time", "upload_time"],
+                "fields": ["robot_sn", "event_id", "error_id", "event_level", "event_type", "event_detail", "task_time", "upload_time"],
                 "primary_keys": ["robot_sn", "event_id"],
                 "field_types": {
                     "robot_sn": "VARCHAR(50)",
@@ -198,7 +198,8 @@ class MockDatabaseWriter:
             return
 
         table_configs = self.database_config.get("tables", {}).get("robot_status", [])
-
+        database_names = set()
+        table_names = set()
         for table_config in table_configs:
             db_data = {"robot_sn": robot_sn, "status": status_data.get("status", "")}
 
@@ -207,17 +208,22 @@ class MockDatabaseWriter:
 
             if self._validate_data_against_schema(table_config["table_name"], db_data):
                 self.written_data[table_config["table_name"]].append(db_data)
+                database_names.add(table_config["database"])
+                table_names.add(table_config["table_name"])
                 logger.info(f"✅ Mock write robot status: {robot_sn} -> {table_config['table_name']}")
                 logger.info(f"   Data written: {db_data}")
             else:
                 logger.error(f"❌ Schema validation failed for robot status write")
+
+        return list(database_names), list(table_names)
 
     def write_robot_pose(self, robot_sn: str, pose_data: Dict[str, Any]):
         """Mock write robot pose with validation"""
         logger.info(f"🔍 Testing robot pose write for: {robot_sn}")
 
         table_configs = self.database_config.get("tables", {}).get("robot_status", [])
-
+        database_names = set()
+        table_names = set()
         for table_config in table_configs:
             db_data = {"robot_sn": robot_sn, "x": pose_data.get("x"), "y": pose_data.get("y"), "yaw": pose_data.get("yaw")}
 
@@ -226,17 +232,21 @@ class MockDatabaseWriter:
 
             if self._validate_data_against_schema(table_config["table_name"], db_data):
                 self.written_data[table_config["table_name"]].append(db_data)
+                database_names.add(table_config["database"])
+                table_names.add(table_config["table_name"])
                 logger.info(f"✅ Mock write robot pose: {robot_sn} -> {table_config['table_name']}")
                 logger.info(f"   Data written: {db_data}")
             else:
                 logger.error(f"❌ Schema validation failed for robot pose write")
+        return list(database_names), list(table_names)
 
     def write_robot_power(self, robot_sn: str, power_data: Dict[str, Any]):
         """Mock write robot power with validation"""
         logger.info(f"🔍 Testing robot power write for: {robot_sn}")
 
         table_configs = self.database_config.get("tables", {}).get("robot_status", [])
-
+        database_names = set()
+        table_names = set()
         for table_config in table_configs:
             db_data = {
                 "robot_sn": robot_sn,
@@ -249,10 +259,13 @@ class MockDatabaseWriter:
 
             if self._validate_data_against_schema(table_config["table_name"], db_data):
                 self.written_data[table_config["table_name"]].append(db_data)
+                database_names.add(table_config["database"])
+                table_names.add(table_config["table_name"])
                 logger.info(f"✅ Mock write robot power: {robot_sn} -> {table_config['table_name']}")
                 logger.info(f"   Data written: {db_data}")
             else:
                 logger.error(f"❌ Schema validation failed for robot power write")
+        return list(database_names), list(table_names)
 
     def write_robot_event(self, robot_sn: str, event_data: Dict[str, Any]):
         """Mock write robot event with validation"""
@@ -264,11 +277,13 @@ class MockDatabaseWriter:
             return
 
         table_configs = self.database_config.get("tables", {}).get("robot_events", [])
-
+        database_names = set()
+        table_names = set()
         for table_config in table_configs:
             db_data = {
                 "robot_sn": robot_sn,
                 "event_id": event_data.get("error_id", ""),
+                "error_id": event_data.get("error_id", ""),
                 "event_level": event_data.get("error_level", "").lower(),
                 "event_type": event_data.get("error_type", ""),
                 "event_detail": event_data.get("error_detail", ""),
@@ -281,10 +296,13 @@ class MockDatabaseWriter:
 
             if self._validate_data_against_schema(table_config["table_name"], db_data):
                 self.written_data[table_config["table_name"]].append(db_data)
+                database_names.add(table_config["database"])
+                table_names.add(table_config["table_name"])
                 logger.info(f"✅ Mock write robot event: {robot_sn} -> {table_config['table_name']}")
                 logger.info(f"   Data written: {db_data}")
             else:
                 logger.error(f"❌ Schema validation failed for robot event write")
+        return list(database_names), list(table_names)
 
     def get_written_data(self, table_name: Optional[str] = None) -> Dict[str, List[Dict]]:
         """Get all written data for testing verification"""

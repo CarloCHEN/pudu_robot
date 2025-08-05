@@ -116,39 +116,46 @@ def pudu_webhook():
         if database_writer:
             try:
                 logger.info(f"📊 Writing to mock database: {data.get('callback_type')}")
-                callback_handler.write_to_database(data, database_writer)
+                database_names, table_names, primary_key_values = callback_handler.write_to_database(data, database_writer)
                 logger.info("✅ Mock database write completed")
             except Exception as e:
                 logger.error(f"❌ Failed to write callback to mock database: {e}")
 
         # Send MOCK notification if service is available
         if notification_service:
-            try:
-                logger.info(f"📨 Sending mock notification: {data.get('callback_type')}")
+            for database_name, table_name in zip(database_names, table_names):
+                try:
+                    logger.info(f"📨 Sending mock notification: {data.get('callback_type')}")
 
-                # Import here to avoid circular imports
-                from test.mocks.mock_notification import MockNotificationService
+                    # Import here to avoid circular imports
+                    from test.mocks.mock_notification import MockNotificationService
 
-                # Simple mock notification for testing
-                robot_sn = data.get("data", {}).get("sn", "unknown")
-                callback_type = data.get("callback_type", "unknown")
+                    # Simple mock notification for testing
+                    robot_sn = data.get("data", {}).get("sn", "unknown")
+                    callback_type = data.get("callback_type", "unknown")
+                    payload = {
+                        "database_name": database_name,
+                        "table_name": table_name,
+                        "primary_key_values": primary_key_values
+                    }
 
-                success = notification_service.send_notification(
-                    robot_id=robot_sn,
-                    notification_type="robot_status",
-                    title=f"Test: {callback_type}",
-                    content=f"Test notification for robot {robot_sn}",
-                    severity="event",
-                    status="normal",
-                )
+                    success = notification_service.send_notification(
+                        robot_id=robot_sn,
+                        notification_type="robot_status",
+                        title=f"Test: {callback_type}",
+                        content=f"Test notification for robot {robot_sn}",
+                        severity="event",
+                        status="normal",
+                        payload=payload
+                    )
 
-                if success:
-                    logger.info("✅ Mock notification sent successfully")
-                else:
-                    logger.warning("⚠️ Mock notification failed")
+                    if success:
+                        logger.info("✅ Mock notification sent successfully")
+                    else:
+                        logger.warning("⚠️ Mock notification failed")
 
-            except Exception as e:
-                logger.error(f"❌ Failed to send mock notification: {e}")
+                except Exception as e:
+                    logger.error(f"❌ Failed to send mock notification: {e}")
 
         # Return result
         return jsonify(response.to_dict()), 200 if response.status == CallbackStatus.SUCCESS else 400

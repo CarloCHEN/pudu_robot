@@ -9,7 +9,7 @@ sys.path.append('../../')
 
 import pandas as pd
 from pudu.app.main import prepare_df_for_database
-from pudu.notifications import detect_data_changes, send_change_based_notifications, should_skip_notification
+from pudu.notifications import detect_data_changes, send_change_based_notifications
 from pudu.test.mocks.mock_rds import MockRDSTable
 from pudu.test.mocks.mock_notifications import MockNotificationService
 from pudu.test.utils.test_helpers import TestDataLoader
@@ -83,8 +83,10 @@ class TestPipeline:
         print("  ✅ Change detection successful")
 
         # Step 5: Generate notifications
+        database_name = "foxx_irvine_office"
+        table_name = "robot_status"
         success_count, failed_count = send_change_based_notifications(
-            self.mock_notification_service, changes, "robot_status"
+            self.mock_notification_service, database_name, table_name, changes, "robot_status"
         )
 
         # Verify notifications were sent
@@ -149,8 +151,10 @@ class TestPipeline:
             print("  ✅ Task completion detection successful")
 
             # Test notifications for task completion
+            database_name = "foxx_irvine_office"
+            table_name = "robot_tasks"
             success_count, failed_count = send_change_based_notifications(
-                self.mock_notification_service, changes, "robot_task"
+                self.mock_notification_service, database_name, table_name, changes, "robot_task"
             )
 
             sent_notifications = self.mock_notification_service.get_sent_notifications()
@@ -251,8 +255,10 @@ class TestPipeline:
                                     ["robot_sn", "error_id"])
 
         # Test notifications for different event severities
+        database_name = "foxx_irvine_office"
+        table_name = "robot_events"
         success_count, failed_count = send_change_based_notifications(
-            self.mock_notification_service, changes, "robot_events"
+            self.mock_notification_service, database_name, table_name, changes, "robot_events"
         )
 
         sent_notifications = self.mock_notification_service.get_sent_notifications()
@@ -375,8 +381,10 @@ class TestPipeline:
                 changes = detect_data_changes(mock_table, data_list, mock_table.primary_keys)
 
                 if changes:
+                    database_name = "foxx_irvine_office"
+                    table_name = data_type
                     success, failed = send_change_based_notifications(
-                        self.mock_notification_service, changes, data_type
+                        self.mock_notification_service, database_name, table_name, changes, data_type
                     )
                     total_notifications += success
                     print(f"    📧 Sent {success} notifications for {data_type}")

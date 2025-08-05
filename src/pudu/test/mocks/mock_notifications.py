@@ -15,7 +15,7 @@ class MockNotificationService:
         self.connection_attempts = []
 
     def send_notification(self, robot_id: str, notification_type: str,
-                         title: str, content: str, severity: str, status: str) -> bool:
+                         title: str, content: str, severity: str, status: str, payload: dict) -> bool:
         """Mock send notification that captures notification data"""
         notification = {
             "robot_id": robot_id,
@@ -24,6 +24,7 @@ class MockNotificationService:
             "content": content,
             "severity": severity,
             "status": status,
+            "payload": payload,
             "success": True
         }
 

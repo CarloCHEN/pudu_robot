@@ -3,18 +3,15 @@ Integration tests for webhook endpoint
 Tests the complete webhook endpoint functionality
 """
 
-import os
-import subprocess
 import sys
 import threading
-import time
 from pathlib import Path
 
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from test.utils.test_helpers import TestDataLoader, TestReporter, TestValidator, setup_test_logging
+from test.utils.test_helpers import TestDataLoader, TestReporter, setup_test_logging
 from test.utils.webhook_client import WebhookClient
 
 
