@@ -1,162 +1,157 @@
 import logging
 import time
-from typing import Any, Dict
+from typing import Any, Dict, List
 
-from database_config import DatabaseConfig
-from rds_utils import batch_insert, connect_rds_instance, use_database
+from configs.database_config import DatabaseConfig
+from rds.rdsTable import RDSTable
+from notifications.change_detector import detect_data_changes
 
 logger = logging.getLogger(__name__)
 
 
-class DatabaseWriter:
-    """Handles writing callback data to RDS database"""
+class EnhancedDatabaseWriter:
+    """Enhanced database writer with dynamic routing and change detection"""
 
-    def __init__(self, config_path: str = "database_config.yaml", credentials_path: str = "credentials.yaml"):
+    def __init__(self, config_path: str = "database_config.yaml"):
         self.config = DatabaseConfig(config_path)
-        self.credentials_path = credentials_path
-        self.connections = {}
+        self.table_cache = {}  # Cache RDSTable instances
 
-    def _get_connection(self, database_name: str):
-        """Get or create database connection"""
-        if database_name not in self.connections:
+    def _get_table(self, database_name: str, table_name: str, primary_keys: List[str]) -> RDSTable:
+        """Get or create RDSTable instance"""
+        table_key = f"{database_name}.{table_name}"
+
+        if table_key not in self.table_cache:
             try:
-                connection = connect_rds_instance(self.credentials_path)
-                cursor = connection.cursor()
-                use_database(cursor, database_name)
-                self.connections[database_name] = {"connection": connection, "cursor": cursor}
-                logger.info(f"Established connection to database: {database_name}")
+                table = RDSTable(
+                    connection_config="credentials.yaml",
+                    database_name=database_name,
+                    table_name=table_name,
+                    primary_keys=primary_keys
+                )
+                self.table_cache[table_key] = table
+                logger.info(f"Created RDSTable instance for {database_name}.{table_name}")
             except Exception as e:
-                logger.error(f"Failed to connect to database {database_name}: {e}")
+                logger.error(f"Failed to create table instance for {database_name}.{table_name}: {e}")
                 raise
 
-        return self.connections[database_name]
+        return self.table_cache[table_key]
 
     def write_robot_status(self, robot_sn: str, status_data: Dict[str, Any]):
-        """Write robot status data to mnt_robots_management table"""
-        table_configs = self.config.get_table_configs().get("robot_status", [])
-        database_names = set()
-        table_names = set()
-
-        if not table_configs:
-            logger.warning("No robot_status table configurations found")
-            return
-
-        # Prepare data for database insertion
-        db_data = {"robot_sn": robot_sn, "status": status_data.get("status", "")}
-
-        # Remove None values
-        db_data = {k: v for k, v in db_data.items() if v is not None}
-
-        for table_config in table_configs:
-            try:
-                db_conn = self._get_connection(table_config["database"])
-                batch_insert(db_conn["cursor"], table_config["table_name"], [db_data], table_config["primary_keys"])
-                database_names.add(table_config["database"])
-                table_names.add(table_config["table_name"])
-                logger.info(f"Updated robot status for {robot_sn} in {table_config['database']}.{table_config['table_name']}")
-            except Exception as e:
-                logger.error(f"Failed to write robot status to {table_config['database']}.{table_config['table_name']}: {e}")
-
-        return list(database_names), list(table_names)
+        """Write robot status data with dynamic routing and change detection"""
+        return self._write_with_dynamic_routing(
+            'robot_status', [robot_sn], [status_data]
+        )
 
     def write_robot_pose(self, robot_sn: str, pose_data: Dict[str, Any]):
-        """Write robot pose data to mnt_robots_management table"""
-        table_configs = self.config.get_table_configs().get("robot_status", [])
-        database_names = set()
-        table_names = set()
-        if not table_configs:
-            logger.warning("No robot_status table configurations found")
-            return
-
-        # Prepare data for database insertion
-        db_data = {"robot_sn": robot_sn, "x": pose_data.get("x"), "y": pose_data.get("y"), "z": pose_data.get("z")}
-
-        # Remove None values
-        db_data = {k: v for k, v in db_data.items() if v is not None}
-
-        for table_config in table_configs:
-            try:
-                db_conn = self._get_connection(table_config["database"])
-                batch_insert(db_conn["cursor"], table_config["table_name"], [db_data], table_config["primary_keys"])
-                database_names.add(table_config["database"])
-                table_names.add(table_config["table_name"])
-                logger.info(f"Updated robot pose for {robot_sn} in {table_config['database']}.{table_config['table_name']}")
-            except Exception as e:
-                logger.error(f"Failed to write robot pose to {table_config['database']}.{table_config['table_name']}: {e}")
-
-        return list(database_names), list(table_names)
+        """Write robot pose data with dynamic routing and change detection"""
+        return self._write_with_dynamic_routing(
+            'robot_status', [robot_sn], [pose_data]
+        )
 
     def write_robot_power(self, robot_sn: str, power_data: Dict[str, Any]):
-        """Write robot power data to mnt_robots_management table"""
-        table_configs = self.config.get_table_configs().get("robot_status", [])
-        database_names = set()
-        table_names = set()
-        if not table_configs:
-            logger.warning("No robot_status table configurations found")
-            return
-
-        # Prepare data for database insertion
-        db_data = {"robot_sn": robot_sn, "battery_level": power_data.get("power")}
-
-        # Remove None values
-        db_data = {k: v for k, v in db_data.items() if v is not None}
-
-        for table_config in table_configs:
-            try:
-                db_conn = self._get_connection(table_config["database"])
-                batch_insert(db_conn["cursor"], table_config["table_name"], [db_data], table_config["primary_keys"])
-                database_names.add(table_config["database"])
-                table_names.add(table_config["table_name"])
-                logger.info(f"Updated robot power for {robot_sn} in {table_config['database']}.{table_config['table_name']}")
-            except Exception as e:
-                logger.error(f"Failed to write robot power to {table_config['database']}.{table_config['table_name']}: {e}")
-
-        return list(database_names), list(table_names)
+        """Write robot power data with dynamic routing and change detection"""
+        return self._write_with_dynamic_routing(
+            'robot_status', [robot_sn], [power_data]
+        )
 
     def write_robot_event(self, robot_sn: str, event_data: Dict[str, Any]):
-        """Write robot event data to mnt_robot_events table"""
-        table_configs = self.config.get_table_configs().get("robot_events", [])
-        database_names = set()
-        table_names = set()
-        if not table_configs:
-            logger.warning("No robot_events table configurations found")
-            return
+        """Write robot event data with dynamic routing and change detection"""
+        return self._write_with_dynamic_routing(
+            'robot_events', [robot_sn], [event_data]
+        )
 
-        # Prepare data for database insertion
-        db_data = {
-            "robot_sn": robot_sn,
-            "event_id": event_data.get("error_id", ""),
-            "error_id": event_data.get("error_id", ""),
-            "event_level": event_data.get("error_level", "").lower(),
-            "event_type": event_data.get("error_type", ""),
-            "event_detail": event_data.get("error_detail", ""),
-            "task_time": event_data.get("timestamp", int(time.time())),
-            "upload_time": int(time.time()),
-        }
+    def _write_with_dynamic_routing(self, table_type: str, robot_sns: List[str], data_list: List[Dict]):
+        """
+        Write data with dynamic database routing and change detection
 
-        # Remove None values
-        db_data = {k: v for k, v in db_data.items() if v is not None}
+        Returns:
+            tuple: (database_names, table_names, primary_key_values, changes_detected)
+        """
+        if not robot_sns or not data_list:
+            return [], [], {}, {}
+
+        # Get table configurations for these robots
+        table_configs = self.config.get_table_configs_for_robots(table_type, robot_sns)
+
+        database_names = []
+        table_names = []
+        all_changes = {}
 
         for table_config in table_configs:
             try:
-                db_conn = self._get_connection(table_config["database"])
-                batch_insert(db_conn["cursor"], table_config["table_name"], [db_data], table_config["primary_keys"])
-                database_names.add(table_config["database"])
-                table_names.add(table_config["table_name"])
-                logger.info(f"Inserted robot event for {robot_sn} in {table_config['database']}.{table_config['table_name']}")
-            except Exception as e:
-                logger.error(f"Failed to write robot event to {table_config['database']}.{table_config['table_name']}: {e}")
+                # Get actual RDSTable instance
+                table = self._get_table(
+                    database_name=table_config['database'],
+                    table_name=table_config['table_name'],
+                    primary_keys=table_config['primary_keys']
+                )
 
-        return list(database_names), list(table_names)
+                # Filter data for robots that belong to this database
+                target_robots = table_config.get('robot_sns', [])
+                if target_robots:
+                    filtered_data = [data for data in data_list
+                                   if data.get('robot_sn') in target_robots]
+                else:
+                    filtered_data = data_list
+
+                if not filtered_data:
+                    continue
+
+                # Detect changes using the actual table object
+                changes = detect_data_changes(
+                    table, filtered_data, table_config['primary_keys']
+                )
+
+                if changes:
+                    # Insert changed records and get database keys
+                    changed_records = []
+                    for change_info in changes.values():
+                        changed_records.append(change_info['new_values'])
+
+                    # Use the table's batch_insert_with_ids method
+                    ids = table.batch_insert_with_ids(changed_records)
+
+                    # ids is a list of tuples, each tuple contains (original_data_dict, unique_key_in_db)
+                    # now we need to add the database_key to each change record
+                    # step 1: add database_key to primary_key_values dict
+                    pk_to_db_id = {}
+                    for original_data, db_id in ids:
+                        # Create primary key tuple for matching
+                        pk_values = tuple(str(original_data.get(pk, '')) for pk in table.primary_keys)
+                        pk_to_db_id[pk_values] = db_id
+
+                    # step 2: add database_key to changes dictionary
+                    for unique_id, change_info in changes.items():
+                        # Create primary key tuple from change info
+                        pk_values = tuple(str(change_info['primary_key_values'].get(pk, '')) for pk in table.primary_keys)
+                        # Add database_key to the change info
+                        db_id = pk_to_db_id.get(pk_values)
+                        changes[unique_id]['database_key'] = db_id
+
+                    database_names.append(table_config['database'])
+                    table_names.append(table_config['table_name'])
+
+                    # Store changes with table identifier
+                    table_key = tuple([table.database_name, table.table_name])
+                    all_changes[table_key] = changes
+
+                    logger.info(f"Updated {len(filtered_data)} records in {table_config['database']}.{table_config['table_name']}")
+                else:
+                    logger.info(f"No changes detected for {table_config['database']}.{table_config['table_name']}")
+
+            except Exception as e:
+                logger.error(f"Failed to write to {table_config['database']}.{table_config['table_name']}: {e}")
+
+        return database_names, table_names, all_changes
 
     def close_all_connections(self):
-        """Close all database connections"""
-        for database_name, conn_info in self.connections.items():
+        """Close all table connections"""
+        for table_key, table in self.table_cache.items():
             try:
-                conn_info["cursor"].close()
-                conn_info["connection"].close()
-                logger.info(f"Closed connection to database: {database_name}")
+                table.close()
+                logger.info(f"Closed connection for table: {table_key}")
             except Exception as e:
-                logger.warning(f"Error closing connection to {database_name}: {e}")
+                logger.warning(f"Error closing table {table_key}: {e}")
 
-        self.connections.clear()
+        self.table_cache.clear()
+        self.config.close()

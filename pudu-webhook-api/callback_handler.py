@@ -1,18 +1,20 @@
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
+import time
 
 from models import CallbackResponse, CallbackStatus
 from processors import RobotErrorProcessor, RobotPoseProcessor, RobotPowerProcessor, RobotStatusProcessor
+from database_writer import DatabaseWriter
 
 logger = logging.getLogger(__name__)
 
 
 class CallbackHandler:
     """
-    Main handler for processing Pudu robot callbacks
+    Callback handler with dynamic database routing and change detection
     """
 
-    def __init__(self):
+    def __init__(self, config_path: str = "database_config.yaml"):
         self.processors = {
             "robotStatus": RobotStatusProcessor(),
             "robotErrorWarning": RobotErrorProcessor(),
@@ -32,6 +34,9 @@ class CallbackHandler:
             "deliveryStart",
             "deliveryCancel",
         }
+
+        # Initialize enhanced database writer
+        self.database_writer = DatabaseWriter(config_path)
 
     def process_callback(self, data: Dict[str, Any]) -> CallbackResponse:
         """
@@ -67,58 +72,71 @@ class CallbackHandler:
             logger.error(f"Error in callback processing: {str(e)}", exc_info=True)
             return CallbackResponse(status=CallbackStatus.ERROR, message=f"Processing error: {str(e)}")
 
-    def write_to_database(self, data: Dict[str, Any], database_writer):
-        """Write callback data to database"""
+    def write_to_database_with_change_detection(self, data: Dict[str, Any]) -> Tuple[list, list, dict]:
+        """
+        Write callback data to database with dynamic routing and change detection
+
+        Returns:
+            tuple: (database_names, table_names, changes_detected)
+        """
         try:
             callback_type = data.get("callback_type")
             callback_data = data.get("data", {})
             robot_sn = callback_data.get("sn", "")
-            primary_key_values = dict()
 
             if not robot_sn:
                 logger.warning("No robot SN found in callback data")
-                return
+                return [], [], {}
 
             if callback_type == "robotStatus":
                 status_data = {
+                    "robot_sn": robot_sn,
                     "status": callback_data.get("run_status", "").lower(),
                     "timestamp": callback_data.get("timestamp"),
                 }
-                database_names, table_names = database_writer.write_robot_status(robot_sn, status_data)
-                primary_key_values['robot_sn'] = robot_sn
+                return self.database_writer.write_robot_status(robot_sn, status_data)
 
             elif callback_type == "notifyRobotPose":
                 pose_data = {
+                    "robot_sn": robot_sn,
                     "x": callback_data.get("x"),
                     "y": callback_data.get("y"),
-                    "z": callback_data.get("yaw"),
+                    "z": callback_data.get("yaw"),  # Note: API uses 'yaw' for z-coordinate
                     "timestamp": callback_data.get("timestamp"),
                 }
-                database_names, table_names = database_writer.write_robot_pose(robot_sn, pose_data)
-                primary_key_values['robot_sn'] = robot_sn
+                return self.database_writer.write_robot_pose(robot_sn, pose_data)
 
             elif callback_type == "notifyRobotPower":
                 power_data = {
-                    "power": callback_data.get("power"),
+                    "robot_sn": robot_sn,
+                    "battery_level": callback_data.get("power"),
                     "charge_state": callback_data.get("charge_state"),
                     "timestamp": callback_data.get("timestamp"),
                 }
-                database_names, table_names = database_writer.write_robot_power(robot_sn, power_data)
-                primary_key_values['robot_sn'] = robot_sn
+                return self.database_writer.write_robot_power(robot_sn, power_data)
 
             elif callback_type == "robotErrorWarning":
                 event_data = {
-                    "error_level": callback_data.get("error_level"),
-                    "error_type": callback_data.get("error_type"),
-                    "error_detail": callback_data.get("error_detail"),
-                    "error_id": callback_data.get("error_id"),
-                    "timestamp": callback_data.get("timestamp"),
+                    "robot_sn": robot_sn,
+                    "event_id": callback_data.get("error_id", ""),
+                    "error_id": callback_data.get("error_id", ""),
+                    "event_level": callback_data.get("error_level", "").lower(),
+                    "event_type": callback_data.get("error_type", ""),
+                    "event_detail": callback_data.get("error_detail", ""),
+                    "task_time": callback_data.get("timestamp", int(time.time())),
+                    "upload_time": int(time.time()),
                 }
-                database_names, table_names = database_writer.write_robot_event(robot_sn, event_data)
-                primary_key_values['robot_sn'] = robot_sn
-                primary_key_values['event_id'] = callback_data.get("error_id")
+                return self.database_writer.write_robot_event(robot_sn, event_data)
 
-            return database_names, table_names, primary_key_values
+            return [], [], {}
 
         except Exception as e:
             logger.error(f"Error writing callback to database: {str(e)}")
+            return [], [], {}
+
+    def close(self):
+        """Close database connections"""
+        try:
+            self.database_writer.close_all_connections()
+        except Exception as e:
+            logger.warning(f"Error closing database writer: {e}")

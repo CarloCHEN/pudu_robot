@@ -37,7 +37,7 @@ class TestRDSFunctions:
             AND CONSTRAINT_NAME = 'PRIMARY'
             AND TABLE_SCHEMA = DATABASE()
         """
-
+        
         # Check that execute was called (we can't check exact query due to formatting)
         assert self.mock_cursor.execute.called
         assert result == 'id'
@@ -157,7 +157,7 @@ def run_change_detection_tests():
     print("🧪 TESTING RDS UTILITY FUNCTIONS")
     print("=" * 60)
 
-    test_instance = TestChangeDetection()
+    test_instance = TestRDSFunctions()
     test_methods = [method for method in dir(test_instance) if method.startswith("test_")]
 
     passed = 0

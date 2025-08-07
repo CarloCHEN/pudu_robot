@@ -6,7 +6,6 @@ Tests complete flows with data that matches your production environment
 import sys
 sys.path.append('../../')
 
-import pandas as pd
 from pudu.notifications.change_detector import detect_data_changes, normalize_record_for_comparison
 from pudu.rds.utils import batch_insert_with_ids
 from unittest.mock import MagicMock

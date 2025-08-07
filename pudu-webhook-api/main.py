@@ -1,16 +1,16 @@
 import json
 import logging
 from datetime import datetime
-
+import os
 from flask import Flask, jsonify, request
 from werkzeug.exceptions import BadRequest
 
 from callback_handler import CallbackHandler
 from config import Config
-from database_config import DatabaseConfig
-from database_writer import DatabaseWriter
+from configs.database_config import DatabaseConfig
 from models import CallbackResponse, CallbackStatus
-from notifications import NotificationService, send_webhook_notification
+from notifications import NotificationService
+from notifications.notification_sender import send_change_based_notifications
 
 # Configure logging
 logging.basicConfig(
@@ -22,16 +22,8 @@ logging.basicConfig(
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
 
-# Initialize callback handler
+# Initialize enhanced callback handler with dynamic database config
 callback_handler = CallbackHandler()
-
-# Initialize database writer
-try:
-    database_writer = DatabaseWriter()
-    logger.info("Database writer initialized successfully")
-except Exception as e:
-    logger.error(f"Failed to initialize database writer: {e}")
-    database_writer = None
 
 # Initialize notification service
 try:
@@ -41,12 +33,33 @@ except Exception as e:
     logger.error(f"Failed to initialize notification service: {e}")
     notification_service = None
 
+# Get configuration file path - try multiple locations
+config_paths = [
+    'database_config.yaml',
+    'configs/database_config.yaml',
+    '../configs/database_config.yaml',
+    'pudu/configs/database_config.yaml'
+]
 
-# curl -X POST "http://34.230.84.10:8000/api/pudu/webhook" -H "Content-Type: application/json" -H "CallbackCode: 1vQ6MfUxqyoGMRQ9nK8C4pSkg1Qsa3Vpq" -d '{"callback_type": "robotStatus", "data": {"robot_sn": "x123", "robot_status": "ONLINE", "timestamp": 123456}}'
+config_path = None
+for path in config_paths:
+    if os.path.exists(path):
+        config_path = path
+        break
+
+# Initialize dynamic database configuration
+try:
+    db_config = DatabaseConfig(config_path)
+    logger.info("Dynamic database configuration initialized successfully")
+except Exception as e:
+    logger.error(f"Failed to initialize database configuration: {e}")
+    db_config = None
+
+
 @app.route("/api/pudu/webhook", methods=["POST"])
 def pudu_webhook():
     """
-    Main webhook endpoint for receiving Pudu robot callbacks
+    Webhook endpoint with dynamic database routing and change detection
     """
     try:
         # Log incoming request
@@ -63,6 +76,7 @@ def pudu_webhook():
         except BadRequest:
             logger.error("Malformed JSON received")
             return jsonify(CallbackResponse(status=CallbackStatus.ERROR, message="Malformed JSON").to_dict()), 400
+
         logger.info(f"Callback data: {json.dumps(data, indent=2)}")
 
         # Lowercase all headers for consistent access
@@ -90,34 +104,46 @@ def pudu_webhook():
         # Process the callback
         response = callback_handler.process_callback(data)
 
-        # Write to database if writer is available
-        if database_writer:
-            try:
-                database_names, table_names, primary_key_values = callback_handler.write_to_database(data, database_writer)
-            except Exception as e:
-                logger.error(f"Failed to write callback to database: {e}")
+        # Write to database with change detection and dynamic routing
+        try:
+            database_names, table_names, changes_detected = callback_handler.write_to_database_with_change_detection(data)
+            logger.info(f"Database write completed. Changes detected in {len(changes_detected)} tables.")
+        except Exception as e:
+            logger.error(f"Failed to write callback to database: {e}")
+            database_names, table_names, changes_detected = [], [], {}
 
-        # Send notification if service is available
-        if notification_service:
-            config = DatabaseConfig()
-            list_of_db_notification_needed = config.get_notification_needed()
-            for database_name, table_name in zip(database_names, table_names):
-                if database_name in list_of_db_notification_needed:
-                    payload = {
-                        "database_name": database_name,
-                        "table_name": table_name,
-                        "primary_key_values": primary_key_values
-                    }
-                    logger.info(f"Sending notification for {database_name}.{table_name} with payload: {payload}")
-                    try:
-                        send_webhook_notification(
-                            callback_type=data.get("callback_type"),
-                            callback_data=data.get("data", {}),
-                            payload=payload,
-                            notification_service=notification_service
+        # Send notifications for detected changes
+        if notification_service and changes_detected and db_config:
+            callback_type = data.get("callback_type", "unknown")
+            notification_databases = db_config.get_notification_databases()
+
+            total_successful_notifications = 0
+            total_failed_notifications = 0
+
+            for (database_name, table_name), changes in changes_detected.items():
+                try:
+                    # Check if this database needs notifications
+                    if database_name in notification_databases:
+                        logger.info(f"Sending notifications for {len(changes)} changes in {database_name}.{table_name}")
+
+                        successful, failed = send_change_based_notifications(
+                            notification_service=notification_service,
+                            database_name=database_name,
+                            table_name=table_name,
+                            changes_dict=changes,
+                            callback_type=callback_type
                         )
-                    except Exception as e:
-                        logger.error(f"Failed to send notification for {database_name}.{table_name}: {e}")
+
+                        total_successful_notifications += successful
+                        total_failed_notifications += failed
+                    else:
+                        logger.info(f"Skipping notifications for {database_name} (not in notification list)")
+
+                except Exception as e:
+                    logger.error(f"Failed to send notifications for {database_name}.{table_name}: {e}")
+                    total_failed_notifications += len(changes)
+
+            logger.info(f"📧 Total notifications: {total_successful_notifications} successful, {total_failed_notifications} failed")
 
         # Return result
         return jsonify(response.to_dict()), 200 if response.status == CallbackStatus.SUCCESS else 400
@@ -130,23 +156,37 @@ def pudu_webhook():
         )
 
 
-# curl -X GET "http://34.230.84.10:8000/api/pudu/webhook/health"
 @app.route("/api/pudu/webhook/health", methods=["GET"])
 def health_check():
-    """Health check endpoint"""
+    """Enhanced health check endpoint"""
     return jsonify(
         {
             "status": "healthy",
-            "timestamp": datetime.now().strftime("%Y-%m-%d"),
-            "service": "pudu-callback-api",
-            "notification_service": "enabled" if notification_service else "disabled",
-            "database_writer": "enabled" if database_writer else "disabled",
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "service": "pudu-callback-api-enhanced",
+            "features": {
+                "dynamic_database_routing": "enabled" if db_config else "disabled",
+                "change_detection": "enabled",
+                "notification_service": "enabled" if notification_service else "disabled",
+            },
+            "database_config": {
+                "main_database": db_config.main_database_name if db_config else "unknown",
+                "notification_databases": len(db_config.get_notification_databases()) if db_config else 0,
+            }
         }
     )
 
 
 if __name__ == "__main__":
     logger.info("Starting Pudu Robot Callback API Server...")
-    logger.info(f"Notification service: {'✅ Enabled' if notification_service else '❌ Disabled'}")
-    logger.info(f"Database writer: {'✅ Enabled' if database_writer else '❌ Disabled'}")
-    app.run(host=Config.HOST, port=Config.PORT, debug=Config.DEBUG)
+    logger.info(f"🔄 Dynamic database routing: {'✅ Enabled' if db_config else '❌ Disabled'}")
+    logger.info(f"📧 Notification service: {'✅ Enabled' if notification_service else '❌ Disabled'}")
+    logger.info(f"🔍 Change detection: ✅ Enabled")
+
+    try:
+        app.run(host=Config.HOST, port=Config.PORT, debug=Config.DEBUG)
+    finally:
+        # Cleanup
+        callback_handler.close()
+        if db_config:
+            db_config.close()
