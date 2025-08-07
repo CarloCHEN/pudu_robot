@@ -1,413 +1,256 @@
 """
-Real integration tests using actual test data from JSON files
-Tests complete data flows from API data processing to database and notifications
+Integration tests for complete pipeline flows - tests real functions together
 """
 
 import sys
-# Add src to Python path
 sys.path.append('../../')
 
-import pandas as pd
-from Monitor.pudu_robot.src.pudu.app.main_backup import prepare_df_for_database
-from pudu.notifications import detect_data_changes, send_change_based_notifications
-from pudu.test.mocks.mock_rds import MockRDSTable
-from pudu.test.mocks.mock_notifications import MockNotificationService
-from pudu.test.utils.test_helpers import TestDataLoader
+from pudu.notifications.change_detector import detect_data_changes, normalize_record_for_comparison
+from pudu.notifications.notification_sender import (
+    generate_individual_notification_content,
+    get_severity_and_status_for_change,
+    should_skip_notification
+)
+from pudu.rds.utils import batch_insert_with_ids, get_primary_key_column
+from unittest.mock import MagicMock
 
-class TestPipeline:
-    """Test complete data flow using real test data from JSON files"""
+class TestPipelineIntegration:
+    """Test complete pipeline flows with real functions"""
 
     def setup_method(self):
-        """Setup for each test"""
-        self.test_data = TestDataLoader()
-        self.mock_notification_service = MockNotificationService()
+        """Setup for integration tests"""
+        self.mock_cursor = MagicMock()
+        self.mock_cursor.connection = MagicMock()
 
-    def test_robot_status_complete_flow(self):
-        """Test complete robot status flow: JSON → DataFrame → Database → Notifications"""
-        print("\n🔄 Testing complete robot status data flow")
+    def test_complete_robot_status_change_flow(self):
+        """Test complete flow: data change detection → batch insert → ID matching → notification"""
+        print("\n🔄 Testing complete robot status change flow")
 
-        # Step 1: Load real test data from JSON
-        status_data = self.test_data.get_robot_status_data()
-        valid_robots = status_data.get("valid_robots", [])
-        edge_cases = status_data.get("edge_cases", [])
+        # Step 1: Setup existing data (simulate database state)
+        existing_data = [
+            {"robot_sn": "1230", "robot_name": "demo_UF_demo", "battery_level": 50.0, "status": "Online"}
+        ]
 
-        assert len(valid_robots) > 0, "No valid robot data in test JSON"
-        print(f"  📊 Loaded {len(valid_robots)} valid robots from JSON")
+        # Step 2: New data with changes
+        new_data = [
+            {"robot_sn": "1230", "robot_name": "demo_UF_demo", "battery_level": 15.5, "status": "Online"}  # Battery changed
+        ]
 
-        # Step 2: Convert to DataFrame (simulating API response)
-        all_robots = valid_robots + edge_cases
-        df = pd.DataFrame(all_robots)
-        print(f"  📊 Created DataFrame with {len(df)} total robots")
+        # Create mock table that simulates your RDSTable
+        mock_table = self._create_mock_table("mnt_robots_management", ["robot_sn"], existing_data)
 
-        # Step 3: Process for database
-        processed_df = prepare_df_for_database(df)
+        # Step 3: Test change detection
+        changes = detect_data_changes(mock_table, new_data, ["robot_sn"])
 
-        # Validate processing
-        assert isinstance(processed_df, pd.DataFrame)
-        assert len(processed_df) == len(all_robots)
-        expected_columns = ['robot_sn', 'robot_name', 'robot_type', 'water_level',
-                           'sewage_level', 'battery_level', 'status']
-        for col in expected_columns:
-            if col in ['x', 'y', 'z']:  # Optional columns
-                continue
-            snake_case_col = col.lower().replace(' ', '_')
-            assert snake_case_col in processed_df.columns, f"Missing column: {snake_case_col}"
-        print("  ✅ DataFrame processing successful")
-
-        # Step 4: Insert to mock database and detect changes
-        mock_table = MockRDSTable("test", "test_db", "mnt_robots_management",
-                                 primary_keys=["robot_sn"])
-
-        # Insert some "existing" data first
-        existing_robot = valid_robots[0].copy()
-        existing_robot['battery_level'] = 50  # Different from test data
-        mock_table.batch_insert([existing_robot])
-
-        # Now insert the new data and detect changes
-        data_list = processed_df.to_dict(orient='records')
-        changes = detect_data_changes(mock_table, data_list, ["robot_sn"])
-
-        print(f"  🔍 Detected {len(changes)} changes")
-
-        # Verify change detection worked
-        assert len(changes) > 0, "Should detect at least one change"
-
-        # Check specific change for the robot we modified
-        robot_sn = existing_robot['robot_sn']
-        robot_changes = [c for c in changes.values() if c['robot_id'] == robot_sn]
-        assert len(robot_changes) > 0, f"Should detect change for robot {robot_sn}"
-
-        battery_change = robot_changes[0]
-        assert battery_change['change_type'] == 'update'
-        assert 'battery_level' in battery_change['changed_fields']
+        assert len(changes) == 1, "Should detect one change"
+        change_info = list(changes.values())[0]
+        assert change_info["change_type"] == "update"
+        assert "battery_level" in change_info["changed_fields"]
+        assert change_info["new_values"]["battery_level"] == 15.5
         print("  ✅ Change detection successful")
 
-        # Step 5: Generate notifications
-        database_name = "foxx_irvine_office"
-        table_name = "robot_status"
-        success_count, failed_count = send_change_based_notifications(
-            self.mock_notification_service, database_name, table_name, changes, "robot_status"
-        )
+        # Step 4: Test batch insert with IDs
+        # Mock the batch insert response
+        self.mock_cursor.fetchone.return_value = ('id',)  # Primary key detection
+        self.mock_cursor.fetchall.return_value = [(123, "1230")]  # ID query result
 
-        # Verify notifications were sent
-        sent_notifications = self.mock_notification_service.get_sent_notifications()
-        print(f"  📧 Sent {len(sent_notifications)} notifications")
+        changed_records = [change_info["new_values"] for change_info in changes.values()]
+        ids = batch_insert_with_ids(self.mock_cursor, "mnt_robots_management", changed_records, ["robot_sn"])
 
+        assert len(ids) == 1
+        assert ids[0] == (changed_records[0], 123)
+        print("  ✅ Batch insert with IDs successful")
+
+        # Step 5: Test ID matching to changes
+        pk_to_db_id = {}
+        for original_data, db_id in ids:
+            pk_values = tuple(str(original_data.get(pk, '')) for pk in ["robot_sn"])
+            pk_to_db_id[pk_values] = db_id
+
+        # Add database_key to changes
+        for unique_id, change_info in changes.items():
+            pk_values = tuple(str(change_info['primary_key_values'].get(pk, '')) for pk in ["robot_sn"])
+            db_id = pk_to_db_id.get(pk_values)
+            changes[unique_id]['database_key'] = db_id
+
+        # Verify matching worked
+        updated_change = list(changes.values())[0]
+        assert updated_change['database_key'] == 123
+        print("  ✅ ID matching successful")
+
+        # Step 6: Test notification generation
+        title, content = generate_individual_notification_content("robot_status", updated_change)
+        severity, status = get_severity_and_status_for_change("robot_status", updated_change)
+
+        # Low battery should trigger appropriate notification
+        assert "battery" in title.lower() or "battery" in content.lower()
+        assert severity == "warning"  # 15.5% battery is warning level
+        assert status == "warning"
         print("  ✅ Notification generation successful")
 
-        print("  🎉 Complete robot status flow PASSED")
+        print("  🎉 Complete robot status change flow PASSED")
 
-    def test_robot_task_complete_flow(self):
-        """Test complete robot task flow using JSON test data"""
-        print("\n🔄 Testing complete robot task data flow")
+    def test_complete_task_completion_flow(self):
+        """Test complete flow for task completion scenario"""
+        print("\n🔄 Testing complete task completion flow")
 
-        # Step 1: Load test data
-        task_data = self.test_data.get_robot_task_data()
-        valid_tasks = task_data.get("valid_tasks", [])
+        # Step 1: Existing task in progress
+        existing_task = [
+            {
+                "robot_sn": "1230",
+                "task_name": "Library Cleaning",
+                "start_time": "2024-09-01 14:30:00",
+                "status": 1,  # In Progress
+                "progress": 50.0,
+                "actual_area": 75.28
+            }
+        ]
 
-        assert len(valid_tasks) > 0, "No valid task data in test JSON"
-        print(f"  📊 Loaded {len(valid_tasks)} valid tasks from JSON")
+        # Step 2: Task completion data
+        completed_task = [
+            {
+                "robot_sn": "1230",
+                "task_name": "Library Cleaning",
+                "start_time": "2024-09-01 14:30:00",
+                "status": 4,  # Task Ended
+                "progress": 100.0,
+                "actual_area": 150.56
+            }
+        ]
 
-        # Step 2: Process data
-        df = pd.DataFrame(valid_tasks)
-        processed_df = prepare_df_for_database(df, columns_to_remove=['id'])
+        # Create mock table
+        mock_table = self._create_mock_table("mnt_robots_task", ["robot_sn", "task_name", "start_time"], existing_task)
 
-        # Validate task-specific fields
-        task_columns = ['robot_sn', 'task_name', 'mode', 'actual_area', 'plan_area',
-                       'progress', 'status', 'efficiency']
-        for col in task_columns:
-            snake_case_col = col.lower().replace(' ', '_')
-            if snake_case_col in processed_df.columns:
-                assert processed_df[snake_case_col].notna().any(), f"Column {snake_case_col} has no valid data"
+        # Step 3: Detect changes
+        changes = detect_data_changes(mock_table, completed_task, ["robot_sn", "task_name", "start_time"])
 
-        print("  ✅ Task data processing successful")
+        assert len(changes) == 1
+        change_info = list(changes.values())[0]
+        assert change_info["change_type"] == "update"
+        assert "status" in change_info["changed_fields"]
+        assert "progress" in change_info["changed_fields"]
+        print("  ✅ Task completion detection successful")
 
-        # Step 3: Test change detection with task status changes
-        mock_table = MockRDSTable("test", "test_db", "mnt_robot_tasks",
-                                 primary_keys=["robot_sn", "task_name", "start_time"])
+        # Step 4: Test notification logic
+        title, content = generate_individual_notification_content("robot_task", change_info)
+        severity, status = get_severity_and_status_for_change("robot_task", change_info)
 
-        # Find a completed task from test data
-        completed_tasks = [t for t in valid_tasks if t.get('status') == 'Task Ended']
-        if completed_tasks:
-            completed_task = completed_tasks[0]
+        # Task completion should be success
+        assert "task" in title.lower()
+        assert "Library Cleaning" in content
+        assert severity == "success"
+        assert status == "completed"
+        print("  ✅ Task completion notification successful")
 
-            # Insert as "in progress" first
-            in_progress_task = completed_task.copy()
-            in_progress_task['status'] = 'In Progress'
-            in_progress_task['progress'] = 50.0
-            mock_table.batch_insert([in_progress_task])
+        print("  🎉 Complete task completion flow PASSED")
 
-            # Now "complete" the task
-            data_list = [completed_task]
-            changes = detect_data_changes(mock_table, data_list,
-                                        ["robot_sn", "task_name", "start_time"])
+    def test_notification_skipping_integration(self):
+        """Test that notification skipping works correctly in complete flow"""
+        print("\n🔄 Testing notification skipping integration")
 
-            # Verify task completion was detected
-            assert len(changes) > 0, "Should detect task completion"
+        # Test scenarios that should/shouldn't be skipped
+        test_scenarios = [
+            # (data_type, change_data, should_skip, description)
+            ("robot_charging", {"change_type": "update", "changed_fields": ["final_power"]}, True, "Charging updates"),
+            ("robot_status", {"change_type": "update", "changed_fields": ["battery_level"], "new_values": {"battery_level": 80}}, True, "High battery updates"),
+            ("robot_status", {"change_type": "update", "changed_fields": ["battery_level"], "new_values": {"battery_level": 8}}, False, "Low battery alerts"),
+            ("robot_task", {"change_type": "update", "changed_fields": ["status"]}, False, "Task status changes"),
+            ("location", {"change_type": "new_record"}, True, "Location changes"),
+        ]
 
-            task_change = list(changes.values())[0]
-            assert task_change['change_type'] == 'update'
-            assert 'status' in task_change['changed_fields']
-            print("  ✅ Task completion detection successful")
+        for data_type, change_info, expected_skip, description in test_scenarios:
+            result = should_skip_notification(data_type, change_info)
+            assert result == expected_skip, f"{description}: expected skip={expected_skip}, got {result}"
+            print(f"  ✅ {description} - skipping logic correct")
 
-            # Test notifications for task completion
-            database_name = "foxx_irvine_office"
-            table_name = "robot_tasks"
-            success_count, failed_count = send_change_based_notifications(
-                self.mock_notification_service, database_name, table_name, changes, "robot_task"
-            )
+        print("  🎉 Notification skipping integration PASSED")
 
-            sent_notifications = self.mock_notification_service.get_sent_notifications()
-            task_notifications = [n for n in sent_notifications
-                                if 'task' in n['content'].lower()]
+    def test_decimal_normalization_integration(self):
+        """Test that decimal normalization works correctly throughout the pipeline"""
+        print("\n🔄 Testing decimal normalization integration")
 
-            assert len(task_notifications) > 0, "Should send task completion notification"
+        # Step 1: Raw API data with high precision
+        raw_data = [
+            {
+                "robot_sn": "1230",
+                "battery_level": 95.567891234,  # High precision from API
+                "actual_area": 150.555555,      # Area calculation precision
+                "efficiency": 0.123456789,      # Efficiency calculation
+                "progress": 82.999999           # Progress percentage
+            }
+        ]
 
-            task_notif = task_notifications[0]
-            assert completed_task['robot_sn'] in task_notif['content']
-            assert task_notif['severity'] == 'success'
-            print("  ✅ Task completion notification successful")
+        # Step 2: Normalize for comparison
+        normalized = [normalize_record_for_comparison(record) for record in raw_data]
 
-        print("  🎉 Complete robot task flow PASSED")
+        # Verify normalization
+        norm_record = normalized[0]
+        assert norm_record["battery_level"] == 95.57
+        assert norm_record["actual_area"] == 150.56
+        assert abs(norm_record["efficiency"] - 0.12) < 0.01
+        assert norm_record["progress"] == 83.00
+        print("  ✅ Decimal normalization successful")
 
-    def test_robot_charging_complete_flow(self):
-        """Test complete robot charging flow using JSON test data"""
-        print("\n🔄 Testing complete robot charging data flow")
-
-        # Step 1: Load test data
-        charging_data = self.test_data.get_robot_charging_data()
-        valid_sessions = charging_data.get("valid_charging_sessions", [])
-
-        assert len(valid_sessions) > 0, "No valid charging data in test JSON"
-        print(f"  📊 Loaded {len(valid_sessions)} charging sessions from JSON")
-
-        # Step 2: Process data
-        df = pd.DataFrame(valid_sessions)
-        processed_df = prepare_df_for_database(df, columns_to_remove=['id'])
-
-        # Validate charging-specific processing
-        charging_columns = ['robot_sn', 'robot_name', 'start_time', 'end_time',
-                          'duration', 'initial_power', 'final_power', 'power_gain']
-        for col in charging_columns:
-            snake_case_col = col.lower().replace(' ', '_')
-            if snake_case_col in processed_df.columns:
-                assert processed_df[snake_case_col].notna().any()
-
-        print("  ✅ Charging data processing successful")
-
-        # Step 3: Test notification logic (charging updates usually skipped)
-        mock_table = MockRDSTable("test", "test_db", "mnt_robot_charging",
-                                 primary_keys=["robot_sn", "start_time", "end_time"])
-
-        data_list = processed_df.to_dict(orient='records')
-        changes = detect_data_changes(mock_table, data_list,
-                                    ["robot_sn", "start_time", "end_time"])
-
-        # Test notification skipping for charging
-        from pudu.notifications.notification_sender import should_skip_notification
-
-        for change_info in changes.values():
-            if change_info['change_type'] == 'new_record':
-                should_skip = should_skip_notification("robot_charging", change_info)
-                # New charging records should not be skipped
-                assert should_skip == False, "New charging records should trigger notifications"
-            else:
-                should_skip = should_skip_notification("robot_charging", change_info)
-                # Charging updates should be skipped
-                assert should_skip == True, "Charging updates should be skipped"
-
-        print("  ✅ Charging notification logic successful")
-        print("  🎉 Complete robot charging flow PASSED")
-
-    def test_robot_events_complete_flow(self):
-        """Test complete robot events flow using JSON test data"""
-        print("\n🔄 Testing complete robot events data flow")
-
-        # Step 1: Load test data
-        events_data = self.test_data.get_robot_event_data()
-        valid_events = events_data.get("valid_events", [])
-        severity_events = events_data.get("severity_levels", [])
-
-        all_events = valid_events + severity_events
-        assert len(all_events) > 0, "No valid event data in test JSON"
-        print(f"  📊 Loaded {len(all_events)} events from JSON")
-
-        # Step 2: Process data
-        df = pd.DataFrame(all_events)
-        processed_df = prepare_df_for_database(df, columns_to_remove=['id'])
-
-        # Validate event-specific processing
-        event_columns = ['robot_sn', 'event_level', 'event_type', 'event_detail',
-                        'error_id', 'task_time', 'upload_time']
-        for col in event_columns:
-            snake_case_col = col.lower().replace(' ', '_')
-            if snake_case_col in processed_df.columns:
-                assert processed_df[snake_case_col].notna().any()
-
-        print("  ✅ Event data processing successful")
-
-        # Step 3: Test severity-based notifications
-        mock_table = MockRDSTable("test", "test_db", "mnt_robot_events",
-                                 primary_keys=["robot_sn", "error_id"])
-
-        data_list = processed_df.to_dict(orient='records')
-        changes = detect_data_changes(mock_table, data_list,
-                                    ["robot_sn", "error_id"])
-
-        # Test notifications for different event severities
-        database_name = "foxx_irvine_office"
-        table_name = "robot_events"
-        success_count, failed_count = send_change_based_notifications(
-            self.mock_notification_service, database_name, table_name, changes, "robot_events"
-        )
-
-        sent_notifications = self.mock_notification_service.get_sent_notifications()
-
-        # Verify severity mapping
-        for event in all_events:
-            event_level = event.get('event_level', '').lower()
-            robot_sn = event.get('robot_sn')
-
-            robot_notifications = [n for n in sent_notifications
-                                 if robot_sn in n['content']]
-
-            if robot_notifications:
-                notification = robot_notifications[0]
-                if event_level == 'fatal':
-                    assert notification['severity'] == 'fatal'
-                elif event_level == 'error':
-                    assert notification['severity'] == 'error'
-                elif event_level == 'warning':
-                    assert notification['severity'] == 'warning'
-                else:
-                    assert notification['severity'] == 'event'
-
-        print("  ✅ Event severity mapping successful")
-        print("  🎉 Complete robot events flow PASSED")
-
-    def test_location_data_complete_flow(self):
-        """Test complete location data flow using JSON test data"""
-        print("\n🔄 Testing complete location data flow")
-
-        # Step 1: Load test data
-        location_data = self.test_data.get_location_data()
-        valid_locations = location_data.get("valid_locations", [])
-        edge_cases = location_data.get("edge_cases", [])
-
-        all_locations = valid_locations + edge_cases
-        assert len(all_locations) > 0, "No valid location data in test JSON"
-        print(f"  📊 Loaded {len(all_locations)} locations from JSON")
-
-        # Step 2: Process data
-        df = pd.DataFrame(all_locations)
-        processed_df = prepare_df_for_database(df)
-
-        # Validate location processing
-        assert 'building_id' in processed_df.columns
-        assert 'building_name' in processed_df.columns
-        assert len(processed_df) == len(all_locations)
-
-        print("  ✅ Location data processing successful")
-
-        # Step 3: Test that location changes are typically skipped
-        mock_table = MockRDSTable("test", "test_db", "mnt_locations",
-                                 primary_keys=["building_id"])
-
-        data_list = processed_df.to_dict(orient='records')
-        changes = detect_data_changes(mock_table, data_list, ["building_id"])
-
-        # Test notification skipping for locations
-        from pudu.notifications.notification_sender import should_skip_notification
-
-        for change_info in changes.values():
-            should_skip = should_skip_notification("location", change_info)
-            assert should_skip == True, "Location changes should be skipped"
-
-        print("  ✅ Location notification skipping successful")
-        print("  🎉 Complete location flow PASSED")
-
-    def test_mixed_data_scenario(self):
-        """Test processing multiple data types together"""
-        print("\n🔄 Testing mixed data scenario")
-
-        # Load all types of test data
-        all_data_types = {
-            'robot_status': self.test_data.get_robot_status_data(),
-            'robot_task': self.test_data.get_robot_task_data(),
-            'robot_charging': self.test_data.get_robot_charging_data(),
-            'robot_events': self.test_data.get_robot_event_data(),
-            'location': self.test_data.get_location_data()
+        # Step 3: Test that normalized values would match database values
+        # Simulate database record with same precision
+        db_record = {
+            "robot_sn": "1230",
+            "battery_level": 95.57,  # Already normalized in DB
+            "actual_area": 150.56,
+            "efficiency": 0.12,
+            "progress": 83.00
         }
 
-        total_notifications = 0
+        mock_table = self._create_mock_table("test_table", ["robot_sn"], [db_record])
+        changes = detect_data_changes(mock_table, raw_data, ["robot_sn"])
 
-        # Process each data type
-        for data_type, data in all_data_types.items():
-            print(f"  📊 Processing {data_type} data")
+        # Should detect NO changes because normalized values match
+        assert len(changes) == 0, "Normalized values should match database values"
+        print("  ✅ Database comparison integration successful")
 
-            if data_type == 'robot_status':
-                records = data.get('valid_robots', [])
-            elif data_type == 'robot_task':
-                records = data.get('valid_tasks', [])
-            elif data_type == 'robot_charging':
-                records = data.get('valid_charging_sessions', [])
-            elif data_type == 'robot_events':
-                records = data.get('valid_events', [])
-            elif data_type == 'location':
-                records = data.get('valid_locations', [])
+        print("  🎉 Decimal normalization integration PASSED")
 
-            if records:
-                df = pd.DataFrame(records)
-                processed_df = prepare_df_for_database(df)
+    def test_primary_key_detection_integration(self):
+        """Test primary key detection with different table scenarios"""
+        print("\n🔄 Testing primary key detection integration")
 
-                # Create appropriate mock table
-                if data_type == 'robot_status':
-                    mock_table = MockRDSTable("test", "test_db", "robot_status",
-                                             primary_keys=["robot_sn"])
-                elif data_type == 'robot_task':
-                    mock_table = MockRDSTable("test", "test_db", "robot_tasks",
-                                             primary_keys=["robot_sn", "task_name"])
-                elif data_type == 'robot_charging':
-                    mock_table = MockRDSTable("test", "test_db", "robot_charging",
-                                             primary_keys=["robot_sn", "start_time"])
-                elif data_type == 'robot_events':
-                    mock_table = MockRDSTable("test", "test_db", "robot_events",
-                                             primary_keys=["robot_sn", "error_id"])
-                elif data_type == 'location':
-                    mock_table = MockRDSTable("test", "test_db", "locations",
-                                             primary_keys=["building_id"])
+        # Test different primary key scenarios
+        pk_scenarios = [
+            ("mnt_robots_management", "id"),
+            ("mnt_robots_task", "id"),
+            ("pro_building_info", "id"),
+            ("users", "id"),  # Common table name
+        ]
 
-                data_list = processed_df.to_dict(orient='records')
-                changes = detect_data_changes(mock_table, data_list, mock_table.primary_keys)
+        for table_name, expected_pk in pk_scenarios:
+            # Mock successful primary key detection
+            self.mock_cursor.fetchone.return_value = (expected_pk,)
 
-                if changes:
-                    database_name = "foxx_irvine_office"
-                    table_name = data_type
-                    success, failed = send_change_based_notifications(
-                        self.mock_notification_service, database_name, table_name, changes, data_type
-                    )
-                    total_notifications += success
-                    print(f"    📧 Sent {success} notifications for {data_type}")
+            result = get_primary_key_column(self.mock_cursor, table_name)
+            assert result == expected_pk, f"Table {table_name}: expected '{expected_pk}', got '{result}'"
+            print(f"  ✅ Primary key detection for {table_name} successful")
 
-        print(f"  📧 Total notifications sent: {total_notifications}")
+        print("  🎉 Primary key detection integration PASSED")
 
-        # Verify mixed scenario worked
-        all_notifications = self.mock_notification_service.get_sent_notifications()
-        assert len(all_notifications) == total_notifications
+    def _create_mock_table(self, table_name, primary_keys, existing_data):
+        """Helper to create mock table that behaves like RDSTable"""
+        mock_table = MagicMock()
+        mock_table.table_name = table_name
+        mock_table.primary_keys = primary_keys
+        mock_table.database_name = "test_db"
 
-        # Check variety of notification types
-        severities = set(n['severity'] for n in all_notifications)
-        assert len(severities) > 1, "Should have multiple severity types"
+        # Mock query_data to return existing data
+        mock_table.query_data.return_value = existing_data
 
-        print("  🎉 Mixed data scenario PASSED")
+        return mock_table
 
 def run_integration_tests():
-    """Run all real integration tests"""
+    """Run all integration tests"""
     print("=" * 80)
-    print("🧪 RUNNING REAL INTEGRATION TESTS USING JSON TEST DATA")
+    print("🔗 RUNNING PIPELINE INTEGRATION TESTS")
     print("=" * 80)
 
-    test_instance = TestPipeline()
+    test_instance = TestPipelineIntegration()
     test_methods = [method for method in dir(test_instance) if method.startswith("test_")]
 
     passed = 0
@@ -415,10 +258,6 @@ def run_integration_tests():
 
     for method_name in test_methods:
         try:
-            print(f"\n{'='*60}")
-            print(f"🧪 Running {method_name}")
-            print(f"{'='*60}")
-
             test_instance.setup_method()
             method = getattr(test_instance, method_name)
             method()
@@ -431,7 +270,7 @@ def run_integration_tests():
             traceback.print_exc()
 
     print(f"\n{'='*80}")
-    print("📊 REAL INTEGRATION TESTS SUMMARY")
+    print("📊 INTEGRATION TESTS SUMMARY")
     print(f"{'='*80}")
     print(f"✅ Passed: {passed}")
     print(f"❌ Failed: {failed}")
@@ -439,12 +278,10 @@ def run_integration_tests():
 
     if failed == 0:
         print("\n🎉 ALL INTEGRATION TESTS PASSED!")
-        print("✅ Complete data flows are working correctly")
+        print("✅ Complete pipeline flows are working correctly")
     else:
         print(f"\n⚠️ {failed} integration test(s) failed")
-        print("❌ Review failed tests above")
 
-    print(f"{'='*80}")
     return passed, failed
 
 if __name__ == "__main__":

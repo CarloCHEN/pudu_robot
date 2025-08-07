@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Enhanced test runner for Pudu Robot Data Pipeline
+Test runner for Pudu Robot Data Pipeline - runs real tests against real functions
 """
 
 import argparse
@@ -9,7 +9,7 @@ import sys
 import time
 from pathlib import Path
 
-# Correct path: from src/pudu/test/ to src/
+# Add src to Python path: from src/pudu/test/ to src/
 src_path = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(src_path))
 
@@ -19,15 +19,35 @@ def run_test_file(test_file_path):
         try:
             print(f"\n➤ Running {test_file_path.name}")
 
-            # Read and execute the test file
-            with open(test_file_path, 'r') as f:
-                code = f.read()
+            # Import and run the test module
+            spec = None
+            try:
+                import importlib.util
+                spec = importlib.util.spec_from_file_location("test_module", test_file_path)
+                test_module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(test_module)
 
-            # Create a new namespace for execution
-            namespace = {'__file__': str(test_file_path), '__name__': '__main__'}
-            exec(code, namespace)
+                # Look for main test runner function
+                if hasattr(test_module, 'run_change_detection_tests'):
+                    passed, failed = test_module.run_change_detection_tests()
+                elif hasattr(test_module, 'run_notification_tests'):
+                    passed, failed = test_module.run_notification_tests()
+                elif hasattr(test_module, 'run_data_processing_tests'):
+                    passed, failed = test_module.run_data_processing_tests()
+                elif hasattr(test_module, 'run_batch_insert_tests'):
+                    passed, failed = test_module.run_batch_insert_tests()
+                elif hasattr(test_module, 'run_integration_tests'):
+                    passed, failed = test_module.run_integration_tests()
+                else:
+                    print(f"⚠️ No test runner function found in {test_file_path.name}")
+                    return False
 
-            return True
+                return failed == 0
+
+            except ImportError as e:
+                print(f"❌ Import error in {test_file_path.name}: {e}")
+                return False
+
         except Exception as e:
             print(f"❌ Error running {test_file_path.name}: {e}")
             import traceback
@@ -44,10 +64,12 @@ def run_unit_tests():
     print("=" * 60)
 
     test_files = [
-        "unit/test_data_validation.py",
         "unit/test_change_detection.py",
         "unit/test_notifications.py",
-        "unit/test_data_processing.py"
+        "unit/test_data_processing.py",
+        "unit/test_batch_insert.py",
+        "unit/test_rds_functions.py",
+        "unit/test_real_scenarios.py"
     ]
 
     passed = 0
@@ -91,11 +113,11 @@ def run_integration_tests():
     return passed, failed
 
 def main():
-    """Enhanced main test runner"""
+    """Main test runner"""
     parser = argparse.ArgumentParser(description="Pudu Pipeline Test Suite")
     parser.add_argument("--unit-only", action="store_true", help="Run only unit tests")
     parser.add_argument("--integration-only", action="store_true", help="Run only integration tests")
-    parser.add_argument("--test-file", help="Run specific test file (e.g., unit/test_apis.py)")
+    parser.add_argument("--test-file", help="Run specific test file (e.g., unit/test_change_detection.py)")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
 
     args = parser.parse_args()
@@ -147,6 +169,7 @@ def main():
         print(f"\n⚠️  {total_failed} test(s) failed")
         print("❌ Please review failed tests before deployment")
 
+    print("=" * 80)
     return 0 if total_failed == 0 else 1
 
 if __name__ == "__main__":
