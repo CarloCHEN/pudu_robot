@@ -102,7 +102,6 @@ def pudu_webhook():
             config = DatabaseConfig()
             list_of_db_notification_needed = config.get_notification_needed()
             for database_name, table_name in zip(database_names, table_names):
-
                 if database_name in list_of_db_notification_needed:
                     payload = {
                         "database_name": database_name,

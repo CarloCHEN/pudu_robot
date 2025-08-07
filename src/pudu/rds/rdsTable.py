@@ -101,6 +101,15 @@ class RDSTable(RDSDatabase):
     def batch_insert(self, data_list: list):
         batch_insert(self.cursor, self.table_name, data_list, primary_keys=self.primary_keys)
 
+    def batch_insert_with_ids(self, data_list: list):
+        """
+        Batch insert data and return primary keys matched to original data.
+
+        Returns:
+            list of tuples: [(original_data_dict, auto_generated_primary_key), ...]
+        """
+        return batch_insert_with_ids(self.cursor, self.table_name, data_list, self.primary_keys)
+
     def query_data(self, query: str = None):
         if query:
             data_tuples = query_with_script(self.cursor, query)

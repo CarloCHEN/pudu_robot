@@ -8,7 +8,7 @@ import sys
 sys.path.append('../../')
 
 import pandas as pd
-from pudu.app.main import prepare_df_for_database
+from Monitor.pudu_robot.src.pudu.app.main_backup import prepare_df_for_database
 from pudu.notifications import detect_data_changes, send_change_based_notifications
 from pudu.test.mocks.mock_rds import MockRDSTable
 from pudu.test.mocks.mock_notifications import MockNotificationService

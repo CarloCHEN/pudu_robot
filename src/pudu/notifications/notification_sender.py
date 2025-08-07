@@ -203,11 +203,13 @@ def send_change_based_notifications(notification_service: NotificationService, d
     for unique_id, change_info in changes_dict.items():
         try:
             robot_id = change_info.get('robot_id', 'unknown')
-            primary_key_values = change_info.get('primary_key_values', {})
+            # primary_key_values = change_info.get('primary_key_values', {})
+            database_key = change_info.get('database_key', None)
             payload = {
                 "database_name": database_name,
                 "table_name": table_name,
-                "primary_key_values": primary_key_values
+                "related_biz_id": database_key,
+                "related_biz_type": data_type
             }
 
             if should_skip_notification(data_type, change_info):
@@ -276,7 +278,7 @@ def generate_individual_notification_content(data_type: str, change_info: Dict, 
     old_values = change_info.get('old_values', {})
     new_values = change_info.get('new_values', {})
     primary_key_values = change_info.get('primary_key_values', {})
-    time_info = f" for {time_range}" if time_range else ""
+    time_info = f" from {time_range}" if time_range else ""
 
     try:
         if data_type == 'robot_status':

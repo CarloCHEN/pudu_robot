@@ -1,0 +1,90 @@
+from typing import List, Dict
+from pudu.services.robot_database_resolver import RobotDatabaseResolver
+import logging
+
+logger = logging.getLogger(__name__)
+
+class DynamicDatabaseConfig:
+    """Enhanced database configuration that supports dynamic project database resolution"""
+
+    def __init__(self, config_path: str):
+        self.config_path = config_path
+        self.config = self._load_config()
+        self.main_database_name = self.config.get('main_database', 'ry-vue')
+        self.resolver = RobotDatabaseResolver(self.main_database_name)
+
+    def _load_config(self) -> dict:
+        """Load configuration from YAML file"""
+        import yaml
+        try:
+            with open(self.config_path, 'r') as file:
+                return yaml.safe_load(file)
+        except FileNotFoundError:
+            logger.error(f"Configuration file {self.config_path} not found")
+            raise FileNotFoundError(f"Configuration file {self.config_path} not found")
+        except yaml.YAMLError as e:
+            logger.error(f"Error parsing YAML configuration: {e}")
+            raise ValueError(f"Error parsing YAML configuration: {e}")
+
+    def get_table_configs_for_robots(self, table_type: str, robot_sns: List[str]) -> List[Dict]:
+        """
+        Get table configurations for specific robots, resolving project databases dynamically
+
+        Args:
+            table_type: Type of table (e.g., 'robot_status', 'robot_task')
+            robot_sns: List of robot serial numbers
+
+        Returns:
+            List of table configurations with resolved database names
+        """
+        base_configs = self.config.get('tables', {}).get(table_type, [])
+        resolved_configs = []
+
+        # Group robots by their target database
+        db_to_robots = self.resolver.group_robots_by_database(robot_sns)
+
+        for base_config in base_configs:
+            database_type = base_config['database']
+
+            if database_type == 'main':
+                # Main database - use as is
+                config = base_config.copy()
+                config['database'] = self.main_database_name
+                config['robot_sns'] = robot_sns  # All robots can access main DB
+                resolved_configs.append(config)
+
+            elif database_type == 'project':
+                # Project databases - create one config per database
+                for database_name, robots_in_db in db_to_robots.items():
+                    config = base_config.copy()
+                    config['database'] = database_name
+                    config['robot_sns'] = robots_in_db
+                    resolved_configs.append(config)
+
+        return resolved_configs
+
+    def get_all_table_configs(self, table_type: str) -> List[Dict]:
+        """Get table configurations for all robots"""
+        # Get all robots first
+        all_robots = list(self.resolver.get_robot_database_mapping().keys())
+        return self.get_table_configs_for_robots(table_type, all_robots)
+
+    def get_notification_databases(self) -> List[str]:
+        """Get list of databases that need notifications"""
+        notification_needed = self.config.get('notification_needed', [])
+        resolved_databases = []
+
+        for db_identifier in notification_needed:
+            if db_identifier == 'main':
+                resolved_databases.append(self.main_database_name)
+            elif db_identifier == 'project':
+                resolved_databases.extend(self.resolver.get_all_project_databases())
+            else:
+                # Could be a specific project database name
+                resolved_databases.append(db_identifier)
+
+        return resolved_databases
+
+    def close(self):
+        """Close resolver connection"""
+        self.resolver.close()

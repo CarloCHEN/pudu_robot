@@ -212,6 +212,9 @@ def detect_data_changes(table: RDSTable, data_list: list, primary_keys: list) ->
 
                 # Compare normalized values for change detection
                 for field, new_value in normalized_new_record.items():
+                    # skip robot_name comparison since it is designed to be changable in the database by user
+                    if field == 'robot_name':
+                        continue
                     old_value = existing_normalized.get(field)
 
                     # Use improved comparison that handles normalized values

@@ -1,10 +1,8 @@
 import json
-import boto3
 import logging
 from datetime import datetime, timedelta
 import os
 import sys
-import traceback
 
 # Configure logging
 logger = logging.getLogger()
@@ -80,14 +78,7 @@ def lambda_handler(event, context):
         app = App(config_path) # Main app for robot data pipeline
         event_support_app = EventSupportApp(config_path) # App for support ticket monitoring and notifications
 
-        # Log configuration summary
-        try:
-            config_summary = app.get_config_summary()
-            logger.info(f"📊 Configuration loaded: {config_summary.get('total_tables', 'N/A')} tables across {len(config_summary.get('databases', []))} databases")
-        except Exception as e:
-            logger.warning(f"⚠️ Could not get config summary: {e}")
-
-        # NEW: Monitor support tickets FIRST (before running main pipeline)
+        # Monitor support tickets FIRST (before running main pipeline)
         logger.info("🎫 Monitoring support tickets...")
         success, ticket_count = event_support_app.run(function_name)
         if success:

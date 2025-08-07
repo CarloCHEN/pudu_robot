@@ -2,10 +2,8 @@
 Robot Package
 """
 
-from .main import *
-from .event_support import *
+from .main import App
 
 __all__ = [
     "App",
-    "EventSupportApp"
 ]

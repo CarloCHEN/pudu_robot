@@ -68,7 +68,7 @@ class NotificationService:
                 "status": status,
                 "payload": payload # for identifying the record in the database
             }
-
+            
             notification_data_json = json.dumps(notification_data)
 
             conn.request("POST", self.endpoint, notification_data_json, self.headers)

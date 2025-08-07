@@ -1,129 +1,114 @@
 ---
-# Database Configuration for Robot Data Pipeline
-# This file defines which tables to write to in which databases
+# Dynamic Database Configuration for Robot Data Pipeline
+# Main database is hardcoded, project databases are dynamically resolved
 
-# List of all databases used
-databases:
-  - "foxx_irvine_office"
-  - "foxx_irvine_office_test"
+# Main control database (hardcoded)
+main_database: "ry-vue"
 
-# List of databases that notification is needed
+# List of databases that need notifications (can include dynamic ones)
 notification_needed:
-  - "foxx_irvine_office"
+  - "project"
 
-# Table configurations grouped by data type
+# Table configurations
+# Use "main" for main database, "project" for dynamically resolved project databases
 tables:
-  # Location Table
+  # Main Database Tables (ry-vue)
+  main_building_info:
+    - database: "main"
+      table_name: "pro_building_info"
+      primary_keys: ["building_id"]
+      fields: null
+      description: "Building info in main database"
+
+  main_project_info:
+    - database: "main"
+      table_name: "pro_project_info"
+      primary_keys: ["project_id"]
+      fields: null
+      description: "Project info in main database"
+
+  main_robot_management:
+    - database: "main"
+      table_name: "mnt_robots_management"
+      primary_keys: ["robot_sn"]
+      fields: null
+      description: "Robot management with project mapping in main database"
+
+  tenant_resource:
+    - database: "main"
+      table_name: "sys_tenant_resource"
+      primary_keys: ["tenant_id", "resource_type", "resource_key"]
+      fields: null
+      description: "Tenant resource mapping in main database (deprecated for robot mapping)"
+
+  # Project Database Tables (dynamically resolved per robot)
   location:
-    - database: "foxx_irvine_office"
-      table_name: "pro_building_info"
-      primary_keys: ["building_id"]
-      fields: null  # Use all fields from the DataFrame
-      description: "Building info table in foxx irvine office database"
-
-    - database: "foxx_irvine_office_test"
+    - database: "project"
       table_name: "pro_building_info"
       primary_keys: ["building_id"]
       fields: null
-      description: "Building info table in foxx test database"
+      description: "Building info table in project database"
 
-  # Robot Status Table
   robot_status:
-    - database: "foxx_irvine_office"
-      table_name: "mnt_robots_management"
-      primary_keys: ["robot_sn"]
-      fields: null  # Use all fields from the DataFrame
-      description: "Main robot status table in foxx irvine office database"
-
-    - database: "foxx_irvine_office_test"
+    - database: "project"
       table_name: "mnt_robots_management"
       primary_keys: ["robot_sn"]
       fields: null
-      description: "Robot status table in foxx test database"
+      description: "Robot status table in project database"
 
-  # Robot Task Tables
   robot_task:
-    - database: "foxx_irvine_office"
-      table_name: "mnt_robots_task"
-      primary_keys: ["robot_sn", "task_name", "start_time"]
-      fields: null  # Use all fields from the DataFrame
-      description: "Main robot task tracking table in foxx irvine office database"
-
-    - database: "foxx_irvine_office_test"
+    - database: "project"
       table_name: "mnt_robots_task"
       primary_keys: ["robot_sn", "task_name", "start_time"]
       fields: null
-      description: "Robot task tracking table in foxx test database"
+      description: "Robot task tracking table in project database"
 
-  # Robot Task Overview Tables - not used
-  robot_task_overview:
-    - database: "foxx_irvine_office"
-      table_name: "mnt_robots_task_overview"
-      primary_keys: ["robot_sn", "day", "hour"]
-      fields: null
-      description: "Hourly task overview aggregation in foxx irvine office database"
-
-    - database: "foxx_irvine_office_test"
-      table_name: "mnt_robots_task_overview"
-      primary_keys: ["robot_sn", "day", "hour"]
-      fields: null
-      description: "Hourly task overview aggregation in foxx test database"
-
-  # Robot Charging Tables
   robot_charging:
-    - database: "foxx_irvine_office"
+    - database: "project"
       table_name: "mnt_robots_charging_sessions"
       primary_keys: ["robot_sn", "start_time", "end_time"]
       fields: null
-      description: "Robot charging session data in foxx irvine office database"
+      description: "Robot charging session data in project database"
 
-    - database: "foxx_irvine_office_test"
-      table_name: "mnt_robots_charging_sessions"
-      primary_keys: ["robot_sn", "start_time", "end_time"]
-      fields: null
-      description: "Robot charging session data in foxx test database"
-
-  # Robot Events Tables
   robot_events:
-    - database: "foxx_irvine_office"
+    - database: "project"
       table_name: "mnt_robot_events"
       primary_keys: ["robot_sn", "event_id"]
       fields: null
-      description: "Robot events and errors in foxx irvine office database"
+      description: "Robot events and errors in project database"
 
-    - database: "foxx_irvine_office_test"
-      table_name: "mnt_robot_events"
-      primary_keys: ["robot_sn", "event_id"]
+  robot_work_location:
+    - database: "project"
+      table_name: "mnt_robots_work_location"
+      primary_keys: ["robot_sn"]
       fields: null
-      description: "Robot events and errors in foxx test database"
+      description: "Robot work location tracking in project database"
 
-  # Support Tickets Tables
+  floor_info:
+    - database: "project"
+      table_name: "pro_floor_info"
+      primary_keys: ["floor_id"]
+      fields: null
+      description: "Floor information in project database"
+
+  map_floor_mapping:
+    - database: "project"
+      table_name: "mnt_robot_map_floor_mapping"
+      primary_keys: ["id"]
+      fields: null
+      description: "Map to floor mapping in project database"
+
+  # Support ticket tables
   support_tickets_timeline:
-    - database: "foxx_irvine_office_test"
+    - database: "project"
       table_name: "mnt_robot_report_timeline"
       primary_keys: ["id"]
       fields: null
       description: "Support ticket timeline monitoring"
-      read_only: false
-
-    - database: "foxx_irvine_office"
-      table_name: "mnt_robot_report_timeline"
-      primary_keys: ["id"]
-      fields: null
-      description: "Support ticket timeline monitoring"
-      read_only: false
 
   support_tickets:
-    - database: "foxx_irvine_office_test"
+    - database: "project"
       table_name: "mnt_robot_event_reports"
       primary_keys: ["id"]
       fields: null
       description: "Support ticket event reports"
-      read_only: false
-
-    - database: "foxx_irvine_office"
-      table_name: "mnt_robot_event_reports"
-      primary_keys: ["id"]
-      fields: null
-      description: "Support ticket event reports"
-      read_only: false

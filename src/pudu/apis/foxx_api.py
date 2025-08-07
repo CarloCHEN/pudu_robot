@@ -80,6 +80,99 @@ def get_robot_status(sn):
             'position': None
         }
 
+def get_robot_work_location_and_mapping_data():
+    """
+    Get both robot work location data and map floor mapping data in a single pass.
+    This is more efficient as it only calls get_robot_status() once per robot.
+
+    Returns:
+        tuple: (work_location_df, map_floor_mapping_df)
+    """
+    # Initialize DataFrames
+    work_location_df = pd.DataFrame(columns=[
+        'robot_sn', 'map_name', 'x', 'y', 'z', 'status', 'update_time'
+    ])
+
+    map_floor_data = {}  # Use dict to avoid duplicates
+    current_time = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    # Get all stores
+    all_shops = get_list_stores()['list']
+
+    for shop in all_shops:
+        shop_id = shop['shop_id']
+
+        try:
+            # Get robots for this shop
+            shop_robots = get_list_robots(shop_id=shop_id)['list']
+
+            for robot in shop_robots:
+                sn = robot.get('sn')
+                if not sn:
+                    continue
+
+                try:
+                    # Get robot status including task information (single call per robot)
+                    robot_status = get_robot_status(sn)
+
+                    if robot_status['is_in_task'] and robot_status['task_info']:
+                        # Robot is in task, get map and position data
+                        task_info = robot_status['task_info']
+                        position = robot_status['position']
+
+                        if task_info.get('map') and position:
+                            map_name = task_info['map'].get('name')
+                            floor_number = task_info['map'].get('floor')
+                            x = position.get('x')
+                            y = position.get('y')
+                            z = position.get('z')
+
+                            if map_name and x is not None and y is not None and z is not None:
+                                # Add work location record
+                                work_location_row = pd.DataFrame({
+                                    'robot_sn': [sn],
+                                    'map_name': [map_name],
+                                    'x': [x],
+                                    'y': [y],
+                                    'z': [z],
+                                    'status': ['normal'],
+                                    'update_time': [current_time]
+                                })
+                                work_location_df = pd.concat([work_location_df, work_location_row], ignore_index=True)
+
+                            # Store map to floor mapping data (if we have floor number)
+                            if map_name and floor_number:
+                                map_floor_data[map_name] = floor_number
+                    else:
+                        # Robot is not in task, add idle status record
+                        idle_row = pd.DataFrame({
+                            'robot_sn': [sn],
+                            'map_name': [None],
+                            'x': [None],
+                            'y': [None],
+                            'z': [None],
+                            'status': ['idle'],
+                            'update_time': [current_time]
+                        })
+                        work_location_df = pd.concat([work_location_df, idle_row], ignore_index=True)
+
+                except Exception as e:
+                    continue
+
+        except Exception as e:
+            continue
+
+    # Convert map floor data to DataFrame
+    mapping_df = pd.DataFrame(columns=['map_name', 'floor_number'])
+    for map_name, floor_number in map_floor_data.items():
+        mapping_row = pd.DataFrame({
+            'map_name': [map_name],
+            'floor_number': [floor_number]
+        })
+        mapping_df = pd.concat([mapping_df, mapping_row], ignore_index=True)
+
+    return work_location_df, mapping_df
+
 def get_location_table():
     """
     Get the table for locations with location_id and location_name.
