@@ -1,15 +1,28 @@
 """
 Unit tests for notification sender functionality
 """
-
+import os
 import sys
 from pathlib import Path
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+# Fix path resolution when running from test directory
+# Current file: test/unit/test_processors.py
+current_file = Path(__file__).resolve()
+unit_dir = current_file.parent      # test/unit/
+test_dir = unit_dir.parent          # test/
+root_dir = test_dir.parent          # pudu-webhook-api/
 
-from mocks.mock_notification import MockNotificationService
-from utils.test_helpers import TestDataLoader, setup_test_logging
+# Add the root directory to Python path
+sys.path.insert(0, str(root_dir))
+
+# Change working directory to root so relative imports work
+os.chdir(root_dir)
+
+# Import test utilities
+from test.utils.test_helpers import TestDataLoader, TestValidator, setup_test_logging
+
+from test.mocks.mock_notification import MockNotificationService
+
 
 # Import the actual notification sender functions for testing
 try:

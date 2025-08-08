@@ -156,7 +156,7 @@ class MockDatabaseWriter:
         database_names = []
         table_names = []
         changes_detected = {}
-
+        all_changes = {}
         for table_config in table_configs:
             db_data = {"robot_sn": robot_sn}
             db_data.update({k: v for k, v in status_data.items() if v is not None})
@@ -176,10 +176,10 @@ class MockDatabaseWriter:
                     'new_values': db_data,
                     'database_key': f'mock_db_key_{robot_sn}'
                 }
-
+                all_changes[tuple([table_config['database'], table_config['table_name']])] = changes_detected
                 logger.info(f"✅ Mock write robot status: {robot_sn} -> {table_config['table_name']}")
 
-        return database_names, table_names, changes_detected
+        return database_names, table_names, all_changes
 
     def write_robot_pose(self, robot_sn: str, pose_data: Dict[str, Any]) -> Tuple[List[str], List[str], Dict]:
         """Mock write robot pose with validation"""
@@ -189,7 +189,7 @@ class MockDatabaseWriter:
         database_names = []
         table_names = []
         changes_detected = {}
-
+        all_changes = {}
         for table_config in table_configs:
             db_data = {"robot_sn": robot_sn}
             db_data.update({k: v for k, v in pose_data.items() if v is not None})
@@ -208,10 +208,11 @@ class MockDatabaseWriter:
                     'new_values': db_data,
                     'database_key': f'mock_db_key_{robot_sn}'
                 }
+                all_changes[tuple([table_config['database'], table_config['table_name']])] = changes_detected
 
                 logger.info(f"✅ Mock write robot pose: {robot_sn} -> {table_config['table_name']}")
 
-        return database_names, table_names, changes_detected
+        return database_names, table_names, all_changes
 
     def write_robot_power(self, robot_sn: str, power_data: Dict[str, Any]) -> Tuple[List[str], List[str], Dict]:
         """Mock write robot power with validation"""
@@ -221,7 +222,7 @@ class MockDatabaseWriter:
         database_names = []
         table_names = []
         changes_detected = {}
-
+        all_changes = {}
         for table_config in table_configs:
             db_data = {"robot_sn": robot_sn}
             # Map power to battery_level
@@ -243,10 +244,10 @@ class MockDatabaseWriter:
                     'new_values': db_data,
                     'database_key': f'mock_db_key_{robot_sn}'
                 }
-
+                all_changes[tuple([table_config['database'], table_config['table_name']])] = changes_detected
                 logger.info(f"✅ Mock write robot power: {robot_sn} -> {table_config['table_name']}")
 
-        return database_names, table_names, changes_detected
+        return database_names, table_names, all_changes
 
     def write_robot_event(self, robot_sn: str, event_data: Dict[str, Any]) -> Tuple[List[str], List[str], Dict]:
         """Mock write robot event with validation"""
@@ -256,6 +257,7 @@ class MockDatabaseWriter:
         database_names = []
         table_names = []
         changes_detected = {}
+        all_changes = {}
 
         for table_config in table_configs:
             db_data = {
@@ -286,10 +288,11 @@ class MockDatabaseWriter:
                     'new_values': db_data,
                     'database_key': f'mock_db_key_{robot_sn}_event'
                 }
+                all_changes[tuple([table_config['database'], table_config['table_name']])] = changes_detected
 
                 logger.info(f"✅ Mock write robot event: {robot_sn} -> {table_config['table_name']}")
 
-        return database_names, table_names, changes_detected
+        return database_names, table_names, all_changes
 
     def get_written_data(self, table_name: Optional[str] = None) -> Dict[str, List[Dict]]:
         """Get all written data for testing verification"""

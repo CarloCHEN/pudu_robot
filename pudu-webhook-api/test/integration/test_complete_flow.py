@@ -6,7 +6,6 @@ Tests the entire webhook processing pipeline with mock services
 import os
 import sys
 from pathlib import Path
-from unittest.mock import patch
 
 # Fix path resolution when running from test directory
 # Current file: test/integration/test_complete_flow.py
@@ -229,7 +228,7 @@ class TestCompleteFlow:
                 # Step 1: Process callback
                 callback_response = self.callback_handler.process_callback(case)
 
-                # Step 2: Write to database
+                # Step 2: Write to database (FIXED: properly unpack 3 return values)
                 database_names, table_names, changes_detected = self.callback_handler.write_to_database_with_change_detection(case)
 
                 # Step 3: Send notification for events
@@ -262,12 +261,16 @@ class TestCompleteFlow:
                 if callback_response.status.value != "success":
                     flow_success = False
                     flow_details["callback_processing"] = "Failed"
+                else:
+                    flow_details["callback_processing"] = "Success"
 
                 # Check database write (events go to mnt_robot_events table)
                 written_data = self.mock_db_writer.get_written_data()
                 if not TestValidator.validate_database_write(written_data, "mnt_robot_events", case["data"]["sn"]):
                     flow_success = False
                     flow_details["database_write"] = "Failed"
+                else:
+                    flow_details["database_write"] = "Success"
 
                 # Check notification
                 sent_notifications = self.mock_notification_service.get_sent_notifications(case["data"]["sn"])
@@ -275,6 +278,8 @@ class TestCompleteFlow:
                 if len(sent_notifications) != expected_notifications:
                     flow_success = False
                     flow_details["notification_send"] = f"Failed - Expected {expected_notifications}, got {len(sent_notifications)}"
+                else:
+                    flow_details["notification_send"] = "Success"
 
                 self.reporter.add_test_result(test_name, flow_success, flow_details)
 
@@ -306,7 +311,7 @@ class TestCompleteFlow:
                 # Step 1: Process callback
                 callback_response = self.callback_handler.process_callback(case)
 
-                # Step 2: Write to database
+                # Step 2: Write to database (FIXED: properly unpack 3 return values)
                 database_names, table_names, changes_detected = self.callback_handler.write_to_database_with_change_detection(case)
 
                 # Step 3: Send notification for low battery
@@ -341,12 +346,16 @@ class TestCompleteFlow:
                 if callback_response.status.value != "success":
                     flow_success = False
                     flow_details["callback_processing"] = "Failed"
+                else:
+                    flow_details["callback_processing"] = "Success"
 
                 # Check database write
                 written_data = self.mock_db_writer.get_written_data()
                 if not TestValidator.validate_database_write(written_data, "mnt_robots_management", case["data"]["sn"]):
                     flow_success = False
                     flow_details["database_write"] = "Failed"
+                else:
+                    flow_details["database_write"] = "Success"
 
                 # Check notification (only if expected)
                 sent_notifications = self.mock_notification_service.get_sent_notifications(case["data"]["sn"])
@@ -409,7 +418,7 @@ class TestCompleteFlow:
                 if response.status.value == "success":
                     processed_callbacks += 1
 
-                # Write to database
+                # Write to database (FIXED: properly unpack 3 return values)
                 database_names, table_names, changes_detected = self.callback_handler.write_to_database_with_change_detection(callback)
 
                 # Simulate notification (simplified)
@@ -640,7 +649,7 @@ class TestCompleteFlow:
                 if response.status.value == "success":
                     processed_count += 1
 
-                # Write to database
+                # Write to database (FIXED: properly unpack 3 return values)
                 database_names, table_names, changes_detected = self.callback_handler.write_to_database_with_change_detection(callback)
 
                 # Send notification

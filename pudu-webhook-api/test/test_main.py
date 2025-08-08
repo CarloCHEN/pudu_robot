@@ -115,9 +115,23 @@ logging.basicConfig(
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
 
+# Get configuration file path - try multiple locations
+config_paths = [
+    'database_config.yaml',
+    'configs/database_config.yaml',
+    '../configs/database_config.yaml',
+    'pudu/configs/database_config.yaml'
+]
+
+config_path = None
+for path in config_paths:
+    if os.path.exists(path):
+        config_path = path
+        break
+
 # Use appropriate config and handler
 Config = Config if CONFIG_AVAILABLE else SimpleConfig
-callback_handler = CallbackHandler() if CALLBACK_HANDLER_AVAILABLE else SimpleCallbackHandler()
+callback_handler = CallbackHandler(config_path) if CALLBACK_HANDLER_AVAILABLE else SimpleCallbackHandler()
 
 # Initialize MOCK database writer for testing
 try:
@@ -367,4 +381,3 @@ if __name__ == "__main__":
     logger.info("=" * 60)
 
     app.run(host=Config.HOST, port=Config.PORT, debug=Config.DEBUG)
-    

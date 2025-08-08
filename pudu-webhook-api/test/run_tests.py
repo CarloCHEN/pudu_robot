@@ -5,20 +5,14 @@ Runs all tests in sequence and provides comprehensive reporting
 """
 
 import argparse
-import os
-import sys
 import time
-from pathlib import Path
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from test.integration.test_complete_flow import run_complete_flow_tests
-from test.integration.test_webhook_endpoint import run_webhook_endpoint_tests
-from test.unit.test_database_writer import run_database_tests
-from test.unit.test_notification_sender import run_notification_tests
-from test.unit.test_processors import run_processor_tests
-from test.utils.test_helpers import setup_test_logging
+from integration.test_complete_flow import run_complete_flow_tests
+from integration.test_webhook_endpoint import run_webhook_endpoint_tests
+from unit.test_database_writer import run_database_tests
+from unit.test_notification_sender import run_notification_tests
+from unit.test_processors import run_processor_tests
+from utils.test_helpers import setup_test_logging
 
 
 class TestSuite:

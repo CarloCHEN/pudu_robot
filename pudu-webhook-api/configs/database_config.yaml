@@ -10,7 +10,8 @@ notification_needed:
   - "project"
 
 # Table configurations
-# Use "main" for main database, "project" for dynamically resolved project databases
+# Use "main" for main database
+# "project" for dynamically resolved project databases
 tables:
   # Robot Status/Pose/Power updates go to management table
   robot_status:

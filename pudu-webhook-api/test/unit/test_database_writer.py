@@ -4,13 +4,24 @@ Unit tests for database writer functionality
 
 import sys
 from pathlib import Path
+import os
+
+# Fix path resolution when running from test directory
+# Current file: test/unit/test_processors.py
+current_file = Path(__file__).resolve()
+unit_dir = current_file.parent      # test/unit/
+test_dir = unit_dir.parent          # test/
+root_dir = test_dir.parent          # pudu-webhook-api/
+
+# Add the root directory to Python path
+sys.path.insert(0, str(root_dir))
+
+# Change working directory to root so relative imports work
+os.chdir(root_dir)
 
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
-from mocks.mock_database import MockDatabaseWriter
-from utils.test_helpers import TestDataLoader, TestValidator, setup_test_logging
+from test.mocks.mock_database import MockDatabaseWriter
+from test.utils.test_helpers import TestDataLoader, TestValidator, setup_test_logging
 
 
 class TestDatabaseWriter:
@@ -257,14 +268,15 @@ class TestDatabaseWriter:
         assert isinstance(changes_detected, dict), "changes_detected should be a dict"
 
         # Validate changes format
-        for change_id, change_info in changes_detected.items():
-            assert 'robot_id' in change_info, "Change info should have robot_id"
-            assert 'primary_key_values' in change_info, "Change info should have primary_key_values"
-            assert 'change_type' in change_info, "Change info should have change_type"
-            assert 'changed_fields' in change_info, "Change info should have changed_fields"
-            assert 'old_values' in change_info, "Change info should have old_values"
-            assert 'new_values' in change_info, "Change info should have new_values"
-            assert 'database_key' in change_info, "Change info should have database_key"
+        for change_id, changes in changes_detected.items():
+            for key, change_info in changes.items():
+                assert 'robot_id' in change_info, "Change info should have robot_id"
+                assert 'primary_key_values' in change_info, "Change info should have primary_key_values"
+                assert 'change_type' in change_info, "Change info should have change_type"
+                assert 'changed_fields' in change_info, "Change info should have changed_fields"
+                assert 'old_values' in change_info, "Change info should have old_values"
+                assert 'new_values' in change_info, "Change info should have new_values"
+                assert 'database_key' in change_info, "Change info should have database_key"
 
         print("  ✅ Change detection interface validated")
 

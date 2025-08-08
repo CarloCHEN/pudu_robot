@@ -6,12 +6,24 @@ Tests the complete webhook endpoint functionality
 import sys
 import threading
 from pathlib import Path
+import os
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+# Fix path resolution when running from test directory
+# Current file: test/unit/test_processors.py
+current_file = Path(__file__).resolve()
+integration_dir = current_file.parent      # test/integration/
+test_dir = integration_dir.parent          # test/
+root_dir = test_dir.parent          # pudu-webhook-api/
 
-from utils.test_helpers import TestDataLoader, TestReporter, setup_test_logging
-from utils.webhook_client import WebhookClient
+# Add the root directory to Python path
+sys.path.insert(0, str(root_dir))
+
+# Change working directory to root so relative imports work
+os.chdir(root_dir)
+
+
+from test.utils.test_helpers import TestDataLoader, TestReporter, setup_test_logging
+from test.utils.webhook_client import WebhookClient
 
 
 class TestWebhookEndpoint:
