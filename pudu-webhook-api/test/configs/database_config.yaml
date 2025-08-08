@@ -1,0 +1,29 @@
+---
+# Test Database Configuration for Mock Services
+# This is a simplified version for testing
+
+# Main control database (for testing)
+main_database: "ry-vue"
+
+# List of databases that need notifications
+notification_needed:
+  - "project"
+
+# Table configurations for testing
+# Use "main" for main database, "project" for project databases
+tables:
+  # Robot Status/Pose/Power updates go to management table
+  robot_status:
+    - database: "project"
+      table_name: "mnt_robots_management"
+      primary_keys: ["robot_sn"]
+      fields: null
+      description: "Robot status table in project database"
+
+  # Robot Events/Errors go to events table
+  robot_events:
+    - database: "project"
+      table_name: "mnt_robot_events"
+      primary_keys: ["robot_sn", "event_id"]
+      fields: null
+      description: "Robot events table in project database"

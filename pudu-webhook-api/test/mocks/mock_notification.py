@@ -3,12 +3,10 @@ Mock Notification Service for Testing
 Validates notification operations without requiring actual HTTP calls
 """
 
-import http.client
 import json
 import logging
 from collections import defaultdict
 from typing import Any, Dict, List, Optional
-from unittest.mock import MagicMock, patch
 
 logger = logging.getLogger(__name__)
 

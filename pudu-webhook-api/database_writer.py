@@ -1,5 +1,4 @@
 import logging
-import time
 from typing import Any, Dict, List
 
 from configs.database_config import DatabaseConfig
@@ -9,7 +8,7 @@ from notifications.change_detector import detect_data_changes
 logger = logging.getLogger(__name__)
 
 
-class EnhancedDatabaseWriter:
+class DatabaseWriter:
     """Enhanced database writer with dynamic routing and change detection"""
 
     def __init__(self, config_path: str = "database_config.yaml"):

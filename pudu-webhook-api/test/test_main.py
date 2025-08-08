@@ -7,8 +7,6 @@ import os
 import sys
 from pathlib import Path
 
-from werkzeug.exceptions import BadRequest
-
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -20,33 +18,106 @@ import logging
 from datetime import datetime
 
 from flask import Flask, jsonify, request
+from werkzeug.exceptions import BadRequest
 
-from config import Config
-
+# Set environment variables before importing modules that need them
 if not os.getenv("PORT"):
     os.environ["PORT"] = "8000"
 
 if not os.getenv("DEBUG"):
     os.environ["DEBUG"] = "true"
 
-# Import mock services
+if not os.getenv("PUDU_CALLBACK_CODE"):
+    os.environ["PUDU_CALLBACK_CODE"] = "1vQ6MfUxqyoGMRQ9nK8C4pSkg1Qsa3Vpq"
+
+# Import mock services from test directory
 from test.mocks.mock_database import MockDatabaseWriter
 from test.mocks.mock_notification import MockNotificationService
 
-from callback_handler import CallbackHandler
-from config import Config
-from models import CallbackResponse, CallbackStatus
+# Try to import the required modules, with fallbacks for import errors
+try:
+    from callback_handler import CallbackHandler
+    CALLBACK_HANDLER_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Could not import CallbackHandler: {e}")
+    CALLBACK_HANDLER_AVAILABLE = False
+    # Create a simple fallback handler
+    class SimpleCallbackHandler:
+        def process_callback(self, data):
+            from models import CallbackResponse, CallbackStatus
+            callback_type = data.get("callback_type", "unknown")
+            robot_sn = data.get("data", {}).get("sn", "unknown")
+            return CallbackResponse(
+                status=CallbackStatus.SUCCESS,
+                message=f"Processed {callback_type} for robot {robot_sn}",
+                data={"robot_sn": robot_sn, "callback_type": callback_type}
+            )
+
+        def write_to_database_with_change_detection(self, data):
+            # Mock implementation
+            return ["mock_db"], ["mock_table"], {
+                "mock_change": {
+                    'robot_id': data.get("data", {}).get("sn", "unknown"),
+                    'database_key': 'mock_key_123'
+                }
+            }
+
+try:
+    from config import Config
+    CONFIG_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Could not import Config: {e}")
+    CONFIG_AVAILABLE = False
+    # Create a simple fallback config
+    class SimpleConfig:
+        HOST = os.getenv("HOST", "0.0.0.0")
+        PORT = int(os.getenv("PORT", 8000))
+        DEBUG = os.getenv("DEBUG", "False").lower() == "true"
+        PUDU_CALLBACK_CODE = os.getenv("PUDU_CALLBACK_CODE", "")
+
+try:
+    from models import CallbackResponse, CallbackStatus
+    MODELS_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Could not import models: {e}")
+    MODELS_AVAILABLE = False
+    # Create simple fallback models
+    from enum import Enum
+    import time
+
+    class CallbackStatus(Enum):
+        SUCCESS = "success"
+        ERROR = "error"
+        WARNING = "warning"
+
+    class CallbackResponse:
+        def __init__(self, status, message, timestamp=None, data=None):
+            self.status = status
+            self.message = message
+            self.timestamp = timestamp or int(time.time())
+            self.data = data or {}
+
+        def to_dict(self):
+            return {
+                "status": self.status.value if hasattr(self.status, 'value') else self.status,
+                "message": self.message,
+                "timestamp": self.timestamp,
+                "data": self.data
+            }
 
 # Configure logging for testing
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", handlers=[logging.StreamHandler()]
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler()]
 )
 
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
 
-# Initialize callback handler
-callback_handler = CallbackHandler()
+# Use appropriate config and handler
+Config = Config if CONFIG_AVAILABLE else SimpleConfig
+callback_handler = CallbackHandler() if CALLBACK_HANDLER_AVAILABLE else SimpleCallbackHandler()
 
 # Initialize MOCK database writer for testing
 try:
@@ -113,49 +184,73 @@ def pudu_webhook():
         response = callback_handler.process_callback(data)
 
         # Write to MOCK database if writer is available
-        if database_writer:
+        database_names = []
+        table_names = []
+        changes_detected = {}
+
+        if database_writer and hasattr(callback_handler, 'write_to_database_with_change_detection'):
             try:
                 logger.info(f"📊 Writing to mock database: {data.get('callback_type')}")
-                database_names, table_names, primary_key_values = callback_handler.write_to_database(data, database_writer)
+                database_names, table_names, changes_detected = callback_handler.write_to_database_with_change_detection(data)
                 logger.info("✅ Mock database write completed")
             except Exception as e:
                 logger.error(f"❌ Failed to write callback to mock database: {e}")
 
-        # Send MOCK notification if service is available
-        if notification_service:
-            for database_name, table_name in zip(database_names, table_names):
-                try:
-                    logger.info(f"📨 Sending mock notification: {data.get('callback_type')}")
+        # Send MOCK notification if service is available and changes detected
+        if notification_service and changes_detected:
+            try:
+                logger.info(f"📨 Sending mock notifications: {data.get('callback_type')}")
 
-                    # Import here to avoid circular imports
-                    from test.mocks.mock_notification import MockNotificationService
+                # Send notifications for each change
+                for (db_name, table_name), changes in changes_detected.items():
+                    for change_id, change_info in changes.items():
+                        robot_sn = change_info.get('robot_id', 'unknown')
+                        callback_type = data.get("callback_type", "unknown")
 
-                    # Simple mock notification for testing
-                    robot_sn = data.get("data", {}).get("sn", "unknown")
-                    callback_type = data.get("callback_type", "unknown")
-                    payload = {
-                        "database_name": database_name,
-                        "table_name": table_name,
-                        "primary_key_values": primary_key_values
-                    }
+                        payload = {
+                            "database_name": db_name,
+                            "table_name": table_name,
+                            "related_biz_id": change_info.get('database_key'),
+                            "related_biz_type": callback_type
+                        }
 
-                    success = notification_service.send_notification(
-                        robot_id=robot_sn,
-                        notification_type="robot_status",
-                        title=f"Test: {callback_type}",
-                        content=f"Test notification for robot {robot_sn}",
-                        severity="event",
-                        status="normal",
-                        payload=payload
-                    )
+                        # Generate appropriate notification based on callback type
+                        if callback_type == "robotStatus":
+                            title = f"Robot Status: {data.get('data', {}).get('run_status', 'Unknown')}"
+                            content = f"Robot {robot_sn} status changed"
+                            severity = "success" if "online" in str(data.get('data', {}).get('run_status', '')).lower() else "event"
+                        elif callback_type == "robotErrorWarning":
+                            error_level = data.get('data', {}).get('error_level', 'info')
+                            title = f"Robot Error: {data.get('data', {}).get('error_type', 'Unknown')}"
+                            content = f"Robot {robot_sn} has a {error_level} level error"
+                            severity = "fatal" if error_level.upper() == "FATAL" else "error" if error_level.upper() == "ERROR" else "warning"
+                        elif callback_type == "notifyRobotPower":
+                            power = data.get('data', {}).get('power', 0)
+                            title = f"Battery: {power}%"
+                            content = f"Robot {robot_sn} battery at {power}%"
+                            severity = "fatal" if power < 5 else "error" if power < 10 else "warning" if power < 20 else "success"
+                        else:
+                            title = f"Test: {callback_type}"
+                            content = f"Test notification for robot {robot_sn}"
+                            severity = "event"
 
-                    if success:
-                        logger.info("✅ Mock notification sent successfully")
-                    else:
-                        logger.warning("⚠️ Mock notification failed")
+                        success = notification_service.send_notification(
+                            robot_id=robot_sn,
+                            notification_type="robot_status",
+                            title=title,
+                            content=content,
+                            severity=severity,
+                            status="normal",
+                            payload=payload
+                        )
 
-                except Exception as e:
-                    logger.error(f"❌ Failed to send mock notification: {e}")
+                        if success:
+                            logger.info(f"✅ Mock notification sent for {robot_sn}")
+                        else:
+                            logger.warning(f"⚠️ Mock notification failed for {robot_sn}")
+
+            except Exception as e:
+                logger.error(f"❌ Failed to send mock notification: {e}")
 
         # Return result
         return jsonify(response.to_dict()), 200 if response.status == CallbackStatus.SUCCESS else 400
@@ -177,8 +272,13 @@ def health_check():
             "timestamp": datetime.now().strftime("%Y-%m-%d"),
             "service": "pudu-callback-api-test",
             "mode": "testing",
-            "notification_service": "mock_enabled" if notification_service else "mock_disabled",
-            "database_writer": "mock_enabled" if database_writer else "mock_disabled",
+            "features": {
+                "callback_handler": "available" if CALLBACK_HANDLER_AVAILABLE else "fallback",
+                "config": "available" if CONFIG_AVAILABLE else "fallback",
+                "models": "available" if MODELS_AVAILABLE else "fallback",
+                "database_writer": "enabled" if database_writer else "disabled",
+                "notification_service": "enabled" if notification_service else "disabled",
+            },
             "mock_data": {
                 "database_records": len(database_writer.get_written_data()) if database_writer else 0,
                 "notifications_sent": len(notification_service.get_sent_notifications()) if notification_service else 0,
@@ -255,6 +355,9 @@ if __name__ == "__main__":
     logger.info("📨 Using mock notification service")
     logger.info("🚫 NO real database or notification calls will be made")
     logger.info("=" * 60)
+    logger.info(f"✅ Callback Handler: {'Available' if CALLBACK_HANDLER_AVAILABLE else 'Fallback'}")
+    logger.info(f"✅ Config: {'Available' if CONFIG_AVAILABLE else 'Fallback'}")
+    logger.info(f"✅ Models: {'Available' if MODELS_AVAILABLE else 'Fallback'}")
     logger.info(f"✅ Mock notification service: {'Enabled' if notification_service else 'Disabled'}")
     logger.info(f"✅ Mock database writer: {'Enabled' if database_writer else 'Disabled'}")
     logger.info("=" * 60)
@@ -264,3 +367,4 @@ if __name__ == "__main__":
     logger.info("=" * 60)
 
     app.run(host=Config.HOST, port=Config.PORT, debug=Config.DEBUG)
+    

@@ -1,10 +1,7 @@
 import os
-from typing import Any, Dict
-
 from dotenv import load_dotenv
 
 load_dotenv()
-
 
 class Config:
     """Configuration class for the Pudu callback API"""

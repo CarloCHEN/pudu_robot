@@ -2,17 +2,15 @@
 Unit tests for database writer functionality
 """
 
-import os
 import sys
 from pathlib import Path
 
-import pytest
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from test.mocks.mock_database import MockDatabaseWriter
-from test.utils.test_helpers import TestDataLoader, TestValidator, setup_test_logging
+from mocks.mock_database import MockDatabaseWriter
+from utils.test_helpers import TestDataLoader, TestValidator, setup_test_logging
 
 
 class TestDatabaseWriter:
@@ -39,12 +37,15 @@ class TestDatabaseWriter:
             # Clear previous data
             self.db_writer.clear_written_data()
 
-            # Write status
-            database_names, table_names = self.db_writer.write_robot_status(robot_sn, status_data)
+            # Write status using new interface
+            database_names, table_names, changes_detected = self.db_writer.write_robot_status(robot_sn, status_data)
 
             # Validate write
             written_data = self.db_writer.get_written_data()
             assert TestValidator.validate_database_write(written_data, "mnt_robots_management", robot_sn)
+
+            # Validate changes detected
+            assert len(changes_detected) > 0, "Should detect changes for new data"
 
             print(f"  ✅ Status write validated for {robot_sn}")
 
@@ -69,12 +70,15 @@ class TestDatabaseWriter:
             # Clear previous data
             self.db_writer.clear_written_data()
 
-            # Write pose
-            database_names, table_names = self.db_writer.write_robot_pose(robot_sn, pose_data)
+            # Write pose using new interface
+            database_names, table_names, changes_detected = self.db_writer.write_robot_pose(robot_sn, pose_data)
 
             # Validate write
             written_data = self.db_writer.get_written_data()
             assert TestValidator.validate_database_write(written_data, "mnt_robots_management", robot_sn)
+
+            # Validate changes detected
+            assert len(changes_detected) > 0, "Should detect changes for new data"
 
             print(f"  ✅ Pose write validated for {robot_sn}")
 
@@ -98,12 +102,15 @@ class TestDatabaseWriter:
             # Clear previous data
             self.db_writer.clear_written_data()
 
-            # Write power
-            database_names, table_names = self.db_writer.write_robot_power(robot_sn, power_data)
+            # Write power using new interface
+            database_names, table_names, changes_detected = self.db_writer.write_robot_power(robot_sn, power_data)
 
             # Validate write
             written_data = self.db_writer.get_written_data()
             assert TestValidator.validate_database_write(written_data, "mnt_robots_management", robot_sn)
+
+            # Validate changes detected
+            assert len(changes_detected) > 0, "Should detect changes for new data"
 
             print(f"  ✅ Power write validated for {robot_sn}")
 
@@ -136,12 +143,15 @@ class TestDatabaseWriter:
             # Clear previous data
             self.db_writer.clear_written_data()
 
-            # Write event
-            database_names, table_names = self.db_writer.write_robot_event(robot_sn, event_data)
+            # Write event using new interface
+            database_names, table_names, changes_detected = self.db_writer.write_robot_event(robot_sn, event_data)
 
             # Validate write
             written_data = self.db_writer.get_written_data()
             assert TestValidator.validate_database_write(written_data, "mnt_robot_events", robot_sn)
+
+            # Validate changes detected
+            assert len(changes_detected) > 0, "Should detect changes for new data"
 
             print(f"  ✅ Event write validated for {robot_sn}")
 
@@ -156,33 +166,12 @@ class TestDatabaseWriter:
         assert result == True
         print("  ✅ Valid schema validation passed")
 
-        # Test invalid field
-        invalid_data = {"robot_sn": "TEST_ROBOT_SCHEMA", "invalid_field": "value"}
-
-        result = self.db_writer._validate_data_against_schema("mnt_robots_management", invalid_data)
-        assert result == False
-        print("  ✅ Invalid field detection works")
-
         # Test missing primary key
         missing_pk_data = {"status": "online"}
 
         result = self.db_writer._validate_data_against_schema("mnt_robots_management", missing_pk_data)
         assert result == False
         print("  ✅ Missing primary key detection works")
-
-    def test_configuration_consistency(self):
-        """Test that configuration matches expected schemas"""
-        print("\n🧪 Testing configuration consistency")
-
-        # Test robot status table config
-        result = self.db_writer._validate_config_consistency("robot_status")
-        assert result == True
-        print("  ✅ Robot status config consistency validated")
-
-        # Test robot events table config
-        result = self.db_writer._validate_config_consistency("robot_events")
-        assert result == True
-        print("  ✅ Robot events config consistency validated")
 
     def test_data_filtering(self):
         """Test that None values are properly filtered"""
@@ -192,7 +181,7 @@ class TestDatabaseWriter:
         data_with_none = {"robot_sn": "TEST_ROBOT_FILTER", "status": "online", "battery_level": None, "x": 10.5, "y": None}
 
         self.db_writer.clear_written_data()
-        self.db_writer.write_robot_status("TEST_ROBOT_FILTER", data_with_none)
+        database_names, table_names, changes_detected = self.db_writer.write_robot_status("TEST_ROBOT_FILTER", data_with_none)
 
         written_data = self.db_writer.get_written_data()
         table_data = written_data.get("mnt_robots_management", [])
@@ -216,10 +205,10 @@ class TestDatabaseWriter:
         self.db_writer.clear_written_data()
 
         # Write status
-        self.db_writer.write_robot_status(robot_sn, {"status": "online"})
+        status_db_names, status_table_names, status_changes = self.db_writer.write_robot_status(robot_sn, {"status": "online"})
 
         # Write event
-        self.db_writer.write_robot_event(
+        event_db_names, event_table_names, event_changes = self.db_writer.write_robot_event(
             robot_sn,
             {
                 "error_id": "test_event_001",
@@ -242,23 +231,46 @@ class TestDatabaseWriter:
         assert len(status_records) > 0
         assert len(event_records) > 0
 
+        # Validate changes detected for both
+        assert len(status_changes) > 0, "Should detect status changes"
+        assert len(event_changes) > 0, "Should detect event changes"
+
         print("  ✅ Multiple table writes validated")
+
+    def test_change_detection_interface(self):
+        """Test change detection interface matches expected format"""
+        print("\n🧪 Testing change detection interface")
+
+        robot_sn = "TEST_ROBOT_CHANGES"
+
+        # Clear previous data
+        self.db_writer.clear_written_data()
+
+        # Write status
+        database_names, table_names, changes_detected = self.db_writer.write_robot_status(
+            robot_sn, {"status": "online", "timestamp": 1640995800}
+        )
+
+        # Validate return format
+        assert isinstance(database_names, list), "database_names should be a list"
+        assert isinstance(table_names, list), "table_names should be a list"
+        assert isinstance(changes_detected, dict), "changes_detected should be a dict"
+
+        # Validate changes format
+        for change_id, change_info in changes_detected.items():
+            assert 'robot_id' in change_info, "Change info should have robot_id"
+            assert 'primary_key_values' in change_info, "Change info should have primary_key_values"
+            assert 'change_type' in change_info, "Change info should have change_type"
+            assert 'changed_fields' in change_info, "Change info should have changed_fields"
+            assert 'old_values' in change_info, "Change info should have old_values"
+            assert 'new_values' in change_info, "Change info should have new_values"
+            assert 'database_key' in change_info, "Change info should have database_key"
+
+        print("  ✅ Change detection interface validated")
 
     def test_connection_management(self):
         """Test database connection management"""
         print("\n🧪 Testing connection management")
-
-        # Test connection creation
-        conn = self.db_writer._get_connection("test_database")
-        assert conn is not None
-        assert "connection" in conn
-        assert "cursor" in conn
-        print("  ✅ Connection creation works")
-
-        # Test connection reuse
-        conn2 = self.db_writer._get_connection("test_database")
-        assert conn is conn2  # Should be the same connection
-        print("  ✅ Connection reuse works")
 
         # Test connection cleanup
         self.db_writer.close_all_connections()

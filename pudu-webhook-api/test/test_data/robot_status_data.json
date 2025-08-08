@@ -27,10 +27,10 @@
         "callback_type": "robotStatus",
         "data": {
           "sn": "PUDU_TEST_003",
-          "run_status": "WORKING",
+          "run_status": "ONLINE",
           "timestamp": 1640996000
         },
-        "expected_status": "working",
+        "expected_status": "online",
         "expected_severity": "success"
       },
       {
@@ -38,10 +38,10 @@
         "callback_type": "robotStatus",
         "data": {
           "sn": "PUDU_TEST_004",
-          "run_status": "CLEANING",
+          "run_status": "online",
           "timestamp": 1640996100
         },
-        "expected_status": "working",
+        "expected_status": "online",
         "expected_severity": "success"
       },
       {

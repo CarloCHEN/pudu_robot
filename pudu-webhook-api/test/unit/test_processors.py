@@ -6,16 +6,37 @@ import os
 import sys
 from pathlib import Path
 
-import pytest
+# Fix path resolution when running from test directory
+# Current file: test/unit/test_processors.py
+current_file = Path(__file__).resolve()
+unit_dir = current_file.parent      # test/unit/
+test_dir = unit_dir.parent          # test/
+root_dir = test_dir.parent          # pudu-webhook-api/
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+# Add the root directory to Python path
+sys.path.insert(0, str(root_dir))
 
+# Change working directory to root so relative imports work
+os.chdir(root_dir)
+
+# Import test utilities
 from test.utils.test_helpers import TestDataLoader, TestValidator, setup_test_logging
 
-from models import CallbackStatus
-from processors import RobotErrorProcessor, RobotPoseProcessor, RobotPowerProcessor, RobotStatusProcessor
-
+# Import main modules
+try:
+    from models import CallbackStatus
+    from processors import RobotErrorProcessor, RobotPoseProcessor, RobotPowerProcessor, RobotStatusProcessor
+    IMPORTS_SUCCESSFUL = True
+except ImportError as e:
+    print(f"❌ Import error: {e}")
+    print(f"📍 Current working directory: {os.getcwd()}")
+    print(f"🐍 Python path: {sys.path[:3]}...")
+    print("\n💡 Debug info:")
+    print(f"   Root dir: {root_dir}")
+    print(f"   Root dir exists: {root_dir.exists()}")
+    print(f"   models.py exists: {(root_dir / 'models.py').exists()}")
+    print(f"   processors.py exists: {(root_dir / 'processors.py').exists()}")
+    sys.exit(1)
 
 class TestRobotStatusProcessor:
     """Test RobotStatusProcessor"""

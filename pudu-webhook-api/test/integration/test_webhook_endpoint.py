@@ -7,12 +7,11 @@ import sys
 import threading
 from pathlib import Path
 
-
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from test.utils.test_helpers import TestDataLoader, TestReporter, setup_test_logging
-from test.utils.webhook_client import WebhookClient
+from utils.test_helpers import TestDataLoader, TestReporter, setup_test_logging
+from utils.webhook_client import WebhookClient
 
 
 class TestWebhookEndpoint:
