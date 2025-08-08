@@ -37,7 +37,7 @@ class TestNotifications:
         # Test low battery notification generation
         for robot in low_battery_robots:
             change_info = {
-                "robot_id": robot['robot_sn'],
+                "robot_sn": robot['robot_sn'],
                 "change_type": "update",
                 "changed_fields": ["battery_level"],
                 "old_values": {"battery_level": 50},
@@ -84,7 +84,7 @@ class TestNotifications:
         # Test online notification
         for robot in online_robots[:2]:  # Test first 2 to avoid too much output
             change_info = {
-                "robot_id": robot['robot_sn'],
+                "robot_sn": robot['robot_sn'],
                 "change_type": "update",
                 "changed_fields": ["status"],
                 "old_values": {"status": "Offline"},
@@ -102,7 +102,7 @@ class TestNotifications:
         # Test offline notification
         for robot in offline_robots[:1]:  # Test one offline robot
             change_info = {
-                "robot_id": robot['robot_sn'],
+                "robot_sn": robot['robot_sn'],
                 "change_type": "update",
                 "changed_fields": ["status"],
                 "old_values": {"status": "Online"},
@@ -124,7 +124,7 @@ class TestNotifications:
             task_status = task.get('status', 'Unknown')
 
             change_info = {
-                "robot_id": task['robot_sn'],
+                "robot_sn": task['robot_sn'],
                 "change_type": "new_record" if task.get('name') == 'completed_task' else "update",
                 "changed_fields": ["status"],
                 "old_values": {"status": "In Progress"},
@@ -158,7 +158,7 @@ class TestNotifications:
 
         for event in all_events:
             change_info = {
-                "robot_id": event['robot_sn'],
+                "robot_sn": event['robot_sn'],
                 "change_type": "new_record",
                 "changed_fields": ["event_type"],
                 "old_values": {},
@@ -200,7 +200,7 @@ class TestNotifications:
         for session in all_charging:
             # Test new charging session
             change_info = {
-                "robot_id": session['robot_sn'],
+                "robot_sn": session['robot_sn'],
                 "change_type": "new_record",
                 "changed_fields": ["robot_sn"],
                 "old_values": {},
@@ -331,7 +331,7 @@ class TestNotifications:
 
                 if status_code is not None:
                     change_info = {
-                        "robot_id": task['robot_sn'],
+                        "robot_sn": task['robot_sn'],
                         "change_type": "update",
                         "changed_fields": ["status"],
                         "old_values": {"status": 1},  # In Progress
@@ -360,7 +360,7 @@ class TestNotifications:
 
         for event in all_events:
             change_info = {
-                "robot_id": event['robot_sn'],
+                "robot_sn": event['robot_sn'],
                 "change_type": "new_record",
                 "new_values": event
             }
@@ -396,7 +396,7 @@ class TestNotifications:
         for robot in all_robots:
             if 'robot_name' in robot and robot['robot_name']:
                 change_info = {
-                    "robot_id": robot['robot_sn'],
+                    "robot_sn": robot['robot_sn'],
                     "change_type": "update",
                     "changed_fields": ["status"],
                     "old_values": {"status": "Offline"},
@@ -455,7 +455,7 @@ class TestNotifications:
             robot_data = self.test_data.get_test_robot_by_sn(robot_sn)
             if robot_data:
                 status_change = {
-                    "robot_id": robot_sn,
+                    "robot_sn": robot_sn,
                     "change_type": "new_record",
                     "new_values": robot_data
                 }
@@ -469,7 +469,7 @@ class TestNotifications:
 
             for task in tasks_for_robot:
                 task_change = {
-                    "robot_id": robot_sn,
+                    "robot_sn": robot_sn,
                     "change_type": "update",
                     "changed_fields": ["status"],
                     "new_values": task
@@ -513,7 +513,7 @@ class TestNotifications:
         # Test robot status notifications
         for robot in all_robots[:2]:  # Test first 2
             change_info = {
-                "robot_id": robot['robot_sn'],
+                "robot_sn": robot['robot_sn'],
                 "change_type": "new_record",
                 "new_values": robot
             }
@@ -528,7 +528,7 @@ class TestNotifications:
         # Test task notifications
         for task in all_tasks:
             change_info = {
-                "robot_id": task['robot_sn'],
+                "robot_sn": task['robot_sn'],
                 "change_type": "new_record",
                 "new_values": task
             }

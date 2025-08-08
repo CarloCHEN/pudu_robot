@@ -154,7 +154,7 @@ class TestCompleteFlow:
                             }
 
                             self.mock_notification_service.send_notification(
-                                robot_id=robot_sn,
+                                robot_sn=robot_sn,
                                 notification_type="robot_status",
                                 title=f"Robot {case['data']['run_status']}",
                                 content=f"Robot {robot_sn} status changed",
@@ -244,7 +244,7 @@ class TestCompleteFlow:
                             }
 
                             self.mock_notification_service.send_notification(
-                                robot_id=robot_sn,
+                                robot_sn=robot_sn,
                                 notification_type="robot_status",
                                 title=f"Robot Error: {case['data'].get('error_type', 'Unknown')}",
                                 content=f"Robot {robot_sn} error: {case['data'].get('error_detail', '')}",
@@ -329,7 +329,7 @@ class TestCompleteFlow:
                             }
 
                             self.mock_notification_service.send_notification(
-                                robot_id=robot_sn,
+                                robot_sn=robot_sn,
                                 notification_type="robot_status",
                                 title=f"Battery Alert: {power_level}%",
                                 content=f"Robot {robot_sn} battery at {power_level}%",
@@ -433,7 +433,7 @@ class TestCompleteFlow:
                                 "related_biz_type": callback["callback_type"]
                             }
                             self.mock_notification_service.send_notification(
-                                robot_id=robot_sn,
+                                robot_sn=robot_sn,
                                 notification_type="robot_status",
                                 title=f"Mixed Test {callback['callback_type']}",
                                 content=f"Robot {robot_sn} callback processed",
@@ -557,7 +557,7 @@ class TestCompleteFlow:
                         "related_biz_type": test_callback["callback_type"]
                     }
                     self.mock_notification_service.send_notification(
-                        robot_id="CONSISTENCY_TEST_ROBOT",
+                        robot_sn="CONSISTENCY_TEST_ROBOT",
                         notification_type="robot_status",
                         title="Robot Online",
                         content="Robot CONSISTENCY_TEST_ROBOT is now online",
@@ -570,7 +570,7 @@ class TestCompleteFlow:
         consistency_checks = {
             "callback_robot_sn": None,
             "database_robot_sn": None,
-            "notification_robot_id": None,
+            "notification_robot_sn": None,
             "timestamp_consistency": False,
             "status_consistency": False,
         }
@@ -588,13 +588,13 @@ class TestCompleteFlow:
         # Check notification data
         notifications = self.mock_notification_service.get_sent_notifications("CONSISTENCY_TEST_ROBOT")
         if notifications:
-            consistency_checks["notification_robot_id"] = notifications[0]["robot_id"]
+            consistency_checks["notification_robot_sn"] = notifications[0]["robot_sn"]
 
         # Validate consistency
         robot_sn_consistent = (
             consistency_checks["callback_robot_sn"]
             == consistency_checks["database_robot_sn"]
-            == consistency_checks["notification_robot_id"]
+            == consistency_checks["notification_robot_sn"]
             == "CONSISTENCY_TEST_ROBOT"
         )
 
@@ -664,7 +664,7 @@ class TestCompleteFlow:
                                 "related_biz_type": callback["callback_type"]
                             }
                             self.mock_notification_service.send_notification(
-                                robot_id=robot_sn,
+                                robot_sn=robot_sn,
                                 notification_type="robot_status",
                                 title="Performance Test",
                                 content=f"Robot {robot_sn} status update",

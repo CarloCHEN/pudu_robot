@@ -14,11 +14,11 @@ class MockNotificationService:
         self.sent_notifications = []
         self.connection_attempts = []
 
-    def send_notification(self, robot_id: str, notification_type: str,
+    def send_notification(self, robot_sn: str, notification_type: str,
                          title: str, content: str, severity: str, status: str, payload: dict) -> bool:
         """Mock send notification that captures notification data"""
         notification = {
-            "robot_id": robot_id,
+            "robot_sn": robot_sn,
             "notification_type": notification_type,
             "title": title,
             "content": content,
@@ -29,13 +29,13 @@ class MockNotificationService:
         }
 
         self.sent_notifications.append(notification)
-        logger.info(f"Mock notification sent for robot {robot_id}: {title}")
+        logger.info(f"Mock notification sent for robot {robot_sn}: {title}")
         return True
 
-    def get_sent_notifications(self, robot_id: str = None) -> List[Dict[str, Any]]:
-        """Get sent notifications, optionally filtered by robot_id"""
-        if robot_id:
-            return [n for n in self.sent_notifications if n["robot_id"] == robot_id]
+    def get_sent_notifications(self, robot_sn: str = None) -> List[Dict[str, Any]]:
+        """Get sent notifications, optionally filtered by robot_sn"""
+        if robot_sn:
+            return [n for n in self.sent_notifications if n["robot_sn"] == robot_sn]
         return self.sent_notifications
 
     def clear_notifications(self):

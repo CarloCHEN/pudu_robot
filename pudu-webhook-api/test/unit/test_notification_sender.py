@@ -73,7 +73,7 @@ class TestNotificationSender:
 
             # Send notification directly to mock service
             success = self.mock_service.send_notification(
-                robot_id=robot_sn,
+                robot_sn=robot_sn,
                 notification_type="robot_status",
                 title=f"Robot {callback_data['run_status']}",
                 content=f"Robot {robot_sn} status changed to {callback_data['run_status']}",
@@ -128,7 +128,7 @@ class TestNotificationSender:
 
             # Send notification directly to mock service
             success = self.mock_service.send_notification(
-                robot_id=robot_sn,
+                robot_sn=robot_sn,
                 notification_type="robot_status",
                 title=f"Robot Error: {callback_data.get('error_type', 'Unknown')}",
                 content=f"Robot {robot_sn} error: {callback_data.get('error_detail', '')}",
@@ -178,7 +178,7 @@ class TestNotificationSender:
             if case.get("expected_notification", True):
                 # Send notification
                 success = self.mock_service.send_notification(
-                    robot_id=robot_sn,
+                    robot_sn=robot_sn,
                     notification_type="robot_status",
                     title=f"Battery Alert: {callback_data['power']}%",
                     content=f"Robot {robot_sn} battery at {callback_data['power']}%",
@@ -229,7 +229,7 @@ class TestNotificationSender:
             }
 
             success = self.mock_service.send_notification(
-                robot_id=robot_sn,
+                robot_sn=robot_sn,
                 notification_type="robot_status",
                 title="Robot Position Update",
                 content=f"Robot {robot_sn} moved to position ({callback_data['x']}, {callback_data['y']})",
@@ -257,7 +257,7 @@ class TestNotificationSender:
             robot_sn = f"TEST_ROBOT_{status_case['status']}"
 
             success = self.mock_service.send_notification(
-                robot_id=robot_sn,
+                robot_sn=robot_sn,
                 notification_type="robot_status",
                 title=f"Robot {status_case['status']}",
                 content=f"Robot {robot_sn} status changed to {status_case['status']}",
@@ -281,7 +281,7 @@ class TestNotificationSender:
             robot_sn = f"TEST_ROBOT_ERROR_{error_case['level']}"
 
             success = self.mock_service.send_notification(
-                robot_id=robot_sn,
+                robot_sn=robot_sn,
                 notification_type="robot_status",
                 title=f"Robot Error: Test{error_case['level']}Error",
                 content=f"Robot {robot_sn} has a {error_case['level']} level error",
@@ -305,7 +305,7 @@ class TestNotificationSender:
             robot_sn = f"TEST_ROBOT_POWER_{power_case['power']}"
 
             success = self.mock_service.send_notification(
-                robot_id=robot_sn,
+                robot_sn=robot_sn,
                 notification_type="robot_status",
                 title=f"Battery Alert: {power_case['power']}%",
                 content=f"Robot {robot_sn} battery at {power_case['power']}%",
@@ -327,7 +327,7 @@ class TestNotificationSender:
             robot_sn = f"TEST_ROBOT_SEVERITY_{input_severity.upper()}"
 
             success = self.mock_service.send_notification(
-                robot_id=robot_sn,
+                robot_sn=robot_sn,
                 notification_type="robot_status",
                 title=f"Test {input_severity} notification",
                 content=f"Testing {input_severity} severity level",
@@ -361,7 +361,7 @@ class TestNotificationSender:
             robot_sn = f"TEST_ROBOT_BATTERY_{battery_level}"
 
             success = self.mock_service.send_notification(
-                robot_id=robot_sn,
+                robot_sn=robot_sn,
                 notification_type="robot_status",
                 title=f"Battery {battery_level}%",
                 content=f"Robot {robot_sn} battery at {battery_level}%",
@@ -400,7 +400,7 @@ class TestNotificationSender:
 
         # Valid notification
         valid_notification = {
-            "robot_id": "TEST_ROBOT",
+            "robot_sn": "TEST_ROBOT",
             "notification_type": "robot_status",
             "title": "Test Title",
             "content": "Test Content",
@@ -413,7 +413,7 @@ class TestNotificationSender:
 
         # Invalid notification (missing field)
         invalid_notification = {
-            "robot_id": "TEST_ROBOT",
+            "robot_sn": "TEST_ROBOT",
             "title": "Test Title",
             # Missing required fields
         }
@@ -423,7 +423,7 @@ class TestNotificationSender:
 
         # Invalid severity
         invalid_severity = {
-            "robot_id": "TEST_ROBOT",
+            "robot_sn": "TEST_ROBOT",
             "notification_type": "robot_status",
             "title": "Test Title",
             "content": "Test Content",
@@ -454,7 +454,7 @@ class TestNotificationSender:
         }
 
         success = self.mock_service.send_notification(
-            robot_id=robot_sn,
+            robot_sn=robot_sn,
             notification_type="robot_status",
             title="Test Payload Notification",
             content="Testing complex payload handling",
@@ -492,7 +492,7 @@ class TestNotificationSender:
         # Mock changes detected
         changes_dict = {
             "TEST_ROBOT_INTEGRATION": {
-                'robot_id': 'TEST_ROBOT_INTEGRATION',
+                'robot_sn': 'TEST_ROBOT_INTEGRATION',
                 'primary_key_values': {'robot_sn': 'TEST_ROBOT_INTEGRATION'},
                 'change_type': 'update',
                 'changed_fields': ['status'],
@@ -541,7 +541,7 @@ class TestNotificationSender:
         try:
             # Test robot status content generation
             change_info = {
-                'robot_id': 'TEST_ROBOT_CONTENT',
+                'robot_sn': 'TEST_ROBOT_CONTENT',
                 'change_type': 'update',
                 'new_values': {'status': 'online', 'robot_sn': 'TEST_ROBOT_CONTENT'},
                 'changed_fields': ['status']

@@ -270,7 +270,7 @@ class TestDatabaseWriter:
         # Validate changes format
         for change_id, changes in changes_detected.items():
             for key, change_info in changes.items():
-                assert 'robot_id' in change_info, "Change info should have robot_id"
+                assert 'robot_sn' in change_info, "Change info should have robot_sn"
                 assert 'primary_key_values' in change_info, "Change info should have primary_key_values"
                 assert 'change_type' in change_info, "Change info should have change_type"
                 assert 'changed_fields' in change_info, "Change info should have changed_fields"

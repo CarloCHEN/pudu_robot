@@ -68,7 +68,7 @@ class MockNotificationService:
         logger.info(f"Mock Endpoint: {self.endpoint}")
 
     def send_notification(
-        self, robot_id: str, notification_type: str, title: str, content: str, severity: str, status: str, payload: dict
+        self, robot_sn: str, notification_type: str, title: str, content: str, severity: str, status: str, payload: dict
     ) -> bool:
         """
         Mock send notification that captures and validates notification data
@@ -79,7 +79,7 @@ class MockNotificationService:
 
             # Build payload exactly like real service
             notification_data = {
-                "robotId": robot_id,
+                "robotId": robot_sn,
                 "notificationType": notification_type,
                 "title": title,
                 "content": content,
@@ -96,7 +96,7 @@ class MockNotificationService:
 
             # Store notification details for testing
             notification_record = {
-                "robot_id": robot_id,
+                "robot_sn": robot_sn,
                 "notification_type": notification_type,
                 "title": title,
                 "content": content,
@@ -108,7 +108,7 @@ class MockNotificationService:
 
             self.sent_notifications.append(notification_record)
 
-            logger.info(f"✅ Mock notification sent for robot {robot_id}")
+            logger.info(f"✅ Mock notification sent for robot {robot_sn}")
             logger.info(f"   Title: {title}")
             logger.info(f"   Severity: {severity}, Status: {status}")
             logger.info(f"   Notification Type: {notification_type}")
@@ -117,7 +117,7 @@ class MockNotificationService:
             return True
 
         except Exception as e:
-            logger.error(f"❌ Mock notification failed for robot {robot_id}: {e}")
+            logger.error(f"❌ Mock notification failed for robot {robot_sn}: {e}")
             return False
 
     def test_connection(self) -> bool:
@@ -138,10 +138,10 @@ class MockNotificationService:
             logger.error(f"🔗 Mock connection test failed: {e}")
             return False
 
-    def get_sent_notifications(self, robot_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_sent_notifications(self, robot_sn: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get sent notifications for testing verification"""
-        if robot_id:
-            return [n for n in self.sent_notifications if n["robot_id"] == robot_id]
+        if robot_sn:
+            return [n for n in self.sent_notifications if n["robot_sn"] == robot_sn]
         return self.sent_notifications
 
     def get_notifications_by_severity(self, severity: str) -> List[Dict[str, Any]]:
@@ -159,7 +159,7 @@ class MockNotificationService:
 
     def validate_notification_format(self, notification: Dict[str, Any]) -> bool:
         """Validate notification format"""
-        required_fields = ["robot_id", "notification_type", "title", "content", "severity", "status"]
+        required_fields = ["robot_sn", "notification_type", "title", "content", "severity", "status"]
 
         for field in required_fields:
             if field not in notification:
@@ -202,7 +202,7 @@ class MockNotificationService:
         for notification in self.sent_notifications:
             by_severity[notification["severity"]] += 1
             by_type[notification["notification_type"]] += 1
-            by_robot[notification["robot_id"]] += 1
+            by_robot[notification["robot_sn"]] += 1
 
         logger.info(f"\nNotifications by severity:")
         for severity, count in by_severity.items():
@@ -218,4 +218,4 @@ class MockNotificationService:
 
         logger.info("\nRecent notifications:")
         for i, notification in enumerate(self.sent_notifications[-5:], 1):
-            logger.info(f"  {i}. [{notification['severity']}] {notification['title']} - Robot: {notification['robot_id']}")
+            logger.info(f"  {i}. [{notification['severity']}] {notification['title']} - Robot: {notification['robot_sn']}")

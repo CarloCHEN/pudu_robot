@@ -131,23 +131,23 @@ class TestValidator:
 
     @staticmethod
     def validate_notification_sent(
-        sent_notifications: List[Dict], expected_robot_id: str, expected_severity: Optional[str] = None
+        sent_notifications: List[Dict], expected_robot_sn: str, expected_severity: Optional[str] = None
     ) -> bool:
         """Validate that notification was sent for robot"""
-        robot_notifications = [n for n in sent_notifications if n["robot_id"] == expected_robot_id]
+        robot_notifications = [n for n in sent_notifications if n["robot_sn"] == expected_robot_sn]
 
         if not robot_notifications:
-            logger.error(f"❌ No notifications sent for robot: {expected_robot_id}")
+            logger.error(f"❌ No notifications sent for robot: {expected_robot_sn}")
             return False
 
         if expected_severity:
             severity_matches = [n for n in robot_notifications if n["severity"] == expected_severity]
             if not severity_matches:
-                logger.error(f"❌ No notifications with severity '{expected_severity}' for robot: {expected_robot_id}")
+                logger.error(f"❌ No notifications with severity '{expected_severity}' for robot: {expected_robot_sn}")
                 logger.error(f"   Found severities: {[n['severity'] for n in robot_notifications]}")
                 return False
 
-        logger.info(f"✅ Notification validation passed for {expected_robot_id}")
+        logger.info(f"✅ Notification validation passed for {expected_robot_sn}")
         return True
 
 

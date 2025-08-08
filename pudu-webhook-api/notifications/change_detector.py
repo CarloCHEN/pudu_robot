@@ -63,10 +63,10 @@ def detect_data_changes(table, data_list: list, primary_keys: list) -> Dict[str,
         if not primary_key_conditions:
             # No primary keys found, treat all as new records
             for i, (original_record, normalized_record) in enumerate(zip(data_list, normalized_data_list)):
-                robot_id = normalized_record.get('robot_sn', normalized_record.get('sn', f'unknown_{i}'))
-                unique_id = f"{robot_id}_{i}"
+                robot_sn = normalized_record.get('robot_sn', normalized_record.get('sn', f'unknown_{i}'))
+                unique_id = f"{robot_sn}_{i}"
                 changes_detected[unique_id] = {
-                    'robot_id': robot_id,
+                    'robot_sn': robot_sn,
                     'primary_key_values': {pk: normalized_record.get(pk) for pk in primary_keys},
                     'change_type': 'new_record',
                     'changed_fields': list(normalized_record.keys()),
@@ -136,8 +136,8 @@ def detect_data_changes(table, data_list: list, primary_keys: list) -> Dict[str,
                 pk_values.append(str(value) if value is not None else '')
             pk_key = tuple(pk_values)
 
-            # Get robot_id for notification purposes
-            robot_id = normalized_new_record.get('robot_sn', normalized_new_record.get('sn', 'unknown'))
+            # Get robot_sn for notification purposes
+            robot_sn = normalized_new_record.get('robot_sn', normalized_new_record.get('sn', 'unknown'))
 
             # Create unique identifier using primary key values
             unique_id = "_".join(pk_values) if pk_values else f"record_{i}"
@@ -170,19 +170,19 @@ def detect_data_changes(table, data_list: list, primary_keys: list) -> Dict[str,
                     full_old_values = {field: existing_original.get(field) for field in original_new_record.keys()}
 
                     changes_detected[unique_id] = {
-                        'robot_id': robot_id,
+                        'robot_sn': robot_sn,
                         'primary_key_values': primary_key_values,
                         'change_type': 'update',
                         'changed_fields': changed_fields,
                         'old_values': full_old_values,
                         'new_values': full_new_values
                     }
-                    logger.info(f"Detected update for record {unique_id} (robot {robot_id}): {len(changed_fields)} fields changed")
+                    logger.info(f"Detected update for record {unique_id} (robot {robot_sn}): {len(changed_fields)} fields changed")
             else:
                 # New record
-                logger.info(f"Detected new record {unique_id} (robot {robot_id})")
+                logger.info(f"Detected new record {unique_id} (robot {robot_sn})")
                 changes_detected[unique_id] = {
-                    'robot_id': robot_id,
+                    'robot_sn': robot_sn,
                     'primary_key_values': primary_key_values,
                     'change_type': 'new_record',
                     'changed_fields': list(original_new_record.keys()),
@@ -194,11 +194,11 @@ def detect_data_changes(table, data_list: list, primary_keys: list) -> Dict[str,
         logger.warning(f"Error detecting changes for {table.database_name}.{table.table_name}: {e}")
         # Fallback: treat all records as potentially changed
         for i, record in enumerate(data_list):
-            robot_id = record.get('robot_sn', record.get('sn', 'unknown'))
-            unique_id = f"{robot_id}_{i}"
+            robot_sn = record.get('robot_sn', record.get('sn', 'unknown'))
+            unique_id = f"{robot_sn}_{i}"
             primary_key_values = {pk: record.get(pk) for pk in primary_keys}
             changes_detected[unique_id] = {
-                'robot_id': robot_id,
+                'robot_sn': robot_sn,
                 'primary_key_values': primary_key_values,
                 'change_type': 'unknown',
                 'changed_fields': list(record.keys()),

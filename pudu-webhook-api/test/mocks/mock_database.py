@@ -168,7 +168,7 @@ class MockDatabaseWriter:
 
                 # Mock changes detection
                 changes_detected[f"{robot_sn}_status"] = {
-                    'robot_id': robot_sn,
+                    'robot_sn': robot_sn,
                     'primary_key_values': {'robot_sn': robot_sn},
                     'change_type': 'update',
                     'changed_fields': list(db_data.keys()),
@@ -200,7 +200,7 @@ class MockDatabaseWriter:
                 table_names.append(table_config["table_name"])
 
                 changes_detected[f"{robot_sn}_pose"] = {
-                    'robot_id': robot_sn,
+                    'robot_sn': robot_sn,
                     'primary_key_values': {'robot_sn': robot_sn},
                     'change_type': 'update',
                     'changed_fields': list(db_data.keys()),
@@ -236,7 +236,7 @@ class MockDatabaseWriter:
                 table_names.append(table_config["table_name"])
 
                 changes_detected[f"{robot_sn}_power"] = {
-                    'robot_id': robot_sn,
+                    'robot_sn': robot_sn,
                     'primary_key_values': {'robot_sn': robot_sn},
                     'change_type': 'update',
                     'changed_fields': list(db_data.keys()),
@@ -280,7 +280,7 @@ class MockDatabaseWriter:
                 table_names.append(table_config["table_name"])
 
                 changes_detected[f"{robot_sn}_event"] = {
-                    'robot_id': robot_sn,
+                    'robot_sn': robot_sn,
                     'primary_key_values': {'robot_sn': robot_sn, 'event_id': event_data.get("error_id", "")},
                     'change_type': 'new_record',
                     'changed_fields': list(db_data.keys()),

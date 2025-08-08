@@ -15,7 +15,7 @@ class DatabaseWriter:
         self.config = DatabaseConfig(config_path)
         self.table_cache = {}  # Cache RDSTable instances
 
-    def _get_table(self, database_name: str, table_name: str, primary_keys: List[str]) -> RDSTable:
+    def _get_table(self, database_name: str, table_name: str, fields: List[str], primary_keys: List[str]) -> RDSTable:
         """Get or create RDSTable instance"""
         table_key = f"{database_name}.{table_name}"
 
@@ -25,6 +25,7 @@ class DatabaseWriter:
                     connection_config="credentials.yaml",
                     database_name=database_name,
                     table_name=table_name,
+                    fields=fields,
                     primary_keys=primary_keys
                 )
                 self.table_cache[table_key] = table
@@ -82,6 +83,7 @@ class DatabaseWriter:
                 table = self._get_table(
                     database_name=table_config['database'],
                     table_name=table_config['table_name'],
+                    fields=table_config.get('fields', []),
                     primary_keys=table_config['primary_keys']
                 )
 

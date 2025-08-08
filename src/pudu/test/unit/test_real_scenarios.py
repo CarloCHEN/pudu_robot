@@ -65,7 +65,7 @@ class TestRealScenarios:
 
         for unique_id, change_info in changes.items():
             assert change_info['change_type'] == 'new_record'
-            assert change_info['robot_id'] in ['1230', '1231']
+            assert change_info['robot_sn'] in ['1230', '1231']
             assert len(change_info['changed_fields']) > 0
 
         print("  ✅ New record detection successful")
@@ -231,7 +231,7 @@ class TestRealScenarios:
         # Your changes dictionary structure
         changes = {
             '1230': {
-                'robot_id': '1230',
+                'robot_sn': '1230',
                 'primary_key_values': {'robot_sn': '1230'},
                 'change_type': 'new_record',
                 'new_values': {
@@ -242,7 +242,7 @@ class TestRealScenarios:
                 }
             },
             '1231': {
-                'robot_id': '1231',
+                'robot_sn': '1231',
                 'primary_key_values': {'robot_sn': '1231'},
                 'change_type': 'new_record',
                 'new_values': {
@@ -294,7 +294,7 @@ class TestRealScenarios:
         }
 
         # Robot without coordinates (idle)
-        robot_idle = {
+        another_robot_snle = {
             'robot_sn': '1231',
             'x': None,
             'y': None,
@@ -302,7 +302,7 @@ class TestRealScenarios:
             'status': 'Online'
         }
 
-        data_list = [robot_with_coords, robot_idle]
+        data_list = [robot_with_coords, another_robot_snle]
 
         # Test normalization preserves coordinates correctly
         normalized_list = [normalize_record_for_comparison(record) for record in data_list]

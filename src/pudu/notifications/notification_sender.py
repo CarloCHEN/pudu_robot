@@ -202,7 +202,7 @@ def send_change_based_notifications(notification_service: NotificationService, d
     # Send individual notification for each changed record
     for unique_id, change_info in changes_dict.items():
         try:
-            robot_id = change_info.get('robot_id', 'unknown')
+            robot_sn = change_info.get('robot_sn', 'unknown')
             # primary_key_values = change_info.get('primary_key_values', {})
             database_key = change_info.get('database_key', None)
             payload = {
@@ -228,7 +228,7 @@ def send_change_based_notifications(notification_service: NotificationService, d
 
             # Send notification with severity and status
             if notification_service.send_notification(
-                robot_id=robot_id,
+                robot_sn=robot_sn,
                 notification_type=notification_type,
                 title=formatted_title,
                 content=content,
@@ -272,7 +272,7 @@ def get_severity_and_status_for_change(data_type: str, change_info: Dict) -> Tup
 
 def generate_individual_notification_content(data_type: str, change_info: Dict, time_range: str = "") -> tuple:
     """Generate notification content for a single record change"""
-    robot_id = change_info.get('robot_id', 'unknown')
+    robot_sn = change_info.get('robot_sn', 'unknown')
     change_type = change_info.get('change_type', 'unknown')
     changed_fields = change_info.get('changed_fields', [])
     old_values = change_info.get('old_values', {})
@@ -286,11 +286,11 @@ def generate_individual_notification_content(data_type: str, change_info: Dict, 
             if change_type == 'new_record':
                 status = new_values.get('status', 'Unknown')
                 battery = new_values.get('battery_level', 'N/A')
-                robot_name = new_values.get('robot_name', f'SN: {robot_id}')
+                robot_name = new_values.get('robot_name', f'SN: {robot_sn}')
                 title = f"Robot Online"
                 content = f"Robot {robot_name} is now online."
             else:  # update
-                return generate_status_change_content(robot_id, changed_fields, old_values, new_values)
+                return generate_status_change_content(robot_sn, changed_fields, old_values, new_values)
 
         elif data_type == 'robot_task':
             # Primary keys: ["robot_sn", "task_name", "start_time"]
@@ -304,12 +304,12 @@ def generate_individual_notification_content(data_type: str, change_info: Dict, 
                 else:
                     status_name = status
 
-                robot_name = new_values.get('robot_name', f'SN: {robot_id}')
+                robot_name = new_values.get('robot_name', f'SN: {robot_sn}')
                 title = f"New Task: {task_name}"
                 content = f"Robot {robot_name} has a new task: {task_name} (status: {status_name})."
 
             else:  # update
-                robot_name = new_values.get('robot_name', f'SN: {robot_id}')
+                robot_name = new_values.get('robot_name', f'SN: {robot_sn}')
 
                 if 'status' in changed_fields:
                     old_status = old_values.get('status', 'Unknown')
@@ -341,7 +341,7 @@ def generate_individual_notification_content(data_type: str, change_info: Dict, 
 
         elif data_type == 'robot_charging':
             # Primary keys: ["robot_sn", "start_time", "end_time"]
-            robot_name = new_values.get('robot_name', f'SN: {robot_id}')
+            robot_name = new_values.get('robot_name', f'SN: {robot_sn}')
             final_power = new_values.get('final_power', 'N/A')
 
             if change_type == 'new_record':
@@ -365,7 +365,7 @@ def generate_individual_notification_content(data_type: str, change_info: Dict, 
             # Primary keys: ["robot_sn", "event_id"]
             event_type = new_values.get('event_type', 'Unknown Event')
             event_level = new_values.get('event_level', 'info').lower()
-            robot_name = new_values.get('robot_name', f'SN: {robot_id}')
+            robot_name = new_values.get('robot_name', f'SN: {robot_sn}')
             time_info = f"{new_values.get('upload_time', 'Unknown Time')}"
 
             title = f"Robot Incident: {event_type}"
@@ -392,7 +392,7 @@ def generate_individual_notification_content(data_type: str, change_info: Dict, 
 
         else:
             # Generic handling for other data types - do not send notification now
-            robot_name = new_values.get('robot_name', f'SN: {robot_id}')
+            robot_name = new_values.get('robot_name', f'SN: {robot_sn}')
             if change_type == 'new_record':
                 title = f"New {data_type.replace('_', ' ').title()}"
                 content = f"Robot {robot_name} has a new {data_type} record created."
@@ -403,15 +403,15 @@ def generate_individual_notification_content(data_type: str, change_info: Dict, 
     except Exception as e:
         logger.warning(f"Error generating notification content for {data_type}: {e}")
         # Fallback
-        robot_name = new_values.get('robot_name', f'Robot SN: {robot_id}')
+        robot_name = new_values.get('robot_name', f'Robot SN: {robot_sn}')
         title = f"{data_type.replace('_', ' ').title()}"
         content = f"Robot: {robot_name}; {data_type} updated."
 
     return title, content
 
-def generate_status_change_content(robot_id: str, changed_fields: list, old_values: dict, new_values: dict) -> tuple:
+def generate_status_change_content(robot_sn: str, changed_fields: list, old_values: dict, new_values: dict) -> tuple:
     """Generate specific content for robot status changes"""
-    robot_name = new_values.get('robot_name', f'SN: {robot_id}')
+    robot_name = new_values.get('robot_name', f'SN: {robot_sn}')
     icon_manager = get_icon_manager()
 
     # Prioritize important status changes

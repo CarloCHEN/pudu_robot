@@ -22,8 +22,7 @@ logging.basicConfig(
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
 
-# Initialize enhanced callback handler with dynamic database config
-callback_handler = CallbackHandler()
+
 
 # Initialize notification service
 try:
@@ -47,6 +46,8 @@ for path in config_paths:
         config_path = path
         break
 
+# Initialize enhanced callback handler with dynamic database config
+callback_handler = CallbackHandler(config_path)
 # Initialize dynamic database configuration
 try:
     db_config = DatabaseConfig(config_path)

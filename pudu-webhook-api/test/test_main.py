@@ -57,7 +57,7 @@ except ImportError as e:
             # Mock implementation
             return ["mock_db"], ["mock_table"], {
                 "mock_change": {
-                    'robot_id': data.get("data", {}).get("sn", "unknown"),
+                    'robot_sn': data.get("data", {}).get("sn", "unknown"),
                     'database_key': 'mock_key_123'
                 }
             }
@@ -218,7 +218,7 @@ def pudu_webhook():
                 # Send notifications for each change
                 for (db_name, table_name), changes in changes_detected.items():
                     for change_id, change_info in changes.items():
-                        robot_sn = change_info.get('robot_id', 'unknown')
+                        robot_sn = change_info.get('robot_sn', 'unknown')
                         callback_type = data.get("callback_type", "unknown")
 
                         payload = {
@@ -249,7 +249,7 @@ def pudu_webhook():
                             severity = "event"
 
                         success = notification_service.send_notification(
-                            robot_id=robot_sn,
+                            robot_sn=robot_sn,
                             notification_type="robot_status",
                             title=title,
                             content=content,
@@ -345,13 +345,13 @@ def test_summary():
             # Group by severity and robot
             for notif in notifications:
                 severity = notif.get("severity", "unknown")
-                robot_id = notif.get("robot_id", "unknown")
+                robot_sn = notif.get("robot_sn", "unknown")
 
                 summary["notification_operations"]["by_severity"][severity] = (
                     summary["notification_operations"]["by_severity"].get(severity, 0) + 1
                 )
-                summary["notification_operations"]["by_robot"][robot_id] = (
-                    summary["notification_operations"]["by_robot"].get(robot_id, 0) + 1
+                summary["notification_operations"]["by_robot"][robot_sn] = (
+                    summary["notification_operations"]["by_robot"].get(robot_sn, 0) + 1
                 )
 
         return jsonify(summary)

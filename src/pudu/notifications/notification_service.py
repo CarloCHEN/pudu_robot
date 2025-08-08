@@ -41,13 +41,13 @@ class NotificationService:
         # Log configuration (without sensitive data)
         logger.info(f"NotificationService initialized with host: {self.api_host[:20]}...")
 
-    def send_notification(self, robot_id: str, notification_type: str, title: str, content: str,
+    def send_notification(self, robot_sn: str, notification_type: str, title: str, content: str,
                          severity: str, status: str, payload: dict) -> bool:
         """
         Send notification to web API with severity and status
 
         Args:
-            robot_id: ID of the robot
+            robot_sn: ID of the robot
             notification_type: Type of notification
             title: Notification title
             content: Notification content
@@ -60,7 +60,7 @@ class NotificationService:
 
             # Build data - include status if provided
             notification_data = {
-                "robotId": robot_id,
+                "robotId": robot_sn,
                 "notificationType": notification_type,
                 "title": title,
                 "content": content,
@@ -68,7 +68,7 @@ class NotificationService:
                 "status": status,
                 "payload": payload # for identifying the record in the database
             }
-            
+
             notification_data_json = json.dumps(notification_data)
 
             conn.request("POST", self.endpoint, notification_data_json, self.headers)
@@ -76,14 +76,14 @@ class NotificationService:
             data = res.read()
 
             if res.status == 200:
-                logger.info(f"✅ Notification sent successfully for robot {robot_id}: {title} (severity: {severity}, status: {status})")
+                logger.info(f"✅ Notification sent successfully for robot {robot_sn}: {title} (severity: {severity}, status: {status})")
                 return True
             else:
-                logger.error(f"❌ Failed to send notification for robot {robot_id}. Status: {res.status}, Response: {data.decode('utf-8')}")
+                logger.error(f"❌ Failed to send notification for robot {robot_sn}. Status: {res.status}, Response: {data.decode('utf-8')}")
                 return False
 
         except Exception as e:
-            logger.error(f"❌ Exception sending notification for robot {robot_id}: {e}")
+            logger.error(f"❌ Exception sending notification for robot {robot_sn}: {e}")
             return False
         finally:
             try:
