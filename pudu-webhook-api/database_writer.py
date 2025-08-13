@@ -1,5 +1,7 @@
+from datetime import datetime
 import logging
-from typing import Any, Dict, List
+import time
+from typing import Any, Dict, List, Tuple
 
 from configs.database_config import DatabaseConfig
 from rds.rdsTable import RDSTable
@@ -9,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class DatabaseWriter:
-    """Enhanced database writer with dynamic routing and change detection"""
+    """Enhanced database writer with change detection and proper data transformation"""
 
     def __init__(self, config_path: str = "database_config.yaml"):
         self.config = DatabaseConfig(config_path)
@@ -36,42 +38,160 @@ class DatabaseWriter:
 
         return self.table_cache[table_key]
 
-    def write_robot_status(self, robot_sn: str, status_data: Dict[str, Any]):
-        """Write robot status data with dynamic routing and change detection"""
-        return self._write_with_dynamic_routing(
-            'robot_status', [robot_sn], [status_data]
+    def _transform_robot_status_data(self, robot_sn: str, status_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Transform callback status data to database format"""
+        db_data = {
+            "robot_sn": robot_sn,
+            "status": status_data.get("status", ""),
+            "update_time": datetime.fromtimestamp(status_data.get("timestamp", int(time.time()))).strftime('%Y-%m-%d %H:%M:%S')
+        }
+        # Remove None values
+        return {k: v for k, v in db_data.items() if v is not None}
+
+    def _transform_robot_pose_data(self, robot_sn: str, pose_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Transform callback pose data to database format"""
+        db_data = {
+            "robot_sn": robot_sn,
+            "x": pose_data.get("x"),
+            "y": pose_data.get("y"),
+            "z": pose_data.get("z"),  # Note: callback uses 'yaw' but db expects 'z'
+            # convert to timestamp
+            "update_time": datetime.fromtimestamp(pose_data.get("timestamp", int(time.time()))).strftime('%Y-%m-%d %H:%M:%S')
+        }
+
+        # Handle the yaw -> z mapping if needed
+        if "yaw" in pose_data and "z" not in db_data:
+            db_data["z"] = pose_data["yaw"]
+
+        # Remove None values
+        return {k: v for k, v in db_data.items() if v is not None}
+
+    def _transform_robot_power_data(self, robot_sn: str, power_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Transform callback power data to database format"""
+        db_data = {
+            "robot_sn": robot_sn,
+            "battery_level": power_data.get("battery_level")  # API uses 'power', DB uses 'battery_level'
+        }
+
+        # Remove None values
+        return {k: v for k, v in db_data.items() if v is not None}
+
+    def _transform_robot_event_data(self, robot_sn: str, event_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Transform callback event data to database format"""
+        db_data = {
+            "robot_sn": robot_sn,
+            "event_id": event_data.get("error_id", ""),
+            "error_id": event_data.get("error_id", ""),  # Keep both for compatibility
+            "event_level": event_data.get("event_level", "").lower(),
+            "event_type": event_data.get("event_type", ""),
+            "event_detail": event_data.get("event_detail", ""),
+            "task_time": datetime.fromtimestamp(event_data.get("task_time", int(time.time()))).strftime('%Y-%m-%d %H:%M:%S'),
+            "upload_time": datetime.fromtimestamp(event_data.get("upload_time", int(time.time()))).strftime('%Y-%m-%d %H:%M:%S'),
+        }
+
+        # Remove None values
+        return {k: v for k, v in db_data.items() if v is not None}
+
+    def write_robot_status(self, robot_sn: str, status_data: Dict[str, Any]) -> Tuple[List[str], List[str], Dict]:
+        """Write robot status data with change detection and get database IDs"""
+        return self._write_with_change_detection(
+            'robot_status',
+            robot_sn,
+            status_data,
+            self._transform_robot_status_data
         )
 
-    def write_robot_pose(self, robot_sn: str, pose_data: Dict[str, Any]):
-        """Write robot pose data with dynamic routing and change detection"""
-        return self._write_with_dynamic_routing(
-            'robot_status', [robot_sn], [pose_data]
+    def write_robot_pose(self, robot_sn: str, pose_data: Dict[str, Any]) -> Tuple[List[str], List[str], Dict]:
+        """Write robot pose data with change detection and get database IDs"""
+        # write to robot_status table first
+        database_names, table_names, changes_detected = self._write_with_change_detection(
+            'robot_status',  # Pose data goes to robot_work_location table
+            robot_sn,
+            pose_data,
+            self._transform_robot_pose_data
+        )
+        # write to robot_work_location table
+        return self._write_with_change_detection(
+            'robot_work_location',  # Pose data goes to robot_work_location table
+            robot_sn,
+            pose_data,
+            self._transform_robot_pose_data
         )
 
-    def write_robot_power(self, robot_sn: str, power_data: Dict[str, Any]):
-        """Write robot power data with dynamic routing and change detection"""
-        return self._write_with_dynamic_routing(
-            'robot_status', [robot_sn], [power_data]
+    def write_robot_power(self, robot_sn: str, power_data: Dict[str, Any]) -> Tuple[List[str], List[str], Dict]:
+        """Write robot power data with change detection and get database IDs"""
+        return self._write_with_change_detection(
+            'robot_status',  # Power data goes to robot_status table
+            robot_sn,
+            power_data,
+            self._transform_robot_power_data
         )
 
-    def write_robot_event(self, robot_sn: str, event_data: Dict[str, Any]):
-        """Write robot event data with dynamic routing and change detection"""
-        return self._write_with_dynamic_routing(
-            'robot_events', [robot_sn], [event_data]
+    def write_robot_event(self, robot_sn: str, event_data: Dict[str, Any]) -> Tuple[List[str], List[str], Dict]:
+        """Write robot event data with change detection and get database IDs"""
+        return self._write_with_change_detection(
+            'robot_events',
+            robot_sn,
+            event_data,
+            self._transform_robot_event_data
         )
 
-    def _write_with_dynamic_routing(self, table_type: str, robot_sns: List[str], data_list: List[Dict]):
+    def _get_table_columns(self, table: RDSTable) -> List[str]:
+        """Get actual column names from database table"""
+        try:
+            # Query table structure to get actual columns
+            columns_query = f"DESCRIBE {table.table_name}"
+            columns_result = table.query_data(columns_query)
+            if columns_result:
+                return [col[0] for col in columns_result]
+        except Exception as e:
+            logger.warning(f"Could not get columns for {table.table_name}: {e}")
+
+        # Fallback: return empty list or known columns
+        return []
+
+    def _filter_data_for_table(self, data: Dict[str, Any], table: RDSTable) -> Dict[str, Any]:
+        """Filter data to only include columns that exist in the database table"""
+        table_columns = self._get_table_columns(table)
+
+        if not table_columns:
+            # If we can't get table columns, return data as-is and let DB handle it
+            logger.warning(f"No table columns found for {table.table_name}, proceeding with all data")
+            return data
+
+        # Filter data to only include existing columns
+        filtered_data = {}
+        for key, value in data.items():
+            if key in table_columns:
+                filtered_data[key] = value
+            else:
+                logger.debug(f"Skipping column '{key}' - not found in table {table.table_name}")
+
+        logger.debug(f"Filtered data from {len(data)} to {len(filtered_data)} columns for {table.table_name}")
+        return filtered_data
+
+    def _write_with_change_detection(
+        self,
+        table_type: str,
+        robot_sn: str,
+        raw_data: Dict[str, Any],
+        transform_func
+    ) -> Tuple[List[str], List[str], Dict]:
         """
-        Write data with dynamic database routing and change detection
+        Write data with change detection and return database IDs
 
         Returns:
-            tuple: (database_names, table_names, primary_key_values, changes_detected)
+            tuple: (database_names, table_names, changes_detected)
         """
-        if not robot_sns or not data_list:
-            return [], [], {}, {}
+        # Transform the raw callback data to database format
+        transformed_data = transform_func(robot_sn, raw_data)
 
-        # Get table configurations for these robots
-        table_configs = self.config.get_table_configs_for_robots(table_type, robot_sns)
+        if not transformed_data:
+            logger.warning(f"No data to write after transformation for {robot_sn}")
+            return [], [], {}
+
+        # Get table configurations for this robot
+        table_configs = self.config.get_table_configs_for_robots(table_type, [robot_sn])
 
         database_names = []
         table_names = []
@@ -89,39 +209,40 @@ class DatabaseWriter:
 
                 # Filter data for robots that belong to this database
                 target_robots = table_config.get('robot_sns', [])
-                if target_robots:
-                    filtered_data = [data for data in data_list
-                                   if data.get('robot_sn') in target_robots]
-                else:
-                    filtered_data = data_list
-
-                if not filtered_data:
+                if target_robots and robot_sn not in target_robots:
                     continue
 
-                # Detect changes using the actual table object
+                # IMPORTANT: Filter transformed data to only include columns that exist in the table
+                # This prevents detect_data_changes from detecting new columns as changes
+                filtered_data = self._filter_data_for_table(transformed_data, table)
+
+                if not filtered_data:
+                    logger.warning(f"No valid columns found for {table.table_name} after filtering")
+                    continue
+
+                # Detect changes using the filtered data (only existing columns)
                 changes = detect_data_changes(
-                    table, filtered_data, table_config['primary_keys']
+                    table, [filtered_data], table_config['primary_keys']
                 )
 
                 if changes:
-                    # Insert changed records and get database keys
+                    # Extract changed records for database insertion
                     changed_records = []
                     for change_info in changes.values():
+                        # Use the filtered data (which only contains valid columns)
                         changed_records.append(change_info['new_values'])
 
-                    # Use the table's batch_insert_with_ids method
+                    # Use batch_insert_with_ids to get database keys
                     ids = table.batch_insert_with_ids(changed_records)
 
-                    # ids is a list of tuples, each tuple contains (original_data_dict, unique_key_in_db)
-                    # now we need to add the database_key to each change record
-                    # step 1: add database_key to primary_key_values dict
+                    # Map database keys back to changes
                     pk_to_db_id = {}
                     for original_data, db_id in ids:
                         # Create primary key tuple for matching
                         pk_values = tuple(str(original_data.get(pk, '')) for pk in table.primary_keys)
                         pk_to_db_id[pk_values] = db_id
 
-                    # step 2: add database_key to changes dictionary
+                    # Add database_key to changes dictionary
                     for unique_id, change_info in changes.items():
                         # Create primary key tuple from change info
                         pk_values = tuple(str(change_info['primary_key_values'].get(pk, '')) for pk in table.primary_keys)
@@ -133,11 +254,12 @@ class DatabaseWriter:
                     table_names.append(table_config['table_name'])
 
                     # Store changes with table identifier
-                    table_key = tuple([table.database_name, table.table_name])
+                    table_key = (table.database_name, table.table_name)
                     all_changes[table_key] = changes
 
-                    logger.info(f"Updated {len(filtered_data)} records in {table_config['database']}.{table_config['table_name']}")
+                    logger.info(f"Updated {len(changed_records)} records in {table_config['database']}.{table_config['table_name']}")
                 else:
+                    logger.info(f"changes: {changes}; filtered_data: {filtered_data}; transformed_data: {transformed_data};")
                     logger.info(f"No changes detected for {table_config['database']}.{table_config['table_name']}")
 
             except Exception as e:

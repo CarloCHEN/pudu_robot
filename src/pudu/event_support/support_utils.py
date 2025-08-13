@@ -84,9 +84,7 @@ def get_support_tickets_table(database: RDSDatabase):
             e.mac_address,
             e.software_version,
             e.hardware_version,
-            e.os_version,
-            COALESCE(e.tenant_id, 'unknown') AS tenant_id
-
+            e.os_version
         FROM {db_name_in_query}.mnt_robot_event_reports r
         JOIN {db_name_in_query}.mnt_robot_events e
             ON r.event_id = e.id

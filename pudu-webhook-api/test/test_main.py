@@ -2,10 +2,17 @@
 Test version of main.py that uses mock services instead of real database/notifications
 Run this for endpoint testing instead of the production main.py
 """
+# Add this at the very top of your test/test_main.py, before the existing imports
 
 import os
 import sys
 from pathlib import Path
+
+# Ensure we're in the correct directory for Docker container
+current_dir = Path(__file__).parent.parent  # This should be the root directory
+if current_dir.name == 'pudu-webhook-api':
+    os.chdir(current_dir)
+    sys.path.insert(0, str(current_dir))
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))

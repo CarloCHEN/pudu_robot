@@ -22,6 +22,8 @@ COPY pudu-webhook-api/configs/ ./configs/
 COPY pudu-webhook-api/rds/ ./rds/
 # Copy services
 COPY pudu-webhook-api/services/ ./services/
+# Copy test files for mock services
+COPY pudu-webhook-api/test/ ./test/
 
 # Create non-root user for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser
@@ -40,5 +42,5 @@ EXPOSE $PORT
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD python -c "import urllib.request,os; urllib.request.urlopen(f'http://localhost:{os.getenv(\"PORT\", \"8000\")}/api/pudu/webhook/health')" || exit 1
 
-# Run the Flask application
-CMD ["python", "main.py"]
+# Use test main when in test mode, otherwise use production main
+CMD ["sh", "-c", "if [ \"$TEST_MODE\" = \"true\" ]; then python test/test_main_cicd.py; else python main.py; fi"]

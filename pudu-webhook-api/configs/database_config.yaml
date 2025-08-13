@@ -21,6 +21,13 @@ tables:
       fields: null
       description: "Robot status table in project database"
 
+  robot_work_location:
+    - database: "project"
+      table_name: "mnt_robots_work_location"
+      primary_keys: ["robot_sn"]
+      fields: null
+      description: "Robot work location table in project database"
+
   # Robot Events/Errors go to events table
   robot_events:
     - database: "project"

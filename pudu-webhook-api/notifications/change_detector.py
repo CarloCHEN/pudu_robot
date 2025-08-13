@@ -50,6 +50,20 @@ def detect_data_changes(table, data_list: list, primary_keys: list) -> Dict[str,
     changes_detected = {}
 
     try:
+        # Get actual table columns to avoid checking non-existent fields
+        table_columns = set()
+        try:
+            column_query = f"DESCRIBE {table.table_name}"
+            columns_result = table.query_data(column_query)
+            if columns_result:
+                table_columns = {col[0] for col in columns_result}
+        except Exception as e:
+            logger.debug(f"Could not get table columns for {table.table_name}: {e}")
+            # Fallback: assume all fields in data are valid
+            table_columns = set()
+            for record in data_list:
+                table_columns.update(record.keys())
+
         # Normalize all new records for comparison
         normalized_data_list = [normalize_record_for_comparison(record) for record in data_list]
 
@@ -156,7 +170,15 @@ def detect_data_changes(table, data_list: list, primary_keys: list) -> Dict[str,
                 new_values = {}
 
                 # Compare normalized values for change detection
+                # SIMPLE FIX: Only check fields that exist in the table
                 for field, new_value in normalized_new_record.items():
+                    # Skip fields that don't exist in the database table
+                    if table_columns and field not in table_columns:
+                        continue
+                    # skip robot_name comparison since it is designed to be changable in the database by user
+                    if field == 'robot_name':
+                        continue
+
                     old_value = existing_normalized.get(field)
 
                     if not values_are_equivalent(old_value, new_value, field):
@@ -166,20 +188,21 @@ def detect_data_changes(table, data_list: list, primary_keys: list) -> Dict[str,
                             new_values[field] = original_new_record.get(field)
 
                 if changed_fields:
-                    full_new_values = original_new_record.copy()
-                    full_old_values = {field: existing_original.get(field) for field in original_new_record.keys()}
+                    full_new_values = {field: original_new_record.get(field) for field in original_new_record.keys() if field in table_columns}
 
                     changes_detected[unique_id] = {
                         'robot_sn': robot_sn,
                         'primary_key_values': primary_key_values,
                         'change_type': 'update',
                         'changed_fields': changed_fields,
-                        'old_values': full_old_values,
+                        'old_values': existing_original,
                         'new_values': full_new_values
                     }
                     logger.info(f"Detected update for record {unique_id} (robot {robot_sn}): {len(changed_fields)} fields changed")
             else:
                 # New record
+                # Only check fields that exist in the table
+                new_values = {field: original_new_record.get(field) for field in original_new_record.keys() if field in table_columns}
                 logger.info(f"Detected new record {unique_id} (robot {robot_sn})")
                 changes_detected[unique_id] = {
                     'robot_sn': robot_sn,
@@ -187,7 +210,7 @@ def detect_data_changes(table, data_list: list, primary_keys: list) -> Dict[str,
                     'change_type': 'new_record',
                     'changed_fields': list(original_new_record.keys()),
                     'old_values': {},
-                    'new_values': original_new_record
+                    'new_values': new_values
                 }
 
     except Exception as e:

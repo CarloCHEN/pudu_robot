@@ -84,7 +84,7 @@ def normalize_record_for_comparison(record: dict) -> dict:
         normalized[field_name] = normalize_decimal_value(value, field_name)
     return normalized
 
-def detect_data_changes(table: RDSTable, data_list: list, primary_keys: list) -> Dict[str, Dict]:
+def detect_data_changes(table, data_list: list, primary_keys: list) -> Dict[str, Dict]:
     """
     Detect what data has actually changed compared to existing database records
     Returns a dictionary with unique record identifier as key and change details as value
@@ -95,6 +95,20 @@ def detect_data_changes(table: RDSTable, data_list: list, primary_keys: list) ->
     changes_detected = {}
 
     try:
+        # Get actual table columns to avoid checking non-existent fields
+        table_columns = set()
+        try:
+            column_query = f"DESCRIBE {table.table_name}"
+            columns_result = table.query_data(column_query)
+            if columns_result:
+                table_columns = {col[0] for col in columns_result}
+        except Exception as e:
+            logger.debug(f"Could not get table columns for {table.table_name}: {e}")
+            # Fallback: assume all fields in data are valid
+            table_columns = set()
+            for record in data_list:
+                table_columns.update(record.keys())
+
         # Normalize all new records for comparison
         normalized_data_list = [normalize_record_for_comparison(record) for record in data_list]
 
@@ -107,17 +121,16 @@ def detect_data_changes(table: RDSTable, data_list: list, primary_keys: list) ->
 
         if not primary_key_conditions:
             # No primary keys found, treat all as new records
-            logger.warning(f"No primary key conditions found. Primary keys: {primary_keys}")
             for i, (original_record, normalized_record) in enumerate(zip(data_list, normalized_data_list)):
                 robot_sn = normalized_record.get('robot_sn', normalized_record.get('sn', f'unknown_{i}'))
-                unique_id = f"{robot_sn}_{i}"  # Use index to ensure uniqueness
+                unique_id = f"{robot_sn}_{i}"
                 changes_detected[unique_id] = {
                     'robot_sn': robot_sn,
                     'primary_key_values': {pk: normalized_record.get(pk) for pk in primary_keys},
                     'change_type': 'new_record',
                     'changed_fields': list(normalized_record.keys()),
                     'old_values': {},
-                    'new_values': original_record  # Use original record for notification
+                    'new_values': original_record
                 }
             return changes_detected
 
@@ -132,7 +145,6 @@ def detect_data_changes(table: RDSTable, data_list: list, primary_keys: list) ->
         # Handle different return types from query_data
         existing_records = []
         if existing_records_result:
-            # Check if first element is a tuple or dict
             first_record = existing_records_result[0]
 
             if isinstance(first_record, tuple):
@@ -140,9 +152,8 @@ def detect_data_changes(table: RDSTable, data_list: list, primary_keys: list) ->
                 column_query = f"DESCRIBE {table.table_name}"
                 try:
                     columns_result = table.query_data(column_query)
-                    column_names = [col[0] for col in columns_result]  # First element of each tuple is column name
+                    column_names = [col[0] for col in columns_result]
                 except:
-                    # Fallback: use data_list keys as column names
                     column_names = list(normalized_data_list[0].keys()) if normalized_data_list else []
 
                 # Convert tuples to dictionaries
@@ -153,7 +164,6 @@ def detect_data_changes(table: RDSTable, data_list: list, primary_keys: list) ->
                             record_dict[column_names[i]] = value
                     existing_records.append(record_dict)
             else:
-                # Already dictionaries
                 existing_records = existing_records_result
 
         # Normalize existing records for comparison
@@ -163,18 +173,15 @@ def detect_data_changes(table: RDSTable, data_list: list, primary_keys: list) ->
         existing_dict = {}
         for original_record, normalized_record in zip(existing_records, normalized_existing_records):
             try:
-                # Create primary key tuple - handle both string and numeric values properly
                 pk_values = []
                 for pk in primary_keys:
                     value = normalized_record.get(pk)
-                    # Convert to string but preserve the original type for comparison
                     pk_values.append(str(value) if value is not None else '')
                 pk_key = tuple(pk_values)
                 existing_dict[pk_key] = {
                     'original': original_record,
                     'normalized': normalized_record
                 }
-                logger.debug(f"Added existing record with PK: {pk_key}")
             except AttributeError as e:
                 logger.warning(f"Error processing existing record: {normalized_record}, error: {e}")
                 continue
@@ -197,9 +204,6 @@ def detect_data_changes(table: RDSTable, data_list: list, primary_keys: list) ->
             # Extract primary key values for notification use
             primary_key_values = {pk: normalized_new_record.get(pk) for pk in primary_keys}
 
-            logger.debug(f"Looking for new record PK: {pk_key} in existing records")
-            logger.debug(f"Existing PKs: {list(existing_dict.keys())}")
-
             if pk_key in existing_dict:
                 # Record exists, check for changes
                 existing_data = existing_dict[pk_key]
@@ -211,40 +215,39 @@ def detect_data_changes(table: RDSTable, data_list: list, primary_keys: list) ->
                 new_values = {}
 
                 # Compare normalized values for change detection
+                # SIMPLE FIX: Only check fields that exist in the table
                 for field, new_value in normalized_new_record.items():
+                    # Skip fields that don't exist in the database table
+                    if table_columns and field not in table_columns:
+                        continue
                     # skip robot_name comparison since it is designed to be changable in the database by user
                     if field == 'robot_name':
                         continue
+
                     old_value = existing_normalized.get(field)
 
-                    # Use improved comparison that handles normalized values
                     if not values_are_equivalent(old_value, new_value, field):
-                        # Only add to changed_fields if it's NOT a primary key (for update logic)
                         if field not in primary_keys:
                             changed_fields.append(field)
-                            # Use original values for notification context
                             old_values[field] = existing_original.get(field)
                             new_values[field] = original_new_record.get(field)
-                        logger.debug(f"Field '{field}' changed: {old_value} -> {new_value}")
 
                 if changed_fields:
-                    # Include primary key values AND all new values for notification context
-                    full_new_values = original_new_record.copy()  # Use original for notifications
-                    full_old_values = {field: existing_original.get(field) for field in original_new_record.keys()}
+                    full_new_values = {field: original_new_record.get(field) for field in original_new_record.keys() if field in table_columns}
 
                     changes_detected[unique_id] = {
                         'robot_sn': robot_sn,
                         'primary_key_values': primary_key_values,
                         'change_type': 'update',
                         'changed_fields': changed_fields,
-                        'old_values': full_old_values,  # All fields for context
-                        'new_values': full_new_values   # All fields including primary keys
+                        'old_values': existing_original,
+                        'new_values': full_new_values
                     }
                     logger.info(f"Detected update for record {unique_id} (robot {robot_sn}): {len(changed_fields)} fields changed")
-                else:
-                    logger.info(f"No changes detected for record {unique_id} (robot {robot_sn})")
             else:
-                # New record - use original values for notification
+                # New record
+                # Only check fields that exist in the table
+                new_values = {field: original_new_record.get(field) for field in original_new_record.keys() if field in table_columns}
                 logger.info(f"Detected new record {unique_id} (robot {robot_sn})")
                 changes_detected[unique_id] = {
                     'robot_sn': robot_sn,
@@ -252,7 +255,7 @@ def detect_data_changes(table: RDSTable, data_list: list, primary_keys: list) ->
                     'change_type': 'new_record',
                     'changed_fields': list(original_new_record.keys()),
                     'old_values': {},
-                    'new_values': original_new_record  # Use original for notifications
+                    'new_values': new_values
                 }
 
     except Exception as e:

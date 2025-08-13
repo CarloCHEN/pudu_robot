@@ -18,7 +18,7 @@ class TestRealScenarios:
         self.mock_cursor = MagicMock()
         self.mock_cursor.connection = MagicMock()
 
-    def test_your_actual_robot_data_scenario(self):
+    def test_actual_robot_data_scenario(self):
         """Test with the exact robot data from your example"""
         print("\n🤖 Testing with your actual robot data")
 
@@ -55,7 +55,22 @@ class TestRealScenarios:
         ]
 
         # Test that these are detected as new records (empty database)
-        mock_table = self._create_mock_table("mnt_robots_management", ["robot_sn"], [])
+        existing_data = {
+                'robot_sn': 'test_robot_323',
+                'robot_type': 'CC1',
+                'robot_name': 'LDS-test',
+                'location_id': '450270000',
+                'water_level': 0,
+                'sewage_level': 0,
+                'battery_level': 100,
+                'x': 0.6546468716153662,
+                'y': 0.10216624231873786,
+                'z': -0.1855085439150417,
+                'status': 'Online',
+                'tenant_id': '000000'
+        }
+
+        mock_table = self._create_mock_table("mnt_robots_management", ["robot_sn"], [existing_data])
         changes = detect_data_changes(mock_table, new_data, ["robot_sn"])
 
         # Should detect 2 new records
@@ -76,7 +91,6 @@ class TestRealScenarios:
             (123, '1230'),  # Simulating that robot_sn maps to these IDs in database
             (124, '1231')
         ]
-
         changed_records = [change_info['new_values'] for change_info in changes.values()]
         ids = batch_insert_with_ids(self.mock_cursor, "mnt_robots_management", changed_records, ["robot_sn"])
 

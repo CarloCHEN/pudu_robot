@@ -150,8 +150,8 @@ def generate_notification_content(callback_type: str, change_info: Dict) -> Tupl
                 return "Robot Update", f"Robot {robot_sn} information updated."
 
         elif callback_type == 'robotErrorWarning':
-            error_type = new_values.get('error_type', 'Unknown Error')
-            error_level = new_values.get('error_level', 'info')
+            error_type = new_values.get('event_type', 'Unknown Error')
+            error_level = new_values.get('event_level', 'info')
             upload_time = new_values.get('upload_time', 'Unknown Time')
 
             title = f"Robot Incident: {convert_technical_string(error_type)}"

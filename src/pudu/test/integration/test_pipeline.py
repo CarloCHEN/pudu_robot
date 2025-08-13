@@ -173,7 +173,14 @@ class TestPipelineIntegration:
             print("    ✅ Event data processing successful")
 
             # Step 2: Test change detection (new event)
-            mock_table = self._create_mock_table("mnt_robot_events", ["robot_sn", "event_id"], [])
+            existing_data = {
+                'robot_sn': 'test_robot_323',
+                'event_id': 'event_001',
+                'event_type': 'test_event',
+                'event_level': 'error',
+                'upload_time': '2024-09-01 14:30:00'
+            }
+            mock_table = self._create_mock_table("mnt_robot_events", ["robot_sn", "event_id"], [existing_data])
 
             # Add event_id for primary key
             event_with_id = event.copy()
