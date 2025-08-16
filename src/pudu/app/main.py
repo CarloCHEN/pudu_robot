@@ -466,16 +466,16 @@ class App:
             logger.info("=" * 50)
 
             # 1. Location data (special case)
-            successful, failed, changes = self._process_location_data()
-            pipeline_stats['total_successful_inserts'] += successful
-            pipeline_stats['total_failed_inserts'] += failed
-            self._handle_notifications(changes, 'location', pipeline_stats)
+            # successful, failed, changes = self._process_location_data()
+            # pipeline_stats['total_successful_inserts'] += successful
+            # pipeline_stats['total_failed_inserts'] += failed
+            # self._handle_notifications(changes, 'location', pipeline_stats)
 
-            logger.info("=" * 50)
+            # logger.info("=" * 50)
 
             # 2. Robot status data
             successful, failed, changes = self._process_robot_data(
-                'robot_status', get_robot_status_table, 'robot_sn'
+                'robot_status', get_robot_status_table, 'robot_sn', columns_to_remove=['id', 'location_id']
             )
             pipeline_stats['total_successful_inserts'] += successful
             pipeline_stats['total_failed_inserts'] += failed
@@ -549,9 +549,10 @@ class App:
 
     def _handle_notifications(self, changes: Dict, table_type: str, pipeline_stats: Dict, start_time: str = None, end_time: str = None):
         """Handle notifications for changes"""
+        logger.info(f"📧 Handling notifications for {table_type} changes...")
         if not changes:
+            logger.info(f"No changes detected for {table_type}, skipping notifications")
             return
-
         notification_databases = self.config.get_notification_databases()
         for (database_name, table_name), change_data in changes.items():
             if database_name in notification_databases:

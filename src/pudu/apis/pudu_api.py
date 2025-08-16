@@ -542,6 +542,39 @@ def get_charging_record_list(start_time, end_time, shop_id=None, offset=None, li
     else:
         return response
 
+def get_battery_health_list(start_time, end_time, shop_id=None, sn=None, offset=None, limit=None, timezone_offset=0):
+    """ Accepts a shop ID, start time, and end time and returns a list of battery health records
+    @param shop_id: The shop ID
+    @param start_time: The start time
+    @param end_time: The end time
+    @param sn: The serial number of the robot
+    @param offset: The offset to start from
+    @param limit: The number of records to return
+    @param timezone_offset: The timezone offset
+
+    @return: The battery health list dictionary with cycle, soc, and soh data
+    """
+    # convert str to seconds
+    start_time = int(pd.to_datetime(start_time).timestamp())
+    end_time = int(pd.to_datetime(end_time).timestamp())
+    url = f"https://csu-open-platform.pudutech.com/pudu-entry/data-board/v1/log/battery/query_list?start_time={start_time}&end_time={end_time}"
+    if shop_id:
+        url += f"&shop_id={shop_id}"
+    if sn:
+        url += f"&sn={sn}"
+    if offset:
+        url += f"&offset={offset}"
+    if limit:
+        url += f"&limit={limit}"
+    if timezone_offset:
+        url += f"&timezone_offset={timezone_offset}"
+    response = run_url(url)
+    response = json.loads(response)
+    if any(status in response["message"].lower() for status in ["success", "ok"]):
+        return response["data"]
+    else:
+        return response
+
 def get_task_list(shop_id=None, sn=None):
     """ Accepts a shop ID and serial number and returns a list of tasks
     @param shop_id: The shop ID

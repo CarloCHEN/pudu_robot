@@ -213,7 +213,7 @@ def send_change_based_notifications(notification_service: NotificationService, d
             }
 
             if should_skip_notification(data_type, change_info):
-                logger.info(f"Skipping notification for {unique_id} because it should be skipped")
+                logger.info(f"Skipping notification for {unique_id} (payload: {payload}) because it should be skipped")
                 continue
 
             # Generate notification content for this specific record

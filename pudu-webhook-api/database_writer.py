@@ -38,6 +38,58 @@ class DatabaseWriter:
 
         return self.table_cache[table_key]
 
+    def _get_robot_name(self, robot_sn: str) -> str:
+        """Get robot name using table configs"""
+        try:
+            # Use the existing config system to get robot info table configs
+            robot_info_configs = self.config.get_table_configs_for_robots('robot_info', [robot_sn])
+
+            if not robot_info_configs:
+                logger.warning(f"No robot_info table config found for {robot_sn}")
+                return robot_sn
+
+            # Use the first config (should be the main database)
+            config = robot_info_configs[0]
+
+            # Get table instance using existing method
+            table = self._get_table(
+                database_name=config['database'],
+                table_name=config['table_name'],
+                fields=config.get('fields', []),
+                primary_keys=config['primary_keys']
+            )
+
+            query = f"SELECT robot_name FROM {config['table_name']} WHERE robot_sn = '{robot_sn}'"
+            result = table.query_data(query)
+
+            if result and len(result) > 0:
+                first_row = result[0]
+
+                # Handle different return types
+                if isinstance(first_row, (tuple, list)):
+                    # Result is tuple/list: (robot_name,) or [robot_name]
+                    robot_name = first_row[0] if len(first_row) > 0 else None
+                elif isinstance(first_row, dict):
+                    # Result is dict: {'robot_name': 'value'}
+                    robot_name = first_row.get('robot_name')
+                else:
+                    # Result is direct value
+                    robot_name = first_row
+
+                # Return robot_name if it exists and is not empty, otherwise fallback to robot_sn
+                if robot_name and str(robot_name).strip():
+                    logger.info(f"Found robot_name for {robot_sn}: {robot_name}")
+                    return str(robot_name).strip()
+
+            logger.debug(f"No robot_name found for {robot_sn}, using robot_sn as fallback")
+
+        except Exception as e:
+            logger.warning(f"Could not retrieve robot_name for {robot_sn} using config: {e}")
+            logger.warning(f"Error details: {type(e).__name__}: {str(e)}")
+
+        return robot_sn  # Fallback to robot_sn if name not found
+
+
     def _transform_robot_status_data(self, robot_sn: str, status_data: Dict[str, Any]) -> Dict[str, Any]:
         """Transform callback status data to database format"""
         db_data = {
@@ -183,6 +235,8 @@ class DatabaseWriter:
         Returns:
             tuple: (database_names, table_names, changes_detected)
         """
+        robot_name = self._get_robot_name(robot_sn)
+
         # Transform the raw callback data to database format
         transformed_data = transform_func(robot_sn, raw_data)
 
@@ -252,6 +306,7 @@ class DatabaseWriter:
 
                     database_names.append(table_config['database'])
                     table_names.append(table_config['table_name'])
+                    changes[unique_id]['robot_name'] = robot_name  # Add robot name to changes
 
                     # Store changes with table identifier
                     table_key = (table.database_name, table.table_name)

@@ -1,6 +1,5 @@
 import logging
 from typing import Dict
-from pudu.rds.rdsTable import RDSTable
 from decimal import Decimal, ROUND_HALF_UP
 
 # Configure logging

@@ -7,7 +7,7 @@ set -e
 
 # Configuration
 FUNCTION_NAME="pudu-robot-pipeline"
-REGION="us-east-1"
+REGION="us-east-2"
 ROLE_NAME="pudu-robot-lambda-role"
 PYTHON_VERSION="3.9"
 
@@ -15,7 +15,7 @@ PYTHON_VERSION="3.9"
 ICONS_CONFIG_PATH="icons.yaml"
 
 # Notification API Configuration
-NOTIFICATION_API_HOST="alb-streamnexus-demo-775802511.us-east-1.elb.amazonaws.com"
+NOTIFICATION_API_HOST="alb-notice-1223048054.us-east-2.elb.amazonaws.com"
 NOTIFICATION_API_ENDPOINT="/notification-api/robot/notification/send"
 
 # SNS Configuration - CHANGE THIS EMAIL TO YOUR ACTUAL EMAIL
@@ -152,20 +152,21 @@ if [ $ZIP_SIZE -gt 52428800 ]; then  # 50MB
 fi
 
 # Step 5: Get AWS Account ID
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text --region $REGION)
 echo "🔍 Using AWS Account: $ACCOUNT_ID"
 
 # Step 6: Create SNS Topic for Support Tickets
 echo "📧 Setting up SNS topic for support ticket notifications..."
 
 # Create topic (returns existing ARN if already exists)
-SUPPORT_TOPIC_ARN=$(aws sns create-topic --name "$SUPPORT_TOPIC_NAME" --query 'TopicArn' --output text)
+SUPPORT_TOPIC_ARN=$(aws sns create-topic --name "$SUPPORT_TOPIC_NAME" --query 'TopicArn' --output text --region $REGION)
 
 # Set topic attributes for better email formatting
 aws sns set-topic-attributes \
     --topic-arn "$SUPPORT_TOPIC_ARN" \
     --attribute-name DisplayName \
-    --attribute-value "Pudu Robot Support Tickets" >/dev/null
+    --attribute-value "Pudu Robot Support Tickets" \
+    --region $REGION >/dev/null
 
 echo "📧 Support Topic ARN: $SUPPORT_TOPIC_ARN"
 
@@ -173,14 +174,16 @@ echo "📧 Support Topic ARN: $SUPPORT_TOPIC_ARN"
 existing_subscription=$(aws sns list-subscriptions-by-topic \
     --topic-arn "$SUPPORT_TOPIC_ARN" \
     --query "Subscriptions[?Endpoint=='$NOTIFICATION_EMAIL' && Protocol=='email'].SubscriptionArn" \
-    --output text)
+    --output text \
+    --region $REGION)
 
 if [ -z "$existing_subscription" ] || [ "$existing_subscription" = "None" ]; then
     echo "📧 Subscribing $NOTIFICATION_EMAIL to support ticket notifications..."
     aws sns subscribe \
         --topic-arn "$SUPPORT_TOPIC_ARN" \
         --protocol email \
-        --notification-endpoint "$NOTIFICATION_EMAIL" >/dev/null
+        --notification-endpoint "$NOTIFICATION_EMAIL" \
+        --region $REGION >/dev/null
     echo "✅ Email subscription created (confirmation required)"
 else
     echo "✅ Email already subscribed: $existing_subscription"
@@ -188,10 +191,11 @@ fi
 
 # Step 7: Create IAM role with SNS permissions
 echo "🔐 Setting up IAM role with SNS permissions..."
-if ! aws iam get-role --role-name $ROLE_NAME >/dev/null 2>&1; then
+if ! aws iam get-role --role-name $ROLE_NAME --region $REGION >/dev/null 2>&1; then
     echo "Creating IAM role..."
     aws iam create-role \
         --role-name $ROLE_NAME \
+        --region $REGION \
         --assume-role-policy-document '{
             "Version": "2012-10-17",
             "Statement": [
@@ -207,15 +211,40 @@ if ! aws iam get-role --role-name $ROLE_NAME >/dev/null 2>&1; then
 
     aws iam attach-role-policy \
         --role-name $ROLE_NAME \
+        --region $REGION \
         --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
 
     aws iam attach-role-policy \
         --role-name $ROLE_NAME \
+        --region $REGION \
         --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
 
     echo "⏳ Waiting for role to propagate..."
     sleep 15
 fi
+
+# Function to safely create or update IAM policy statements
+create_or_update_policy() {
+    local policy_name="$1"
+    local policy_document="$2"
+
+    echo "🔍 Checking existing policy: $policy_name"
+
+    # Check if policy already exists
+    if aws iam get-role-policy \
+        --role-name "$ROLE_NAME" \
+        --policy-name "$policy_name" \
+        --region $REGION >/dev/null 2>&1; then
+
+        echo "🔄 Policy exists, updating: $policy_name"
+        # Policy exists, we'll update it (this replaces, but we'll make it comprehensive)
+    else
+        echo "📝 Creating new policy: $policy_name"
+    fi
+
+    # Return the policy document as-is
+    echo "$policy_document"
+}
 
 # Create SNS policy for the Lambda role
 echo "📧 Setting up SNS permissions..."
@@ -242,12 +271,15 @@ EOF
 aws iam put-role-policy \
     --role-name $ROLE_NAME \
     --policy-name "SupportTicketSNSPolicy" \
-    --policy-document "$SNS_POLICY_DOC" >/dev/null
+    --policy-document "$SNS_POLICY_DOC" \
+    --region $REGION >/dev/null
 
-ROLE_ARN=$(aws iam get-role --role-name $ROLE_NAME --query 'Role.Arn' --output text)
+ROLE_ARN=$(aws iam get-role --role-name $ROLE_NAME --query 'Role.Arn' --output text --region $REGION)
 
 # Create Secrets Manager policy for the Lambda role
 echo "🔐 Setting up Secrets Manager permissions..."
+
+# Build comprehensive secrets policy with all regions and patterns
 SECRETS_POLICY_DOC=$(cat <<EOF
 {
     "Version": "2012-10-17",
@@ -258,7 +290,12 @@ SECRETS_POLICY_DOC=$(cat <<EOF
                 "secretsmanager:GetSecretValue",
                 "secretsmanager:DescribeSecret"
             ],
-            "Resource": "arn:aws:secretsmanager:${REGION}:${ACCOUNT_ID}:secret:rds!db-ef989dd0-975a-4c33-ab17-69f8ef4e03a1-*"
+            "Resource": [
+                "arn:aws:secretsmanager:us-east-1:${ACCOUNT_ID}:secret:rds!*",
+                "arn:aws:secretsmanager:us-east-2:${ACCOUNT_ID}:secret:rds!*",
+                "arn:aws:secretsmanager:us-west-1:${ACCOUNT_ID}:secret:rds!*",
+                "arn:aws:secretsmanager:us-west-2:${ACCOUNT_ID}:secret:rds!*"
+            ]
         }
     ]
 }
@@ -269,9 +306,47 @@ EOF
 aws iam put-role-policy \
     --role-name $ROLE_NAME \
     --policy-name "SecretsManagerPolicy" \
-    --policy-document "$SECRETS_POLICY_DOC" >/dev/null
+    --policy-document "$SECRETS_POLICY_DOC" \
+    --region $REGION >/dev/null
 
-echo "✅ Secrets Manager permissions configured"
+echo "✅ Secrets Manager permissions configured for multiple regions"
+
+# Function to add additional permissions safely
+add_additional_permissions() {
+    local service="$1"
+    local actions="$2"
+    local resources="$3"
+    local policy_name="${service}AdditionalPolicy"
+
+    echo "➕ Adding additional $service permissions..."
+
+    ADDITIONAL_POLICY_DOC=$(cat <<EOF
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": $actions,
+            "Resource": $resources
+        }
+    ]
+}
+EOF
+)
+
+    aws iam put-role-policy \
+        --role-name $ROLE_NAME \
+        --policy-name "$policy_name" \
+        --policy-document "$ADDITIONAL_POLICY_DOC" \
+        --region $REGION >/dev/null
+
+    echo "✅ Additional $service permissions added"
+}
+
+# Example: Add additional permissions if needed
+# Uncomment and modify as needed:
+# add_additional_permissions "S3" '["s3:GetObject", "s3:PutObject"]' '["arn:aws:s3:::my-bucket/*"]'
+# add_additional_permissions "DynamoDB" '["dynamodb:GetItem", "dynamodb:PutItem"]' '["arn:aws:dynamodb:'$REGION':'$ACCOUNT_ID':table/my-table"]'
 
 # Step 8: Deploy Lambda function with environment variables
 echo "🔧 Deploying Lambda function..."
@@ -279,14 +354,15 @@ echo "🔧 Deploying Lambda function..."
 # Prepare environment variables with SNS topic ARN
 ENV_VARS="Variables={SUPPORT_TICKET_SNS_TOPIC_ARN=${SUPPORT_TOPIC_ARN},NOTIFICATION_API_HOST=${NOTIFICATION_API_HOST},NOTIFICATION_API_ENDPOINT=${NOTIFICATION_API_ENDPOINT},ICONS_CONFIG_PATH=${ICONS_CONFIG_PATH}}"
 
-if aws lambda get-function --function-name $FUNCTION_NAME >/dev/null 2>&1; then
+if aws lambda get-function --function-name $FUNCTION_NAME --region $REGION >/dev/null 2>&1; then
     echo "Updating existing function..."
     aws lambda update-function-code \
         --function-name $FUNCTION_NAME \
-        --zip-file fileb://pudu-robot-pipeline.zip
+        --zip-file fileb://pudu-robot-pipeline.zip \
+        --region $REGION
 
     echo "⏳ Waiting for code update to complete..."
-    aws lambda wait function-updated --function-name $FUNCTION_NAME
+    aws lambda wait function-updated --function-name $FUNCTION_NAME --region $REGION
 
     echo "Updating function configuration..."
     aws lambda update-function-configuration \
@@ -294,7 +370,8 @@ if aws lambda get-function --function-name $FUNCTION_NAME >/dev/null 2>&1; then
         --runtime python${PYTHON_VERSION} \
         --timeout 900 \
         --memory-size 1024 \
-        --environment "$ENV_VARS"
+        --environment "$ENV_VARS" \
+        --region $REGION
 else
     echo "Creating new function..."
     aws lambda create-function \
@@ -306,7 +383,8 @@ else
         --timeout 900 \
         --memory-size 1024 \
         --environment "$ENV_VARS" \
-        --description "Pudu Robot Data Pipeline with Support Ticket Monitoring" || {
+        --description "Pudu Robot Data Pipeline with Support Ticket Monitoring" \
+        --region $REGION || {
         echo "❌ Lambda creation failed"
         echo "Role ARN: $ROLE_ARN"
         echo "ZIP size: $(ls -lh pudu-robot-pipeline.zip)"
@@ -326,7 +404,8 @@ aws events put-rule \
     --name pudu-robot-5min-schedule \
     --schedule-expression "rate(5 minutes)" \
     --description "Trigger Pudu robot data pipeline every 5 minutes" \
-    --state ENABLED >/dev/null
+    --state ENABLED \
+    --region $REGION >/dev/null
 
 # Step 10: Add Lambda permission for EventBridge
 aws lambda add-permission \
@@ -335,12 +414,14 @@ aws lambda add-permission \
     --action lambda:InvokeFunction \
     --principal events.amazonaws.com \
     --source-arn arn:aws:events:$REGION:$ACCOUNT_ID:rule/pudu-robot-5min-schedule \
+    --region $REGION \
     >/dev/null 2>&1 || echo "Permission already exists"
 
 # Step 11: Add Lambda as EventBridge target
 aws events put-targets \
     --rule pudu-robot-5min-schedule \
-    --targets "Id"="1","Arn"="arn:aws:lambda:$REGION:$ACCOUNT_ID:function:$FUNCTION_NAME" >/dev/null
+    --targets "Id"="1","Arn"="arn:aws:lambda:$REGION:$ACCOUNT_ID:function:$FUNCTION_NAME" \
+    --region $REGION >/dev/null
 
 # Cleanup
 cd "$PROJECT_ROOT"
@@ -351,6 +432,7 @@ echo "✅ Deployment completed successfully!"
 echo ""
 echo "📊 Function Details:"
 echo "   Function Name: $FUNCTION_NAME"
+echo "   Region: $REGION"
 echo "   Runtime: Python ${PYTHON_VERSION}"
 echo "   Schedule: Every 5 minutes"
 echo "   Logs: /aws/lambda/$FUNCTION_NAME"
@@ -362,9 +444,9 @@ echo ""
 echo "⚠️  IMPORTANT: Check your email for SNS subscription confirmation!"
 echo ""
 echo "🔧 Useful Commands:"
-echo "   Test: aws lambda invoke --function-name $FUNCTION_NAME test-output.json && cat test-output.json"
-echo "   Logs: aws logs tail /aws/lambda/$FUNCTION_NAME --follow"
-echo "   Disable: aws events disable-rule --name pudu-robot-5min-schedule"
-echo "   Enable: aws events enable-rule --name pudu-robot-5min-schedule"
+echo "   Test: aws lambda invoke --function-name $FUNCTION_NAME --region $REGION test-output.json && cat test-output.json"
+echo "   Logs: aws logs tail /aws/lambda/$FUNCTION_NAME --region $REGION --follow"
+echo "   Disable: aws events disable-rule --name pudu-robot-5min-schedule --region $REGION"
+echo "   Enable: aws events enable-rule --name pudu-robot-5min-schedule --region $REGION"
 echo ""
 echo "🎫 Your pipeline now monitors support tickets and sends notifications!"

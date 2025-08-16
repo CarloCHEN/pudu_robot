@@ -23,7 +23,6 @@ app = Flask(__name__)
 logger = logging.getLogger(__name__)
 
 
-
 # Initialize notification service
 try:
     notification_service = NotificationService()
@@ -46,22 +45,22 @@ for path in config_paths:
         config_path = path
         break
 
-# Initialize enhanced callback handler with dynamic database config
-callback_handler = CallbackHandler(config_path)
-# Initialize dynamic database configuration
-try:
-    db_config = DatabaseConfig(config_path)
-    logger.info("Dynamic database configuration initialized successfully")
-except Exception as e:
-    logger.error(f"Failed to initialize database configuration: {e}")
-    db_config = None
-
 
 @app.route("/api/pudu/webhook", methods=["POST"])
 def pudu_webhook():
     """
     Webhook endpoint with dynamic database routing and change detection
     """
+    # Initialize enhanced callback handler with dynamic database config
+    callback_handler = CallbackHandler(config_path)
+    # Initialize dynamic database configuration
+    try:
+        db_config = DatabaseConfig(config_path)
+        logger.info("Dynamic database configuration initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize database configuration: {e}")
+        db_config = None
+
     try:
         # Log incoming request
         logger.info(f"Received callback from {request.remote_addr}")
@@ -146,10 +145,16 @@ def pudu_webhook():
 
             logger.info(f"📧 Total notifications: {total_successful_notifications} successful, {total_failed_notifications} failed")
 
+        callback_handler.close()
+        if db_config:
+            db_config.close()
         # Return result
         return jsonify(response.to_dict()), 200 if response.status == CallbackStatus.SUCCESS else 400
 
     except Exception as e:
+        callback_handler.close()
+        if db_config:
+            db_config.close()
         logger.error(f"Error processing callback: {str(e)}", exc_info=True)
         return (
             jsonify(CallbackResponse(status=CallbackStatus.ERROR, message=f"Internal server error: {str(e)}").to_dict()),
@@ -160,6 +165,15 @@ def pudu_webhook():
 @app.route("/api/pudu/webhook/health", methods=["GET"])
 def health_check():
     """Enhanced health check endpoint"""
+
+    # Initialize dynamic database configuration
+    try:
+        db_config = DatabaseConfig(config_path)
+        logger.info("Dynamic database configuration initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize database configuration: {e}")
+        db_config = None
+
     return jsonify(
         {
             "status": "healthy",
@@ -179,6 +193,16 @@ def health_check():
 
 
 if __name__ == "__main__":
+    # Initialize enhanced callback handler with dynamic database config
+    callback_handler = CallbackHandler(config_path)
+    # Initialize dynamic database configuration
+    try:
+        db_config = DatabaseConfig(config_path)
+        logger.info("Dynamic database configuration initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize database configuration: {e}")
+        db_config = None
+
     logger.info("Starting Pudu Robot Callback API Server...")
     logger.info(f"🔄 Dynamic database routing: {'✅ Enabled' if db_config else '❌ Disabled'}")
     logger.info(f"📧 Notification service: {'✅ Enabled' if notification_service else '❌ Disabled'}")

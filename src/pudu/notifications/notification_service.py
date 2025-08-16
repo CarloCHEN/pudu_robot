@@ -76,7 +76,7 @@ class NotificationService:
             data = res.read()
 
             if res.status == 200:
-                logger.info(f"✅ Notification sent successfully for robot {robot_sn}: {title} (severity: {severity}, status: {status})")
+                logger.info(f"✅ Notification sent successfully for robot {robot_sn}: {title} (severity: {severity}, status: {status}, payload: {payload})")
                 return True
             else:
                 logger.error(f"❌ Failed to send notification for robot {robot_sn}. Status: {res.status}, Response: {data.decode('utf-8')}")
