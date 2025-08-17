@@ -28,6 +28,33 @@ STATUS_TAGS = {
     'active': 'active',
 }
 
+def should_skip_notification(callback_type: str, change_info: Dict) -> bool:
+    """Determine if notification should be skipped"""
+    change_type = change_info.get('change_type', 'unknown')
+    changed_fields = change_info.get('changed_fields', [])
+    new_values = change_info.get('new_values', {})
+
+    # Skip notifyRobotPose updates (too frequent)
+
+    # Skip power updates unless battery is low
+    if callback_type == 'notifyRobotPower':
+        # check if battery is low
+        power_level = new_values.get('power', 100)
+        if isinstance(power_level, (int, float)) and power_level < 20:
+            return False  # Do not skip if battery < 20%
+
+    # Skip status updates that are just position changes
+    if callback_type == 'robotStatus':
+        if change_type == 'new_record':
+            return False
+
+    if callback_type == 'robotErrorWarning':
+        error_level = new_values.get('event_level', 'info')
+        if error_level in ['fatal', 'error']: # do not skip fatal and error events
+            return False
+        
+    return True
+
 def send_change_based_notifications(notification_service: NotificationService, database_name: str,
                                    table_name: str, changes_dict: Dict[str, Dict], callback_type: str) -> Tuple[int, int]:
     """Send notifications for detected changes"""
@@ -100,35 +127,6 @@ def send_change_based_notifications(notification_service: NotificationService, d
     logger.info(f"📧 {callback_type} notifications: {successful_notifications}/{len(changes_dict)} sent")
     return successful_notifications, failed_notifications
 
-def should_skip_notification(callback_type: str, change_info: Dict) -> bool:
-    """Determine if notification should be skipped"""
-    change_type = change_info.get('change_type', 'unknown')
-    changed_fields = change_info.get('changed_fields', [])
-    new_values = change_info.get('new_values', {})
-
-    # Skip pose updates (too frequent)
-    if callback_type == 'notifyRobotPose':
-        return True
-
-    # Skip power updates unless battery is low
-    if callback_type == 'notifyRobotPower':
-        if change_type == 'update':
-            return True  # Skip power update notifications
-        # For new records, check if battery is low
-        power_level = new_values.get('power', 100)
-        if isinstance(power_level, (int, float)) and power_level >= 20:
-            return True  # Skip if battery >= 20%
-
-    # Skip status updates that are just position changes
-    if callback_type == 'robotStatus':
-        if change_type == 'update' and 'status' not in changed_fields:
-            # Check if only position fields changed
-            position_fields = {'x', 'y', 'z', 'timestamp'}
-            if set(changed_fields).issubset(position_fields):
-                return True
-
-    return False
-
 def generate_notification_content(callback_type: str, change_info: Dict) -> Tuple[str, str]:
     """Generate notification title and content"""
     robot_sn = change_info.get('robot_sn', 'unknown')
@@ -139,7 +137,7 @@ def generate_notification_content(callback_type: str, change_info: Dict) -> Tupl
 
     try:
         if callback_type == 'robotStatus':
-            if 'status' in changed_fields or change_type == 'new_record':
+            if 'status' in changed_fields or change_type == 'update':
                 status = new_values.get('status', 'unknown')
                 if 'online' in status.lower():
                     return "Robot Online", f"Robot {robot_name} is now online."
@@ -147,6 +145,14 @@ def generate_notification_content(callback_type: str, change_info: Dict) -> Tupl
                     return "Robot Offline", f"Robot {robot_name} has gone offline."
                 else:
                     return "Robot Status Update", f"Robot {robot_name} status changed to {status}."
+            elif change_type == 'new_record':
+                status = new_values.get('status', 'unknown')
+                if 'online' in status.lower():
+                    return "New Robot", f"Robot {robot_name} is now added to the system and it is online."
+                elif 'offline' in status.lower():
+                    return "New Robot", f"Robot {robot_name} is now added to the system and it is offline."
+                else:
+                    return "New Robot", f"Robot {robot_name} is now added to the system."
             else:
                 return "Robot Update", f"Robot {robot_name} information updated."
 
@@ -162,7 +168,7 @@ def generate_notification_content(callback_type: str, change_info: Dict) -> Tupl
             elif error_level == 'warning':
                 content = f"Robot {robot_name} has a new warning - {error_type} at {upload_time}."
             elif error_level == 'fatal':
-                content = f"Robot {robot_name} has a new fatal event - {error_type} at {upload_time}."
+                content = f"Robot {robot_name} has a new critical event - {error_type} at {upload_time}."
             else:
                 content = f"Robot {robot_name} has a new event - {error_type} at {upload_time}."
 

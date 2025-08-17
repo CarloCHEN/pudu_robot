@@ -19,8 +19,8 @@ TASK_STATUS_MAPPING = {
 
 # Severity and status tag mappings based on template document
 SEVERITY_LEVELS = {
-    'fatal': 'fatal',    # Purple - Immediate attention required
-    'error': 'error',    # Red - Task failed or serious problem
+    'fatal': 'fatal',    # Red - Immediate attention required
+    'error': 'error',    # Orange - Task failed or serious problem
     'warning': 'warning', # Yellow - Moderate issue or degraded state
     'event': 'event',      # Blue - Informational or neutral event
     'success': 'success', # Green - Positive/normal outcome
@@ -71,19 +71,30 @@ def should_skip_notification(data_type: str, change_info: Dict) -> bool:
 
     elif data_type == 'robot_status':
         # Skip battery updates unless battery is low (< 20%)
-        if change_type == 'update' and 'battery_level' in changed_fields and 'status' not in changed_fields:
+        if change_type == 'update' and 'battery_level' in changed_fields:
             try:
                 new_battery = new_values.get('battery_level', 100)
                 if isinstance(new_battery, (int, float)):
                     return new_battery >= 20  # Skip if battery is >= 20%
             except:
                 pass
-        elif change_type == 'update' and 'status' not in changed_fields:
-            return True # skip other status updates
-        return False  # Don't skip other status updates
+        elif change_type == 'new_record':
+            return False # do not skip new robot status records
+        return True  # Skip all other status updates
 
     elif data_type == 'location':
         # Skip all location notifications for now
+        return True
+
+    elif data_type == 'robot_events':
+        # Do not skip all fatal and error events
+        if change_type == 'new_record':
+            try:
+                event_level = new_values.get('event_level', 'info').lower()
+                if event_level in ['fatal', 'error']:
+                    return False
+            except:
+                pass
         return True
 
     # Skip other data types by default
@@ -288,7 +299,7 @@ def generate_individual_notification_content(data_type: str, change_info: Dict, 
                 battery = new_values.get('battery_level', 'N/A')
                 robot_name = new_values.get('robot_name', f'SN: {robot_sn}')
                 title = f"Robot Online"
-                content = f"Robot {robot_name} is now online."
+                content = f"Robot {robot_name} is now added to the system and it is {status} with {battery}% battery."
             else:  # update
                 return generate_status_change_content(robot_sn, changed_fields, old_values, new_values)
 
@@ -374,9 +385,9 @@ def generate_individual_notification_content(data_type: str, change_info: Dict, 
             elif event_level == 'warning':
                 content = f"Robot {robot_name} has a new warning - {event_type} at {time_info}."
             elif event_level == 'fatal':
-                content = f"Robot {robot_name} has a new fatal event - {event_type} at {time_info}."
+                content = f"Robot {robot_name} has a new critical event - {event_type} at {time_info}."
             else:
-                content = f"Robot {robot_name} has a new event - {event_type} at {time_info}."
+                content = f"Robot {robot_name} has a new info event - {event_type} at {time_info}."
 
         elif data_type == 'location':
             # do not send notification now
@@ -415,7 +426,19 @@ def generate_status_change_content(robot_sn: str, changed_fields: list, old_valu
     icon_manager = get_icon_manager()
 
     # Prioritize important status changes
-    if 'status' in changed_fields:
+    if 'battery_level' in changed_fields:
+        new_battery = new_values.get('battery_level', 'N/A')
+        # Only send notification if battery level is below 20%
+        if new_battery < 5:
+            return "Critical Battery Alert", f"Robot {robot_name} critical battery level at {new_battery}%!"
+        elif new_battery < 10:
+            return "Low Battery Alert", f"Robot {robot_name} low battery level at {new_battery}%"
+        elif new_battery < 20:
+            return "Battery Warning", f"Robot {robot_name} battery level at {new_battery}%"
+        else:
+            return "Battery Update", f"Robot {robot_name} battery at {new_battery}%"
+        
+    elif 'status' in changed_fields:
         new_status = new_values.get('status', 'Unknown')
 
         if 'online' in str(new_status).lower():
@@ -427,13 +450,6 @@ def generate_status_change_content(robot_sn: str, changed_fields: list, old_valu
         else:
             title = "Robot Status Update"
             content = f"Robot {robot_name} status changed to {new_status}."
-
-    elif 'battery_level' in changed_fields:
-        new_battery = new_values.get('battery_level', 'N/A')
-        # Only send notification if battery level is below 20%
-        title = "Low Battery Alert"
-        content = f"Robot {robot_name} battery level is at {new_battery}%."
-
     else:
         # Generic status update - do not send notification now
         title = "Robot Status Update"

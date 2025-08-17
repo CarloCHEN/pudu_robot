@@ -45,7 +45,7 @@ class DatabaseConfig:
 
         for base_config in base_configs:
             database_type = base_config['database']
-
+            # does not trigger this main database in webhook callback
             if database_type == 'main':
                 # Main database - use as is
                 config = base_config.copy()

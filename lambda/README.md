@@ -108,8 +108,8 @@ aws --version
 
 ```bash
 # From project root directory
-chmod +x lambda/deploy_lambda.sh
-./lambda/deploy_lambda.sh
+chmod +x lambda/*.sh
+./lambda/deploy_to_region.sh us-east-1
 ```
 
 ### Step 3: Verify Deployment

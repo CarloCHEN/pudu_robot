@@ -286,7 +286,7 @@ class TestNotifications:
                 ("robot_status", {
                     "change_type": "update",
                     "changed_fields": ["status"]
-                }, False),
+                }, True),
 
                 # Task status changes
                 ("robot_task", {

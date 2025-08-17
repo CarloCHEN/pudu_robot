@@ -65,9 +65,9 @@ class IconManager:
         """Load default icon configuration if file is not available"""
         self.icons_config = {
             'severity_icons': {
-                'fatal': '🟣',
-                'error': '🔴',
-                'warning': '🟠',
+                'fatal': '🔴',
+                'error': '🟠',
+                'warning': '🟡',
                 'event': '🔵',
                 'success': '🟢',
                 'neutral': '⚪'
@@ -150,11 +150,11 @@ class IconManager:
     def get_battery_warning_format(self, battery_level: int, title: str) -> str:
         """Special formatting for battery warnings based on level"""
         if battery_level < 5:
-            return f"🟣 {title} ⚠️"  # Fatal + Warning
+            return f"🔴 {title} ⚠️"  # Fatal + Warning
         elif battery_level < 10:
-            return f"🔴 {title} ⚠️"  # Error + Warning
+            return f"🟠 {title} ⚠️"  # Error + Warning
         elif battery_level < 20:
-            return f"🟠 {title} ⚠️"  # Warning + Warning
+            return f"🟡 {title} ⚠️"  # Warning + Warning
         else:
             return f"🟢 {title}"     # Success only
 

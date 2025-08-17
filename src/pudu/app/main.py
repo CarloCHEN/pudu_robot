@@ -27,7 +27,8 @@ class App:
         logger.info(f"Resolved {len(self.robot_db_mapping)} robot database mappings")
 
         # Group robots by database for efficient processing
-        self.db_to_robots = self.config.resolver.group_robots_by_database(list(self.robot_db_mapping.keys()))
+        self.all_robots = list(self.robot_db_mapping.keys())
+        self.db_to_robots = self.config.resolver.group_robots_by_database(self.all_robots)
         logger.info(f"Found robots in {len(self.db_to_robots)} databases: {list(self.db_to_robots.keys())}")
 
     def _get_robots_for_data(self, data_df, robot_sn_column='robot_sn'):
@@ -39,9 +40,14 @@ class App:
     def _initialize_tables_for_data(self, table_type: str, data_df, robot_sn_column='robot_sn') -> List[RDSTable]:
         """Initialize tables for specific data, only for databases that have relevant robots"""
         if data_df.empty:
-            return []
+            return True, []
 
         robots_in_data = self._get_robots_for_data(data_df, robot_sn_column)
+        # only get table configs for robots that exist in the data
+        # since we call apis for all robots, we need to filter out the robots that do not exist in the database
+        robots_in_data = [robot for robot in robots_in_data if robot in self.all_robots]
+        if len(robots_in_data) == 0:
+            return True, []
         table_configs = self.config.get_table_configs_for_robots(table_type, robots_in_data)
 
         tables = []
@@ -60,7 +66,10 @@ class App:
             except Exception as e:
                 logger.error(f"❌ Failed to initialize {table_type} table {table_config['database']}.{table_config['table_name']}: {e}")
 
-        return tables
+        if len(tables) > 0:
+            return True, tables
+        else:
+            return False, []
 
     def _prepare_df_for_database(self, df, columns_to_remove=[]):
         """Prepare DataFrame for database insertion"""
@@ -425,11 +434,14 @@ class App:
                 return 0, 0, {}
 
             # Initialize tables for robots in this data
-            tables = self._initialize_tables_for_data(table_type, processed_data, robot_column)
+            success, tables = self._initialize_tables_for_data(table_type, processed_data, robot_column)
 
-            if not tables:
+            if not success:
                 logger.warning(f"No tables initialized for {table_type}")
                 return 0, 1, {}
+            elif len(tables) == 0:
+                logger.warning(f"No need to initialize tables for {table_type}")
+                return 0, 0, {}
 
             # Insert data with robot filtering
             successful_inserts, failed_inserts, all_changes = self._insert_to_database_with_filtering(
@@ -534,9 +546,9 @@ class App:
 
             success = pipeline_stats['total_failed_inserts'] == 0 and work_location_success == True
             if success:
-                logger.info("✅ Dynamic data pipeline completed successfully")
+                logger.info("✅ Lambda service completed successfully")
             else:
-                logger.warning("⚠️ Dynamic data pipeline completed with some failures")
+                logger.warning("⚠️ Lambda service completed with some failures")
 
             return success
 

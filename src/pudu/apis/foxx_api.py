@@ -176,7 +176,7 @@ def get_robot_status(sn):
                 'efficiency': efficiency,
                 'remaining_time': result_data.get('remaining_time', 0),
                 'consumption': consumption,
-                'battery_usage': cost_battery, # TODO: add battery_usage in % to database
+                # 'battery_usage': cost_battery, # TODO: add battery_usage in % to database
                 'water_consumption': result_data.get('cost_water', 0),
                 'progress': round(percentage, 2) if percentage else 0,
                 'status': status,
@@ -949,7 +949,7 @@ def get_schedule_table(start_time, end_time, location_id=None, robot_sn=None, ti
                     'Efficiency': [efficiency],
                     'Remaining Time': [remaining_time],
                     'Consumption': [consumption],
-                    'Battery Usage': [latest_task['cost_battery']], # TODO: add raw cost_battery in % to database
+                    # 'Battery Usage': [latest_task['cost_battery']], # TODO: add raw cost_battery in % to database
                     'Water Consumption': [water_consumption],
                     'Progress': [progress],
                     'Status': [status_str],

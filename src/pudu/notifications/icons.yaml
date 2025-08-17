@@ -4,9 +4,9 @@
 
 # Severity Level Icons (Primary visual indicator)
 severity_icons:
-  fatal: "🟣"      # Purple - Immediate attention required
-  error: "🔴"      # Red - Task failed or serious problem
-  warning: "🟠"    # Orange - Moderate issue or degraded state
+  fatal: "🔴"      # Red - Immediate attention required
+  error: "🟠"      # Orange - Task failed or serious problem
+  warning: "🟡"    # Yellow - Moderate issue or degraded state
   event: "🔵"       # Blue - Informational or neutral event
   success: "🟢"    # Green - Positive/normal outcome
   neutral: "⚪"     # Gray - Scheduled or inactive items
@@ -103,12 +103,12 @@ common_scenarios:
   low_battery_critical:
     severity: "fatal"
     status: "warning"
-    title_format: "🟣 {title} ⚠️"
+    title_format: "🔴 {title} ⚠️"
 
   low_battery_warning:
     severity: "warning"
     status: "warning"
-    title_format: "🟠 {title} ⚠️"
+    title_format: "🟡 {title} ⚠️"
 
   charging_active:
     severity: "event"
