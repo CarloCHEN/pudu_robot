@@ -14,5 +14,6 @@ __all__ = [
     "get_data",
     "get_task_overview_data",
     "get_events_table",
+    "get_ongoing_tasks_table",
     "get_robot_work_location_and_mapping_data"
 ]

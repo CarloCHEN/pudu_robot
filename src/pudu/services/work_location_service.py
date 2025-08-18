@@ -41,7 +41,7 @@ class WorkLocationService:
             logger.info("🗺️ Updating robot work locations and map floor mappings (dynamic)...")
 
             # Get both datasets in a single API call
-            work_location_data, mapping_data, current_schedule_data = get_robot_work_location_and_mapping_data()
+            work_location_data, mapping_data = get_robot_work_location_and_mapping_data()
 
             success = True
 
@@ -56,13 +56,6 @@ class WorkLocationService:
                 success &= self._update_map_floor_mappings(mapping_data, work_location_data)
             else:
                 logger.info("No map floor mapping data to update")
-
-            # TODO: figure out how to differentiate between tasks with same task_id, task_name, robot_sn
-            # Update new tasks
-            # if not current_schedule_data.empty:
-            #     success &= self._update_new_tasks(current_schedule_data)
-            # else:
-            #     logger.info("No new task data to update")
 
             return success
 
@@ -86,93 +79,6 @@ class WorkLocationService:
 
         logger.debug(f"Prepared DataFrame with {processed_df.shape[0]} rows and {processed_df.shape[1]} columns")
         return processed_df
-
-    def _update_new_tasks(self, new_task_data: pd.DataFrame) -> bool:
-        """
-        Update current/active task data with dynamic database resolution
-
-        Args:
-            new_task_data (pd.DataFrame): DataFrame with current task information, columns include:
-                - location_id (int): Location/shop ID where robot is operating
-                - task_name (str): Name of the current task
-                - task_id (str): Unique task identifier
-                - robot_sn (str): Robot serial number
-                - map_name (str): Name of the map being cleaned
-                - map_url (str): URL to task result (empty for current tasks)
-                - actual_area (float): Actual area cleaned so far (m²)
-                - plan_area (float): Total planned area to clean (m²)
-                - start_time (None): Task start time (None for current API data)
-                - end_time (None): Task end time (None for current API data)
-                - duration (int): Current task duration in seconds
-                - efficiency (float): Current cleaning efficiency (m²/hour)
-                - remaining_time (int): Estimated remaining time in seconds
-                - consumption (float): Energy consumption so far (kWh)
-                - water_consumption (float): Water consumption so far (mL)
-                - progress (float): Task completion percentage (0-100)
-                - status (str): Current task status (e.g., "In Progress", "Task Suspended")
-                - mode (str): Cleaning mode (e.g., "Scrubbing", "Sweeping")
-                - sub_mode (str): Sub cleaning mode (e.g., "Custom", "Suction Mode")
-                - type (str): Task type (e.g., "Custom", "Carpet Vacuuming")
-                - vacuum_speed (str): Vacuum speed setting (e.g., "Off", "Standard", "High")
-                - vacuum_suction (str): Vacuum suction setting (e.g., "Low", "Medium", "High")
-                - wash_speed (str): Wash speed setting (e.g., "Off", "Standard", "High")
-                - wash_suction (str): Wash suction setting (e.g., "Low", "Medium", "High")
-                - wash_water (str): Wash water setting (e.g., "Low", "Medium", "High")
-
-        Returns:
-            bool: True if all updates successful, False otherwise
-        """
-        try:
-            # prepare data
-            new_task_data = self._prepare_df_for_database(new_task_data, columns_to_remove=['id', 'location_id'])
-
-            # Get robots from the data
-            robots_in_data = new_task_data['robot_sn'].unique().tolist()
-
-            # Get table configurations for these specific robots
-            table_configs = self.config.get_table_configs_for_robots('robot_task', robots_in_data)
-
-            success_count = 0
-            total_count = len(table_configs)
-
-            for table_config in table_configs:
-                try:
-                    # Initialize table
-                    table = RDSTable(
-                        connection_config="credentials.yaml",
-                        database_name=table_config['database'],
-                        table_name=table_config['table_name'],
-                        fields=table_config.get('fields'),
-                        primary_keys=table_config['primary_keys']
-                    )
-
-                    # Filter data for robots that belong to this database
-                    target_robots = table_config.get('robot_sns', [])
-                    if target_robots:
-                        filtered_data = new_task_data[new_task_data['robot_sn'].isin(target_robots)]
-                    else:
-                        filtered_data = new_task_data
-
-                    if not filtered_data.empty:
-                        data_list = filtered_data.to_dict(orient='records')
-                        table.batch_insert(data_list)  # Commented for testing
-                        success_count += 1
-                        logger.info(f"✅ Updated new tasks in {table_config['database']}.{table_config['table_name']} for {len(filtered_data)} robots")
-                    else:
-                        success_count += 1  # No data needed for this database
-                        logger.info(f"ℹ️ No new task data for {table_config['database']}")
-
-                    table.close()
-
-                except Exception as e:
-                    logger.error(f"❌ Failed to update new tasks in {table_config['database']}.{table_config['table_name']}: {e}")
-
-            return success_count > 0
-
-        except Exception as e:
-            logger.error(f"Error in _update_new_tasks: {e}")
-            return False
-
 
     def _update_work_locations(self, work_location_data: pd.DataFrame) -> bool:
         """
@@ -263,11 +169,13 @@ class WorkLocationService:
 
             # Resolve floor_ids for each map based on work_location_data (no extra DB queries!)
             # result is: {map_name: floor_id}
+            # TODO: _update_map_floor_mappings_for_table needs to only insert map_name in its project database
             resolved_mappings = self._resolve_floor_ids_dynamic(mapping_data, work_location_data)
 
             if resolved_mappings.empty:
                 logger.info("No resolved map floor mappings to update")
                 return True
+            logger.info(f"Resolved mappings: {resolved_mappings}")
 
             # Get table configurations for robots that use these maps
             table_configs = self.config.get_table_configs_for_robots('map_floor_mapping', robots_with_mappings)
@@ -341,7 +249,7 @@ class WorkLocationService:
 
         # Get building context for robots directly from work_location_data. result is: {robot_sn: building_id}
         building_context = self._get_robot_building_context_from_work_data(work_location_data)
-
+        logger.info(f"Building context: {building_context}")
 
         for _, row in mapping_data.iterrows():
             map_name = row['map_name']
@@ -349,6 +257,8 @@ class WorkLocationService:
 
             # Find building_id for this map from work_location_data. result is: building_id
             building_id = self._find_building_for_map_from_work_data(map_name, work_location_data, building_context)
+            logger.info(f"Building id for {map_name}: {building_id}")
+
             if building_id:
                 # Look up floor_id using building_id and floor_number
                 robots_using_map = work_location_data[
@@ -357,6 +267,7 @@ class WorkLocationService:
                 ]['robot_sn'].tolist()
 
                 floor_id = self._get_floor_id_dynamic(building_id, floor_number, robots_using_map)
+                logger.info(f"Floor id for {map_name} is: {floor_id}")
                 if floor_id:
                     resolved_mappings.append({
                         'map_name': map_name,

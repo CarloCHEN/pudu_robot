@@ -1,7 +1,8 @@
-from pudu.apis import get_schedule_table, get_charging_table, get_events_table, get_location_table, get_robot_status_table
+from pudu.apis import get_schedule_table, get_charging_table, get_events_table, get_location_table, get_robot_status_table, get_ongoing_tasks_table
 from pudu.rds import RDSTable
 from pudu.notifications import send_change_based_notifications, detect_data_changes, NotificationService
 from pudu.configs import DynamicDatabaseConfig
+from pudu.services.task_management_service import TaskManagementService
 import logging
 from typing import Dict, List
 from datetime import datetime
@@ -416,6 +417,66 @@ class App:
             logger.error(f"Error processing project database locations: {e}")
             return 0, 1, {}
 
+    def _process_ongoing_robot_tasks(self, table_type: str):
+        """Process ongoing robot tasks with simple upsert logic"""
+        logger.info("📋 Processing ongoing robot tasks (simple upsert)...")
+
+        try:
+            # Get ongoing tasks data
+            raw_data = get_ongoing_tasks_table()
+            processed_data = self._prepare_df_for_database(raw_data, columns_to_remove=['id', 'location_id'])
+
+            if processed_data.empty:
+                logger.info("No ongoing tasks from API - will clean up existing ongoing tasks")
+                return 0, 0, {}
+            # Initialize tables for robots in this data
+            success, tables = self._initialize_tables_for_data(table_type, processed_data, robot_sn_column='robot_sn')
+            if not success:
+                logger.warning(f"No tables initialized for {table_type}")
+                return 0, 1, {}
+            elif len(tables) == 0:
+                logger.warning(f"No need to initialize tables for {table_type}")
+                return 0, 0, {}
+
+            successful_operations = 0
+            failed_operations = 0
+            all_changes = {}
+
+            for table in tables:
+                try:
+                    target_robots = getattr(table, 'target_robots', [])
+                    # Filter data to only include robots in target_robots
+                    if target_robots:
+                        table_data = processed_data[processed_data['robot_sn'].isin(target_robots)].copy()
+                    else:
+                        table_data = processed_data.copy()
+
+                    if table_data.empty:
+                        logger.info(f"ℹ️ No relevant data for {table.database_name}.{table.table_name}")
+                        successful_inserts += 1  # Count as successful since no data needed
+                        continue
+
+                    # Convert to list of dicts
+                    data_list = table_data.to_dict(orient='records')
+
+                    # Use TaskManagementService to handle simple upsert logic
+                    TaskManagementService.upsert_ongoing_tasks(table, data_list)
+
+                    successful_operations += 1
+                    logger.info(f"✅ Processed ongoing tasks for {table.database_name}.{table.table_name}")
+
+                    table.close()
+
+                except Exception as e:
+                    failed_operations += 1
+                    logger.error(f"❌ Failed to process ongoing tasks for {table.database_name}.{table.table_name}: {e}")
+
+            return successful_operations, failed_operations, all_changes
+
+        except Exception as e:
+            logger.error(f"Error processing ongoing robot tasks: {e}")
+            return 0, 1, {}
+
     def _process_robot_data(self, table_type: str, data_func, robot_column: str, start_time: str = None, end_time: str = None, columns_to_remove: list = []):
         """Process robot-specific data with dynamic database routing"""
         logger.info(f"📋 Processing {table_type} data...")
@@ -496,6 +557,15 @@ class App:
             logger.info("=" * 50)
 
             # 3. Robot task data
+            # 3.1 Ongoing task data from get_ongoing_tasks_table
+            successful, failed, changes = self._process_ongoing_robot_tasks('robot_task')
+            pipeline_stats['total_successful_inserts'] += successful
+            pipeline_stats['total_failed_inserts'] += failed
+            self._handle_notifications(changes, 'robot_ongoing_task', pipeline_stats)
+
+            logger.info("=" * 50)
+
+            # 3.2 Report task data from get_schedule_table
             successful, failed, changes = self._process_robot_data(
                 'robot_task', get_schedule_table, 'robot_sn', start_time, end_time, columns_to_remove=['id', 'location_id']
             )

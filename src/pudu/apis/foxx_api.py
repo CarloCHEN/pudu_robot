@@ -144,11 +144,14 @@ def get_robot_status(sn):
             else:
                 efficiency = 0
 
-           # Infer start and end time
+            # Infer start and end time
             current_time = pd.Timestamp.now()
             estimated_start_time = current_time - pd.Timedelta(seconds=clean_time) if clean_time > 0 else current_time
             # Calculate estimated end_time based on remaining time
             estimated_end_time = current_time + pd.Timedelta(seconds=result_data.get('remaining_time', 0)) if result_data.get('remaining_time', 0) > 0 else None
+            # Convert timestamp to format: 2025-08-15 10:00:00
+            estimated_start_time = estimated_start_time.strftime('%Y-%m-%d %H:%M:%S')
+            estimated_end_time = estimated_end_time.strftime('%Y-%m-%d %H:%M:%S')
 
             # Calculate consumption
             battery_capacity = 1228.8 / 1000  # kWh
@@ -176,7 +179,7 @@ def get_robot_status(sn):
                 'efficiency': efficiency,
                 'remaining_time': result_data.get('remaining_time', 0),
                 'consumption': consumption,
-                # 'battery_usage': cost_battery, # TODO: add battery_usage in % to database
+                'battery_usage': cost_battery, # TODO: add battery_usage in % to database
                 'water_consumption': result_data.get('cost_water', 0),
                 'progress': round(percentage, 2) if percentage else 0,
                 'status': status,
@@ -212,26 +215,98 @@ def get_robot_status(sn):
             'position': None
         }
 
+def get_ongoing_tasks_table(location_id=None, robot_sn=None):
+    """
+    Get ongoing tasks for all robots by calling get_robot_status for each robot.
+    Returns a DataFrame with ongoing task information with is_report=0.
+    """
+    ongoing_tasks_df = pd.DataFrame(columns=[
+        'location_id', 'task_name', 'task_id', 'robot_sn', 'map_name', 'is_report', 'map_url',
+        'actual_area', 'plan_area', 'start_time', 'end_time', 'duration',
+        'efficiency', 'remaining_time', 'consumption', 'water_consumption', 'progress', 'status',
+        'mode', 'sub_mode', 'type', 'vacuum_speed', 'vacuum_suction',
+        'wash_speed', 'wash_suction', 'wash_water'
+    ])
+
+    # Get all stores
+    all_shops = get_list_stores()['list']
+
+    for shop in all_shops:
+        shop_id = shop['shop_id']
+
+        # Skip if location_id is specified and doesn't match current shop
+        if location_id is not None and shop_id != location_id:
+            continue
+
+        try:
+            # Get robots for this shop
+            shop_robots = get_list_robots(shop_id=shop_id)['list']
+
+            for robot in shop_robots:
+                sn = robot.get('sn')
+                if not sn:
+                    continue
+                # Skip if robot_sn is specified and doesn't match current robot
+                if robot_sn is not None and sn != robot_sn:
+                    continue
+                try:
+                    # Get robot status including task information
+                    robot_status = get_robot_status(sn)
+
+                    if robot_status['is_in_task'] and robot_status['task_info']:
+                        task_info = robot_status['task_info']
+
+                        # Add ongoing task to DataFrame with is_report=0
+                        ongoing_task_row = pd.DataFrame({
+                            'location_id': [task_info.get('location_id')],
+                            'task_name': [task_info.get('task_name')],
+                            'task_id': [task_info.get('task_id')],
+                            'robot_sn': [task_info.get('robot_sn')],
+                            'map_name': [task_info.get('map_name')],
+                            'is_report': [0],  # Mark as ongoing task
+                            'map_url': [task_info.get('map_url', '')],  # Empty for ongoing tasks
+                            'actual_area': [task_info.get('actual_area')],
+                            'plan_area': [task_info.get('plan_area')],
+                            'start_time': [task_info.get('start_time')],
+                            'end_time': [task_info.get('end_time')],
+                            'duration': [task_info.get('duration')],
+                            'efficiency': [task_info.get('efficiency')],
+                            'remaining_time': [task_info.get('remaining_time')],
+                            'consumption': [task_info.get('consumption')],
+                            # 'battery_usage': [task_info.get('battery_usage')], # TODO: add battery_usage in % to database
+                            'water_consumption': [task_info.get('water_consumption')],
+                            'progress': [task_info.get('progress')],
+                            'status': [task_info.get('status')],
+                            'mode': [task_info.get('mode')],
+                            'sub_mode': [task_info.get('sub_mode')],
+                            'type': [task_info.get('type')],
+                            'vacuum_speed': [task_info.get('vacuum_speed')],
+                            'vacuum_suction': [task_info.get('vacuum_suction')],
+                            'wash_speed': [task_info.get('wash_speed')],
+                            'wash_suction': [task_info.get('wash_suction')],
+                            'wash_water': [task_info.get('wash_water')]
+                        })
+                        ongoing_tasks_df = pd.concat([ongoing_tasks_df, ongoing_task_row], ignore_index=True)
+
+                except Exception as e:
+                    continue
+
+        except Exception as e:
+            continue
+
+    return ongoing_tasks_df
+
 def get_robot_work_location_and_mapping_data():
     """
     Get robot work location data, map floor mapping data, and current task schedule data in a single pass.
     This is more efficient as it only calls get_robot_status() once per robot.
 
     Returns:
-        tuple: (work_location_df, map_floor_mapping_df, current_schedule_df)
+        tuple: (work_location_df, map_floor_mapping_df)
     """
     # Initialize DataFrames
     work_location_df = pd.DataFrame(columns=[
         'robot_sn', 'map_name', 'x', 'y', 'z', 'status', 'update_time'
-    ])
-
-    # Initialize current schedule DataFrame with snake_case column names
-    current_schedule_df = pd.DataFrame(columns=[
-        'location_id', 'task_name', 'task_id', 'robot_sn', 'map_name', 'map_url',
-        'actual_area', 'plan_area', 'start_time', 'end_time', 'duration',
-        'efficiency', 'remaining_time', 'consumption', 'water_consumption', 'progress', 'status',
-        'mode', 'sub_mode', 'type', 'vacuum_speed', 'vacuum_suction',
-        'wash_speed', 'wash_suction', 'wash_water'
     ])
 
     map_floor_data = {}  # Use dict to avoid duplicates
@@ -260,36 +335,6 @@ def get_robot_work_location_and_mapping_data():
                         # Robot is in task, get map and position data
                         task_info = robot_status['task_info']
                         position = robot_status['position']
-
-                        # Add current task to schedule DataFrame
-                        current_task_row = pd.DataFrame({
-                            'location_id': [task_info.get('location_id')],
-                            'task_name': [task_info.get('task_name')],
-                            'task_id': [task_info.get('task_id')],
-                            'robot_sn': [task_info.get('robot_sn')],
-                            'map_name': [task_info.get('map_name')],
-                            'map_url': [task_info.get('map_url')],
-                            'actual_area': [task_info.get('actual_area')],
-                            'plan_area': [task_info.get('plan_area')],
-                            'start_time': [task_info.get('start_time')],
-                            'end_time': [task_info.get('end_time')],
-                            'duration': [task_info.get('duration')],
-                            'efficiency': [task_info.get('efficiency')],
-                            'remaining_time': [task_info.get('remaining_time')],
-                            'consumption': [task_info.get('consumption')],
-                            'water_consumption': [task_info.get('water_consumption')],
-                            'progress': [task_info.get('progress')],
-                            'status': [task_info.get('status')],
-                            'mode': [task_info.get('mode')],
-                            'sub_mode': [task_info.get('sub_mode')],
-                            'type': [task_info.get('type')],
-                            'vacuum_speed': [task_info.get('vacuum_speed')],
-                            'vacuum_suction': [task_info.get('vacuum_suction')],
-                            'wash_speed': [task_info.get('wash_speed')],
-                            'wash_suction': [task_info.get('wash_suction')],
-                            'wash_water': [task_info.get('wash_water')]
-                        })
-                        current_schedule_df = pd.concat([current_schedule_df, current_task_row], ignore_index=True)
 
                         # Add work location data
                         if task_info.get('map') and position:
@@ -343,7 +388,7 @@ def get_robot_work_location_and_mapping_data():
         })
         mapping_df = pd.concat([mapping_df, mapping_row], ignore_index=True)
 
-    return work_location_df, mapping_df, current_schedule_df
+    return work_location_df, mapping_df
 
 def get_location_table():
     """
@@ -749,7 +794,7 @@ def get_schedule_table(start_time, end_time, location_id=None, robot_sn=None, ti
 
     # Initialize empty DataFrame with columns
     schedule_df = pd.DataFrame(columns=[
-        'Location ID', 'Task Name', 'Task ID', 'Robot SN', 'Map Name', 'Map URL',
+        'Location ID', 'Task Name', 'Task ID', 'Robot SN', 'Map Name', 'Is Report', 'Map URL',
         'Actual Area', 'Plan Area', 'Start Time', 'End Time', 'Duration',
         'Efficiency', 'Remaining Time', 'Consumption', 'Water Consumption', 'Progress', 'Status',
         'Mode', 'Sub Mode', 'Type', 'Vacuum Speed', 'Vacuum Suction',
@@ -766,6 +811,7 @@ def get_schedule_table(start_time, end_time, location_id=None, robot_sn=None, ti
         # Get all robots for this shop
         shop_robots = get_list_robots(shop_id=shop_id)['list']
         shop_robots = [robot['sn'] for robot in shop_robots if 'sn' in robot]
+
 
         # Filter robots by robot_sn if provided
         if robot_sn is not None:
@@ -803,10 +849,6 @@ def get_schedule_table(start_time, end_time, location_id=None, robot_sn=None, ti
                 # Convert times to datetime objects
                 task_start_time = pd.to_datetime(task['start_time'], unit='s')
                 task_end_time = pd.to_datetime(task['end_time'], unit='s')
-
-                # Skip tasks outside the time range
-                if task_end_time < pd.to_datetime(start_time) or task_start_time > pd.to_datetime(end_time):
-                    continue
 
                 # Get detailed cleaning report
                 report = get_cleaning_report_detail(
@@ -919,11 +961,11 @@ def get_schedule_table(start_time, end_time, location_id=None, robot_sn=None, ti
                 plan_area = round(latest_task['task_area'], 2)
                 actual_area = round(plan_area * (latest_task['percentage'] / 100), 2) #round(latest_task['clean_area'], 2)
 
-                start_time = latest_task['start_time']
-                end_time = latest_task['end_time']
+                report_start_time = latest_task['start_time']
+                report_end_time = latest_task['end_time']
                 # Calculate efficiency in 100m²/h format:
                 # Convert m² to 100m² and convert seconds to hours
-                clean_time = (end_time - start_time).total_seconds() if isinstance(end_time, pd.Timestamp) else (pd.to_datetime(end_time) - pd.to_datetime(start_time)).total_seconds()
+                clean_time = (report_end_time - report_start_time).total_seconds() if isinstance(report_end_time, pd.Timestamp) else (pd.to_datetime(report_end_time) - pd.to_datetime(report_start_time)).total_seconds()
                 if clean_time > 0:
                     # m² per second * 3600 seconds/hour / 100 = 100m²/h
                     efficiency_value = (actual_area / clean_time) * 3600 #(latest_task['clean_area'] / clean_time) * 3600
@@ -940,16 +982,17 @@ def get_schedule_table(start_time, end_time, location_id=None, robot_sn=None, ti
                     'Task ID': [latest_task['task_id']],
                     'Robot SN': [latest_task['sn']],
                     'Map Name': [latest_task['map_name']],
+                    'Is Report': [1],
                     'Map URL': [task_result_url],
                     'Actual Area': [actual_area],
                     'Plan Area': [plan_area],
-                    'Start Time': [start_time],
-                    'End Time': [end_time],
+                    'Start Time': [report_start_time],
+                    'End Time': [report_end_time],
                     'Duration': [clean_time],
                     'Efficiency': [efficiency],
                     'Remaining Time': [remaining_time],
                     'Consumption': [consumption],
-                    # 'Battery Usage': [latest_task['cost_battery']], # TODO: add raw cost_battery in % to database
+                    'Battery Usage': [latest_task['cost_battery']], # TODO: add raw cost_battery in % to database
                     'Water Consumption': [water_consumption],
                     'Progress': [progress],
                     'Status': [status_str],
@@ -969,7 +1012,6 @@ def get_schedule_table(start_time, end_time, location_id=None, robot_sn=None, ti
                 # Log error and continue with next task group
                 print(f"Error processing task group {task_name}: {e}")
                 continue
-
     return schedule_df
 
 def get_charging_table(start_time, end_time, location_id=None, robot_sn=None, timezone_offset=0):

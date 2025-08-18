@@ -7,7 +7,7 @@ set -e
 
 # Configuration
 FUNCTION_NAME="pudu-robot-pipeline"
-REGION="us-east-1"
+REGION="us-east-2"
 ROLE_NAME="pudu-robot-lambda-role"
 PYTHON_VERSION="3.9"
 
@@ -15,7 +15,7 @@ PYTHON_VERSION="3.9"
 ICONS_CONFIG_PATH="icons.yaml"
 
 # Notification API Configuration
-NOTIFICATION_API_HOST="alb-streamnexus-demo-775802511.us-east-1.elb.amazonaws.com"
+NOTIFICATION_API_HOST="alb-notice-1223048054.us-east-2.elb.amazonaws.com"
 NOTIFICATION_API_ENDPOINT="/notification-api/robot/notification/send"
 
 # SNS Configuration - CHANGE THIS EMAIL TO YOUR ACTUAL EMAIL
