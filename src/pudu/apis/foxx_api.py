@@ -223,7 +223,7 @@ def get_ongoing_tasks_table(location_id=None, robot_sn=None):
     ongoing_tasks_df = pd.DataFrame(columns=[
         'location_id', 'task_name', 'task_id', 'robot_sn', 'map_name', 'is_report', 'map_url',
         'actual_area', 'plan_area', 'start_time', 'end_time', 'duration',
-        'efficiency', 'remaining_time', 'consumption', 'water_consumption', 'progress', 'status',
+        'efficiency', 'remaining_time', 'battery_usage', 'consumption', 'water_consumption', 'progress', 'status',
         'mode', 'sub_mode', 'type', 'vacuum_speed', 'vacuum_suction',
         'wash_speed', 'wash_suction', 'wash_water'
     ])
@@ -272,8 +272,8 @@ def get_ongoing_tasks_table(location_id=None, robot_sn=None):
                             'duration': [task_info.get('duration')],
                             'efficiency': [task_info.get('efficiency')],
                             'remaining_time': [task_info.get('remaining_time')],
+                            'battery_usage': [task_info.get('battery_usage')], # TODO: add battery_usage in % to database
                             'consumption': [task_info.get('consumption')],
-                            # 'battery_usage': [task_info.get('battery_usage')], # TODO: add battery_usage in % to database
                             'water_consumption': [task_info.get('water_consumption')],
                             'progress': [task_info.get('progress')],
                             'status': [task_info.get('status')],
@@ -796,7 +796,7 @@ def get_schedule_table(start_time, end_time, location_id=None, robot_sn=None, ti
     schedule_df = pd.DataFrame(columns=[
         'Location ID', 'Task Name', 'Task ID', 'Robot SN', 'Map Name', 'Is Report', 'Map URL',
         'Actual Area', 'Plan Area', 'Start Time', 'End Time', 'Duration',
-        'Efficiency', 'Remaining Time', 'Consumption', 'Water Consumption', 'Progress', 'Status',
+        'Efficiency', 'Remaining Time', 'Consumption', 'Battery Usage', 'Water Consumption', 'Progress', 'Status',
         'Mode', 'Sub Mode', 'Type', 'Vacuum Speed', 'Vacuum Suction',
         'Wash Speed', 'Wash Suction', 'Wash Water'
     ])

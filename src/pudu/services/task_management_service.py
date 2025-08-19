@@ -15,27 +15,30 @@ class TaskManagementService:
     2. Update ongoing tasks to completed when final reports arrive from get_schedule_table()
     3. Handle time overlap detection between estimated and actual times
     """
-
     @staticmethod
     def upsert_ongoing_tasks(table: RDSTable, ongoing_tasks_data: List[dict]):
         """
         Upsert ongoing tasks: update existing ongoing task or insert new one.
         Logic: Robot can only have 1 ongoing task, so update the most recent ongoing task if exists.
+
+        Returns:
+            Dict[str, Dict]: Changes detected in format compatible with change detection system
         """
         processed_robots = set()
+        changes_detected = {}
 
         for ongoing_task in ongoing_tasks_data:
             try:
                 robot_sn = ongoing_task['robot_sn']
 
-                # Skip if we already processed this robot in this batch, since each robot can only have 1 ongoing task at a time
+                # Skip if we already processed this robot in this batch
                 if robot_sn in processed_robots:
                     continue
                 processed_robots.add(robot_sn)
 
                 # Find existing ongoing task for this robot (most recent one)
                 existing_query = f"""
-                    SELECT id, task_id, task_name, progress, start_time
+                    SELECT id, task_id, task_name, status, start_time
                     FROM {table.table_name}
                     WHERE robot_sn = '{robot_sn}'
                     AND is_report = 0
@@ -51,24 +54,95 @@ class TaskManagementService:
                     existing_id = existing_record[0] if isinstance(existing_record, tuple) else existing_record.get('id')
                     existing_task_id = existing_record[1] if isinstance(existing_record, tuple) else existing_record.get('task_id')
                     existing_task_name = existing_record[2] if isinstance(existing_record, tuple) else existing_record.get('task_name')
+                    existing_status = existing_record[3] if isinstance(existing_record, tuple) else existing_record.get('status')
 
                     # Check if this is the same task or a new task
                     if (existing_task_id == ongoing_task['task_id'] and
                         existing_task_name == ongoing_task['task_name']):
                         # Same task - update progress and other fields
                         TaskManagementService._update_ongoing_task_progress(table, existing_id, ongoing_task)
+
+                        # Create change record for update
+                        unique_id = f"{robot_sn}_{ongoing_task['task_id']}_{ongoing_task['start_time']}"
+                        changes_detected[unique_id] = {
+                            'robot_sn': robot_sn,
+                            'primary_key_values': {
+                                'robot_sn': robot_sn,
+                                'task_name': ongoing_task['task_name'],
+                                'start_time': ongoing_task['start_time']
+                            },
+                            'change_type': 'update',
+                            'changed_fields': ['progress', 'status'] if existing_status != ongoing_task['status'] else ['progress'],  # Simplified
+                            'old_values': {},  # We don't have old values easily available
+                            'new_values': ongoing_task,
+                            'database_key': existing_id
+                        }
+
                         logger.debug(f"✅ Updated ongoing task progress for robot {robot_sn}: {ongoing_task.get('progress', 0)}%")
                     else:
-                        # Different task - just insert new task, keep old one as is
-                        TaskManagementService._insert_new_ongoing_task(table, ongoing_task)
-                        logger.debug(f"🔄 Robot {robot_sn} has new task: {ongoing_task['task_name']} (keeping old ongoing task)")
+                        # Different task - insert new task
+                        new_id = TaskManagementService._insert_new_ongoing_task_with_id(table, ongoing_task)
+
+                        # Create change record for new task
+                        unique_id = f"{robot_sn}_{ongoing_task['task_id']}_{ongoing_task['start_time']}"
+                        changes_detected[unique_id] = {
+                            'robot_sn': robot_sn,
+                            'primary_key_values': {
+                                'robot_sn': robot_sn,
+                                'task_name': ongoing_task['task_name'],
+                                'start_time': ongoing_task['start_time']
+                            },
+                            'change_type': 'new_record',
+                            'changed_fields': list(ongoing_task.keys()),
+                            'old_values': {},
+                            'new_values': ongoing_task,
+                            'database_key': new_id
+                        }
+
+                        logger.debug(f"🔄 Robot {robot_sn} has new task: {ongoing_task['task_name']}")
                 else:
                     # No existing ongoing task - insert new one
-                    TaskManagementService._insert_new_ongoing_task(table, ongoing_task)
+                    new_id = TaskManagementService._insert_new_ongoing_task_with_id(table, ongoing_task)
+
+                    # Create change record for new task
+                    unique_id = f"{robot_sn}_{ongoing_task['task_id']}_{ongoing_task['start_time']}"
+                    changes_detected[unique_id] = {
+                        'robot_sn': robot_sn,
+                        'primary_key_values': {
+                            'robot_sn': robot_sn,
+                            'task_name': ongoing_task['task_name'],
+                            'start_time': ongoing_task['start_time']
+                        },
+                        'change_type': 'new_record',
+                        'changed_fields': list(ongoing_task.keys()),
+                        'old_values': {},
+                        'new_values': ongoing_task,
+                        'database_key': new_id
+                    }
+
                     logger.debug(f"🆕 Inserted new ongoing task for robot {robot_sn}: {ongoing_task['task_name']}")
 
             except Exception as e:
                 logger.warning(f"⚠️ Error upserting ongoing task for robot {robot_sn}: {e}")
+
+        return changes_detected
+
+    @staticmethod
+    def _insert_new_ongoing_task_with_id(table: RDSTable, ongoing_task: dict):
+        """Insert a new ongoing task and return the database ID."""
+        try:
+            # Ensure is_report is set to 0
+            ongoing_task['is_report'] = 0
+
+            # Use batch_insert_with_ids to get the ID back
+            ids = table.batch_insert_with_ids([ongoing_task])
+            if ids:
+                return ids[0][1]  # Return the database ID
+            return None
+
+        except Exception as e:
+            logger.error(f"❌ Error inserting new ongoing task: {e}")
+            return None
 
     @staticmethod
     def _update_ongoing_task_progress(table: RDSTable, record_id: int, ongoing_task: dict):
@@ -80,6 +154,7 @@ class TaskManagementService:
                 'duration': str(ongoing_task.get('duration', 0)),
                 'efficiency': str(ongoing_task.get('efficiency', 0)),
                 'remaining_time': str(ongoing_task.get('remaining_time', 0)),
+                'battery_usage': str(ongoing_task.get('battery_usage', 0)),
                 'consumption': str(ongoing_task.get('consumption', 0)),
                 'water_consumption': str(ongoing_task.get('water_consumption', 0)),
                 'status': str(ongoing_task.get('status', 'In Progress'))

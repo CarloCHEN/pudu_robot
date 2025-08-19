@@ -418,8 +418,8 @@ class App:
             return 0, 1, {}
 
     def _process_ongoing_robot_tasks(self, table_type: str):
-        """Process ongoing robot tasks with simple upsert logic"""
-        logger.info("📋 Processing ongoing robot tasks (simple upsert)...")
+        """Process ongoing robot tasks with simple upsert logic and change tracking"""
+        logger.info("📋 Processing ongoing robot tasks (simple upsert with change tracking)...")
 
         try:
             # Get ongoing tasks data
@@ -429,6 +429,7 @@ class App:
             if processed_data.empty:
                 logger.info("No ongoing tasks from API - will clean up existing ongoing tasks")
                 return 0, 0, {}
+
             # Initialize tables for robots in this data
             success, tables = self._initialize_tables_for_data(table_type, processed_data, robot_sn_column='robot_sn')
             if not success:
@@ -453,17 +454,22 @@ class App:
 
                     if table_data.empty:
                         logger.info(f"ℹ️ No relevant data for {table.database_name}.{table.table_name}")
-                        successful_inserts += 1  # Count as successful since no data needed
+                        successful_operations += 1  # Count as successful since no data needed
                         continue
 
                     # Convert to list of dicts
                     data_list = table_data.to_dict(orient='records')
 
-                    # Use TaskManagementService to handle simple upsert logic
-                    TaskManagementService.upsert_ongoing_tasks(table, data_list)
+                    # Use TaskManagementService to handle simple upsert logic with change tracking
+                    changes = TaskManagementService.upsert_ongoing_tasks(table, data_list)
 
                     successful_operations += 1
                     logger.info(f"✅ Processed ongoing tasks for {table.database_name}.{table.table_name}")
+
+                    # Track changes for notifications if any changes detected
+                    if changes:
+                        table_key = tuple([table.database_name, table.table_name])
+                        all_changes[table_key] = changes
 
                     table.close()
 
@@ -561,7 +567,7 @@ class App:
             successful, failed, changes = self._process_ongoing_robot_tasks('robot_task')
             pipeline_stats['total_successful_inserts'] += successful
             pipeline_stats['total_failed_inserts'] += failed
-            self._handle_notifications(changes, 'robot_ongoing_task', pipeline_stats)
+            self._handle_notifications(changes, 'robot_task', pipeline_stats)
 
             logger.info("=" * 50)
 
