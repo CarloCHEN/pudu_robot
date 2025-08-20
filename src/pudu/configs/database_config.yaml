@@ -9,6 +9,9 @@ main_database: "ry-vue"
 notification_needed:
   - "project"
 
+transform_supported_databases:
+  - "university_of_florida"
+
 # Table configurations
 # "main" - main db, "project" - dynamically resolved project's dbs
 tables:
