@@ -80,7 +80,9 @@ class TaskManagementService:
 
                         logger.debug(f"✅ Updated ongoing task progress for robot {robot_sn}: {ongoing_task.get('progress', 0)}%")
                     else:
-                        # Different task - insert new task
+                        # Different task - insert new task but delete the old one
+                        TaskManagementService.delete_ongoing_task(table, robot_sn, existing_task_name)
+                        # insert new task
                         new_id = TaskManagementService._insert_new_ongoing_task_with_id(table, ongoing_task)
 
                         # Create change record for new task
@@ -126,6 +128,18 @@ class TaskManagementService:
                 logger.warning(f"⚠️ Error upserting ongoing task for robot {robot_sn}: {e}")
 
         return changes_detected
+
+    @staticmethod
+    def delete_ongoing_task(table: RDSTable, robot_sn: str, task_name: str):
+        """Delete an ongoing task."""
+        query = f"""
+            DELETE FROM {table.table_name}
+            WHERE robot_sn = '{robot_sn}'
+            AND task_name = '{task_name}'
+            AND is_report = 0
+        """
+        table.query_data(query)
+        logger.info(f"🗑️ Deleted ongoing task for robot {robot_sn}: {task_name}")
 
     @staticmethod
     def _insert_new_ongoing_task_with_id(table: RDSTable, ongoing_task: dict):

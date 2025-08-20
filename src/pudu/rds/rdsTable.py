@@ -1,17 +1,97 @@
+# src/pudu/rds/rdsTable.py
 from .utils import *
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
 import warnings
+import threading
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Global connection pool for reusing database connections
+_connection_pool = {}
+_pool_lock = threading.Lock()
+
+class ConnectionManager:
+    """Simple connection manager that allows reusing connections"""
+
+    @staticmethod
+    def get_connection(database_name: str):
+        """Get or create a reusable database connection"""
+        global _connection_pool, _pool_lock
+
+        with _pool_lock:
+            connection_key = database_name
+
+            if connection_key in _connection_pool:
+                try:
+                    # Test if connection is still alive
+                    connection = _connection_pool[connection_key]
+                    connection.cursor().execute("SELECT 1")
+                    logger.debug(f"♻️ Reusing existing connection for {database_name}")
+                    return connection
+                except Exception as e:
+                    logger.debug(f"🔄 Connection for {database_name} is stale, creating new one: {e}")
+                    # Remove stale connection
+                    try:
+                        _connection_pool[connection_key].close()
+                    except:
+                        pass
+                    del _connection_pool[connection_key]
+
+            # Create new connection
+            try:
+                connection = connect_rds_instance(config_file="credentials.yaml")
+                _connection_pool[connection_key] = connection
+                logger.debug(f"🆕 Created new connection for {database_name}")
+                return connection
+            except Exception as e:
+                logger.error(f"❌ Failed to create connection for {database_name}: {e}")
+                raise
+
+    @staticmethod
+    def close_all_connections():
+        """Close all pooled connections"""
+        global _connection_pool, _pool_lock
+
+        with _pool_lock:
+            for db_name, connection in _connection_pool.items():
+                try:
+                    connection.close()
+                    logger.debug(f"🔒 Closed connection for {db_name}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Error closing connection for {db_name}: {e}")
+            _connection_pool.clear()
+
+    @staticmethod
+    def get_pool_status():
+        """Get current pool status for debugging"""
+        global _connection_pool
+        return {
+            'active_connections': len(_connection_pool),
+            'databases': list(_connection_pool.keys())
+        }
 
 
 class RDSDatabase:
-    def __init__(self, connection_config, database_name):
+    def __init__(self, connection_config, database_name, reuse_connection=True):
         self.connection_config = connection_config
-        self.db = connect_rds_instance(config_file=self.connection_config)
-        self.cursor = self.db.cursor()
         self.database_name = database_name
+        self.reuse_connection = reuse_connection
+
+        if reuse_connection:
+            # Use connection manager for pooling
+            self.db = ConnectionManager.get_connection(database_name)
+            self.cursor = self.db.cursor()
+            self._should_close_on_exit = False  # Don't close pooled connections
+        else:
+            # Original behavior - create new connection
+            self.db = connect_rds_instance(config_file=self.connection_config)
+            self.cursor = self.db.cursor()
+            self._should_close_on_exit = True
+
         self.use_db(self.database_name)
 
     def use_db(self, db_name: str):
@@ -78,19 +158,38 @@ class RDSDatabase:
                     engine.dispose()
 
     def close(self):
-        self.cursor.close()
-        self.db.close()
+        """Close connection only if not using connection pooling"""
+        if self._should_close_on_exit:
+            try:
+                self.cursor.close()
+                self.db.close()
+            except Exception as e:
+                logger.debug(f"Error closing connection: {e}")
+        else:
+            # For pooled connections, just log that we're keeping it open
+            logger.debug(f"♻️ Keeping pooled connection open for {self.database_name}")
 
 
 class RDSTable(RDSDatabase):
-    def __init__(self, connection_config, database_name, table_name, fields, primary_keys=None):
+    def __init__(self, connection_config, database_name, table_name, fields, primary_keys=None, reuse_connection=True):
         self.connection_config = connection_config
         self.database_name = database_name
-        self.db = connect_rds_instance(config_file=self.connection_config)
-        self.cursor = self.db.cursor()
         self.table_name = table_name
         self.fields = fields
         self.primary_keys = primary_keys
+        self.reuse_connection = reuse_connection
+
+        if reuse_connection:
+            # Use connection manager for pooling
+            self.db = ConnectionManager.get_connection(database_name)
+            self.cursor = self.db.cursor()
+            self._should_close_on_exit = False  # Don't close pooled connections
+        else:
+            # Original behavior - create new connection
+            self.db = connect_rds_instance(config_file=self.connection_config)
+            self.cursor = self.db.cursor()
+            self._should_close_on_exit = True
+
         self.use_db(self.database_name)
         if not check_if_table_exists(self.cursor, self.table_name):
             raise ValueError(f"Table {self.table_name} does not exist.")
@@ -126,8 +225,16 @@ class RDSTable(RDSDatabase):
         return query_data_as_df(self.db, self.table_name)
 
     def close(self):
-        self.cursor.close()
-        self.db.close()
+        """Close connection only if not using connection pooling"""
+        if self._should_close_on_exit:
+            try:
+                self.cursor.close()
+                self.db.close()
+            except Exception as e:
+                logger.debug(f"Error closing connection: {e}")
+        else:
+            # For pooled connections, just log that we're keeping it open
+            logger.debug(f"♻️ Keeping pooled connection open for {self.database_name}")
 
     def update_field_by_filters(self, field_name: str, new_value: str, filters: dict):
         """

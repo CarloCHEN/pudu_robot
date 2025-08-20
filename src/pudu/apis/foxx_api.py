@@ -179,7 +179,7 @@ def get_robot_status(sn):
                 'efficiency': efficiency,
                 'remaining_time': result_data.get('remaining_time', 0),
                 'consumption': consumption,
-                'battery_usage': cost_battery, # TODO: add battery_usage in % to database
+                'battery_usage': cost_battery,
                 'water_consumption': result_data.get('cost_water', 0),
                 'progress': round(percentage, 2) if percentage else 0,
                 'status': status,
@@ -272,7 +272,7 @@ def get_ongoing_tasks_table(location_id=None, robot_sn=None):
                             'duration': [task_info.get('duration')],
                             'efficiency': [task_info.get('efficiency')],
                             'remaining_time': [task_info.get('remaining_time')],
-                            'battery_usage': [task_info.get('battery_usage')], # TODO: add battery_usage in % to database
+                            'battery_usage': [task_info.get('battery_usage')],
                             'consumption': [task_info.get('consumption')],
                             'water_consumption': [task_info.get('water_consumption')],
                             'progress': [task_info.get('progress')],
@@ -947,7 +947,6 @@ def get_schedule_table(start_time, end_time, location_id=None, robot_sn=None, ti
                 battery_capacity = 1228.8 / 1000 # kWh
                 consumption = round((latest_task['cost_battery'] / 100)* battery_capacity, 5)  # kWh
 
-                # TODO: insert to database
                 water_consumption = latest_task['cost_water'] # mL
 
                 # Format progress as percentage
@@ -961,11 +960,9 @@ def get_schedule_table(start_time, end_time, location_id=None, robot_sn=None, ti
                 plan_area = round(latest_task['task_area'], 2)
                 actual_area = round(plan_area * (latest_task['percentage'] / 100), 2) #round(latest_task['clean_area'], 2)
 
-                report_start_time = latest_task['start_time']
-                report_end_time = latest_task['end_time']
                 # Calculate efficiency in 100m²/h format:
                 # Convert m² to 100m² and convert seconds to hours
-                clean_time = (report_end_time - report_start_time).total_seconds() if isinstance(report_end_time, pd.Timestamp) else (pd.to_datetime(report_end_time) - pd.to_datetime(report_start_time)).total_seconds()
+                clean_time = latest_task['clean_time']
                 if clean_time > 0:
                     # m² per second * 3600 seconds/hour / 100 = 100m²/h
                     efficiency_value = (actual_area / clean_time) * 3600 #(latest_task['clean_area'] / clean_time) * 3600
@@ -986,13 +983,13 @@ def get_schedule_table(start_time, end_time, location_id=None, robot_sn=None, ti
                     'Map URL': [task_result_url],
                     'Actual Area': [actual_area],
                     'Plan Area': [plan_area],
-                    'Start Time': [report_start_time],
-                    'End Time': [report_end_time],
+                    'Start Time': [latest_task['start_time']],
+                    'End Time': [latest_task['end_time']],
                     'Duration': [clean_time],
                     'Efficiency': [efficiency],
                     'Remaining Time': [remaining_time],
                     'Consumption': [consumption],
-                    'Battery Usage': [latest_task['cost_battery']], # TODO: add raw cost_battery in % to database
+                    'Battery Usage': [latest_task['cost_battery']],
                     'Water Consumption': [water_consumption],
                     'Progress': [progress],
                     'Status': [status_str],

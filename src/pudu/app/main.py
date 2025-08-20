@@ -1,13 +1,17 @@
+# src/pudu/app/main.py
 from pudu.apis import get_schedule_table, get_charging_table, get_events_table, get_location_table, get_robot_status_table, get_ongoing_tasks_table
 from pudu.rds import RDSTable
 from pudu.notifications import send_change_based_notifications, detect_data_changes, NotificationService
 from pudu.configs import DynamicDatabaseConfig
 from pudu.services.task_management_service import TaskManagementService
+from pudu.rds.rdsTable import ConnectionManager
 import logging
 from typing import Dict, List
 from datetime import datetime
 import sys
 import pandas as pd
+import concurrent.futures
+import threading
 
 # Add src to Python path
 sys.path.append('../')
@@ -16,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 class App:
-    """Main application with dynamic database resolution and work location functionality"""
+    """Main application with parallel API processing and dynamic database resolution"""
     def __init__(self, config_path: str = "database_config.yaml"):
         """Initialize the application with dynamic database configuration"""
         logger.info(f"Initializing App with config: {config_path}")
@@ -31,6 +35,51 @@ class App:
         self.all_robots = list(self.robot_db_mapping.keys())
         self.db_to_robots = self.config.resolver.group_robots_by_database(self.all_robots)
         logger.info(f"Found robots in {len(self.db_to_robots)} databases: {list(self.db_to_robots.keys())}")
+
+    def _fetch_all_api_data_parallel(self, start_time: str, end_time: str) -> Dict[str, any]:
+        """
+        Fetch all API data in parallel to reduce total API call time.
+        This is the main optimization - instead of calling APIs sequentially,
+        we call them all at once using ThreadPoolExecutor.
+        """
+        logger.info("🔄 Fetching all API data in parallel...")
+        api_start_time = datetime.now()
+
+        # Define all API calls with their parameters
+        api_calls = {
+            'robot_status': (get_robot_status_table, ()),
+            'ongoing_tasks': (get_ongoing_tasks_table, ()),
+            'schedule': (get_schedule_table, (start_time, end_time, None, None, 0)),
+            'charging': (get_charging_table, (start_time, end_time, None, None, 0)),
+            'events': (get_events_table, (start_time, end_time, None, None, None, None, 0))
+        }
+
+        api_data = {}
+
+        # Use ThreadPoolExecutor to make all API calls simultaneously
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5, thread_name_prefix="api_worker") as executor:
+            # Submit all API calls
+            future_to_name = {}
+            for api_name, (api_func, args) in api_calls.items():
+                future = executor.submit(api_func, *args)
+                future_to_name[future] = api_name
+                logger.debug(f"📡 Submitted API call for {api_name}")
+
+            # Collect results as they complete
+            for future in concurrent.futures.as_completed(future_to_name, timeout=60):
+                api_name = future_to_name[future]
+                try:
+                    result = future.result()
+                    api_data[api_name] = result
+                    logger.info(f"✅ Completed API call for {api_name}: {len(result) if hasattr(result, '__len__') else 'N/A'} records")
+                except Exception as e:
+                    logger.error(f"❌ API call failed for {api_name}: {e}")
+                    api_data[api_name] = pd.DataFrame()  # Empty DataFrame as fallback
+
+        api_total_time = (datetime.now() - api_start_time).total_seconds()
+        logger.info(f"🚀 All API calls completed in {api_total_time:.2f} seconds")
+
+        return api_data
 
     def _get_robots_for_data(self, data_df, robot_sn_column='robot_sn'):
         """Extract robot SNs from data DataFrame"""
@@ -59,7 +108,8 @@ class App:
                     database_name=table_config['database'],
                     table_name=table_config['table_name'],
                     fields=table_config.get('fields'),
-                    primary_keys=table_config['primary_keys']
+                    primary_keys=table_config['primary_keys'],
+                    reuse_connection=True
                 )
                 table.target_robots = table_config.get('robot_sns', [])  # Store which robots this table serves
                 tables.append(table)
@@ -170,7 +220,8 @@ class App:
         return successful_inserts, failed_inserts, all_changes
 
     def _process_location_data(self):
-        """Process location data with proper project_id-based routing
+        """
+        Process location data with proper project_id-based routing
 
         New Logic Flow:
 
@@ -251,7 +302,8 @@ class App:
                 database_name=main_config['database'],
                 table_name=main_config['table_name'],
                 fields=main_config.get('fields'),
-                primary_keys=main_config['primary_keys']
+                primary_keys=main_config['primary_keys'],
+                reuse_connection=True
             )
 
             # Use change detection for main database updates
@@ -275,7 +327,7 @@ class App:
                 logger.info(f"ℹ️ No changes detected for main database location data")
 
             # Close main database connection
-            main_table.close()
+            main_table.close() # This will NOT actually close the pooled connection
 
             return successful_inserts, failed_inserts, all_changes
 
@@ -302,7 +354,8 @@ class App:
                 database_name=main_config['database'],
                 table_name=main_config['table_name'],
                 fields=main_config.get('fields'),
-                primary_keys=main_config['primary_keys']
+                primary_keys=main_config['primary_keys'],
+                reuse_connection=True
             )
 
             # Query all buildings with project assignments
@@ -335,7 +388,7 @@ class App:
                         'project_name': project_name
                     })
 
-            main_table.close()
+            main_table.close() # This will NOT actually close the pooled connection
 
             enriched_df = pd.DataFrame(enriched_data)
             logger.info(f"Retrieved {len(enriched_df)} buildings with project assignments for distribution to project databases")
@@ -376,7 +429,8 @@ class App:
                         database_name=project_config['database'],
                         table_name=project_config['table_name'],
                         fields=project_config.get('fields'),
-                        primary_keys=project_config['primary_keys']
+                        primary_keys=project_config['primary_keys'],
+                        reuse_connection=True
                     )
 
                     # Prepare data for batch processing
@@ -417,14 +471,12 @@ class App:
             logger.error(f"Error processing project database locations: {e}")
             return 0, 1, {}
 
-    def _process_ongoing_robot_tasks(self, table_type: str):
-        """Process ongoing robot tasks with simple upsert logic and change tracking"""
+    def _process_ongoing_robot_tasks(self, table_type: str, ongoing_tasks_data):
+        """Process ongoing robot tasks with simple upsert logic and change tracking - using pre-fetched data"""
         logger.info("📋 Processing ongoing robot tasks (simple upsert with change tracking)...")
 
         try:
-            # Get ongoing tasks data
-            raw_data = get_ongoing_tasks_table()
-            processed_data = self._prepare_df_for_database(raw_data, columns_to_remove=['id', 'location_id'])
+            processed_data = self._prepare_df_for_database(ongoing_tasks_data, columns_to_remove=['id', 'location_id'])
 
             if processed_data.empty:
                 logger.info("No ongoing tasks from API - will clean up existing ongoing tasks")
@@ -483,17 +535,11 @@ class App:
             logger.error(f"Error processing ongoing robot tasks: {e}")
             return 0, 1, {}
 
-    def _process_robot_data(self, table_type: str, data_func, robot_column: str, start_time: str = None, end_time: str = None, columns_to_remove: list = []):
-        """Process robot-specific data with dynamic database routing"""
+    def _process_robot_data_with_prefetched(self, table_type: str, raw_data, robot_column: str, columns_to_remove: list = []):
+        """Process robot-specific data with dynamic database routing - using pre-fetched data"""
         logger.info(f"📋 Processing {table_type} data...")
 
         try:
-            # Get data
-            if start_time and end_time:
-                raw_data = data_func(start_time, end_time, timezone_offset=0)
-            else:
-                raw_data = data_func()
-
             processed_data = self._prepare_df_for_database(raw_data, columns_to_remove=columns_to_remove)
 
             if processed_data.empty:
@@ -529,9 +575,13 @@ class App:
             return 0, 1, {}
 
     def run(self, start_time: str, end_time: str):
-        """Run the dynamic data pipeline"""
+        """Run the dynamic data pipeline with parallel API processing"""
         pipeline_start = datetime.now()
-        logger.info(f"🚀 Starting dynamic data pipeline for period: {start_time} to {end_time}")
+        logger.info(f"🚀 Starting PARALLEL API data pipeline for period: {start_time} to {end_time}")
+
+        # Log connection pool status at start
+        pool_status = ConnectionManager.get_pool_status()
+        logger.info(f"🔗 Connection pool status at start: {pool_status}")
 
         pipeline_stats = {
             'total_successful_inserts': 0,
@@ -541,63 +591,84 @@ class App:
         }
 
         try:
-            # Process each data type
+            # STEP 1: Fetch all API data in parallel (NEW OPTIMIZATION)
+            logger.info("=" * 50)
+            logger.info("🔄 PARALLEL API FETCH PHASE")
             logger.info("=" * 50)
 
-            # 1. Location data (special case)
+            api_data = self._fetch_all_api_data_parallel(start_time, end_time)
+
+            # STEP 2: Process each data type using pre-fetched data
+            logger.info("=" * 50)
+            logger.info("🔄 DATA PROCESSING PHASE")
+            logger.info("=" * 50)
+
+            # 1.1. Location data (special case)
             # successful, failed, changes = self._process_location_data()
             # pipeline_stats['total_successful_inserts'] += successful
             # pipeline_stats['total_failed_inserts'] += failed
             # self._handle_notifications(changes, 'location', pipeline_stats)
 
-            # logger.info("=" * 50)
-
-            # 2. Robot status data
-            successful, failed, changes = self._process_robot_data(
-                'robot_status', get_robot_status_table, 'robot_sn', columns_to_remove=['id', 'location_id']
-            )
-            pipeline_stats['total_successful_inserts'] += successful
-            pipeline_stats['total_failed_inserts'] += failed
-            self._handle_notifications(changes, 'robot_status', pipeline_stats)
-
-            logger.info("=" * 50)
-
-            # 3. Robot task data
-            # 3.1 Ongoing task data from get_ongoing_tasks_table
-            successful, failed, changes = self._process_ongoing_robot_tasks('robot_task')
-            pipeline_stats['total_successful_inserts'] += successful
-            pipeline_stats['total_failed_inserts'] += failed
-            self._handle_notifications(changes, 'robot_task', pipeline_stats)
+            # 1. Robot status data
+            if api_data.get('robot_status') is not None and not api_data['robot_status'].empty:
+                successful, failed, changes = self._process_robot_data_with_prefetched(
+                    'robot_status', api_data['robot_status'], 'robot_sn', columns_to_remove=['id', 'location_id']
+                )
+                pipeline_stats['total_successful_inserts'] += successful
+                pipeline_stats['total_failed_inserts'] += failed
+                self._handle_notifications(changes, 'robot_status', pipeline_stats)
+            else:
+                logger.info("ℹ️ No robot status data to process")
 
             logger.info("=" * 50)
 
-            # 3.2 Report task data from get_schedule_table
-            successful, failed, changes = self._process_robot_data(
-                'robot_task', get_schedule_table, 'robot_sn', start_time, end_time, columns_to_remove=['id', 'location_id']
-            )
-            pipeline_stats['total_successful_inserts'] += successful
-            pipeline_stats['total_failed_inserts'] += failed
-            self._handle_notifications(changes, 'robot_task', pipeline_stats, start_time, end_time)
+            # 2. Ongoing task data
+            if api_data.get('ongoing_tasks') is not None and not api_data['ongoing_tasks'].empty:
+                successful, failed, changes = self._process_ongoing_robot_tasks('robot_task', api_data['ongoing_tasks'])
+                pipeline_stats['total_successful_inserts'] += successful
+                pipeline_stats['total_failed_inserts'] += failed
+                self._handle_notifications(changes, 'robot_task', pipeline_stats)
+            else:
+                logger.info("ℹ️ No ongoing tasks data to process")
+
+            logger.info("=" * 50)
+
+            # 3. Report task data
+            if api_data.get('schedule') is not None and not api_data['schedule'].empty:
+                successful, failed, changes = self._process_robot_data_with_prefetched(
+                    'robot_task', api_data['schedule'], 'robot_sn', columns_to_remove=['id', 'location_id']
+                )
+                pipeline_stats['total_successful_inserts'] += successful
+                pipeline_stats['total_failed_inserts'] += failed
+                self._handle_notifications(changes, 'robot_task', pipeline_stats, start_time, end_time)
+            else:
+                logger.info("ℹ️ No schedule data to process")
 
             logger.info("=" * 50)
 
             # 4. Robot charging data
-            successful, failed, changes = self._process_robot_data(
-                'robot_charging', get_charging_table, 'robot_sn', start_time, end_time, columns_to_remove=['id', 'location_id']
-            )
-            pipeline_stats['total_successful_inserts'] += successful
-            pipeline_stats['total_failed_inserts'] += failed
-            self._handle_notifications(changes, 'robot_charging', pipeline_stats, start_time, end_time)
+            if api_data.get('charging') is not None and not api_data['charging'].empty:
+                successful, failed, changes = self._process_robot_data_with_prefetched(
+                    'robot_charging', api_data['charging'], 'robot_sn', columns_to_remove=['id', 'location_id']
+                )
+                pipeline_stats['total_successful_inserts'] += successful
+                pipeline_stats['total_failed_inserts'] += failed
+                self._handle_notifications(changes, 'robot_charging', pipeline_stats, start_time, end_time)
+            else:
+                logger.info("ℹ️ No charging data to process")
 
             logger.info("=" * 50)
 
             # 5. Robot events data
-            successful, failed, changes = self._process_robot_data(
-                'robot_events', get_events_table, 'robot_sn', start_time, end_time, columns_to_remove=['id', 'location_id']
-            )
-            pipeline_stats['total_successful_inserts'] += successful
-            pipeline_stats['total_failed_inserts'] += failed
-            self._handle_notifications(changes, 'robot_events', pipeline_stats, start_time, end_time)
+            if api_data.get('events') is not None and not api_data['events'].empty:
+                successful, failed, changes = self._process_robot_data_with_prefetched(
+                    'robot_events', api_data['events'], 'robot_sn', columns_to_remove=['id', 'location_id']
+                )
+                pipeline_stats['total_successful_inserts'] += successful
+                pipeline_stats['total_failed_inserts'] += failed
+                self._handle_notifications(changes, 'robot_events', pipeline_stats, start_time, end_time)
+            else:
+                logger.info("ℹ️ No events data to process")
 
             logger.info("=" * 50)
 
@@ -610,8 +681,12 @@ class App:
             pipeline_end = datetime.now()
             execution_time = (pipeline_end - pipeline_start).total_seconds()
 
+            # Log final connection pool status
+            final_pool_status = ConnectionManager.get_pool_status()
+            logger.info(f"🔗 Connection pool status at end: {final_pool_status}")
+
             logger.info("=" * 60)
-            logger.info("📊 DYNAMIC PIPELINE EXECUTION SUMMARY")
+            logger.info("📊 PARALLEL API PIPELINE EXECUTION SUMMARY")
             logger.info("=" * 60)
             logger.info(f"⏱️  Execution time: {execution_time:.2f} seconds")
             logger.info(f"✅ Total successful inserts: {pipeline_stats['total_successful_inserts']}")
@@ -619,19 +694,25 @@ class App:
             logger.info(f"📧 Total successful notifications: {pipeline_stats['total_successful_notifications']}")
             logger.info(f"📧 Total failed notifications: {pipeline_stats['total_failed_notifications']}")
             logger.info(f"🗺️ Work location updates success: {work_location_success}")
+            logger.info(f"🔗 Active database connections: {pool_status['active_connections']}")
 
             success = pipeline_stats['total_failed_inserts'] == 0 and work_location_success == True
             if success:
-                logger.info("✅ Lambda service completed successfully")
+                logger.info("✅ Parallel API Lambda service completed successfully")
             else:
-                logger.warning("⚠️ Lambda service completed with some failures")
+                logger.warning("⚠️ Parallel API Lambda service completed with some failures")
 
             return success
 
         except Exception as e:
-            logger.error(f"💥 Critical error in dynamic data pipeline: {e}", exc_info=True)
+            logger.error(f"💥 Critical error in parallel API data pipeline: {e}", exc_info=True)
             raise
         finally:
+            # IMPORTANT: Close all connections at the end of Lambda execution
+            # This ensures clean state for next invocation while allowing reuse during execution
+            logger.info("🔒 Closing all pooled connections...")
+            ConnectionManager.close_all_connections()
+
             # Close resolver connection
             self.config.close()
 
@@ -679,5 +760,5 @@ if __name__ == "__main__":
     # Initialize app
     app = App(config_path=config_path)
 
-    # Run standard pipeline
+    # Run parallel API pipeline
     app.run(start_time="2025-06-01 00:00:00", end_time="2025-12-01 00:00:00")
