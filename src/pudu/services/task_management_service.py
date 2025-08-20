@@ -16,7 +16,150 @@ class TaskManagementService:
     3. Handle time overlap detection between estimated and actual times
     """
     @staticmethod
-    def upsert_ongoing_tasks(table: RDSTable, ongoing_tasks_data: List[dict]):
+    def manage_ongoing_tasks_complete(table: RDSTable, ongoing_tasks_data: List[dict], robots_needing_cleanup: List[str]):
+        """
+        Complete management of ongoing tasks:
+        1. Upsert ongoing tasks from API data
+        2. Cleanup ongoing tasks for robots not in API data
+
+        Args:
+            table: Database table instance
+            ongoing_tasks_data: List of ongoing task data from API
+            robots_needing_cleanup: List of robot SNs that need cleanup (no ongoing tasks from API)
+
+        Returns:
+            Dict[str, Dict]: Changes detected from upsert operations only (cleanup doesn't generate notifications)
+        """
+        all_changes = {}
+
+        # 1. Process robots with ongoing tasks (upsert) - track changes for notifications
+        if ongoing_tasks_data:
+            upsert_changes = TaskManagementService._upsert_ongoing_tasks(table, ongoing_tasks_data)
+            all_changes.update(upsert_changes)
+
+        # 2. Cleanup robots without ongoing tasks - no change tracking needed
+        if robots_needing_cleanup:
+            TaskManagementService._cleanup_ongoing_tasks_for_robots(table, robots_needing_cleanup)
+
+        return all_changes
+
+    @staticmethod
+    def _cleanup_ongoing_tasks_for_robots(table: RDSTable, robot_sns: List[str]):
+        """
+        Cleanup ongoing tasks for robots that no longer have ongoing tasks from API
+
+        Args:
+            table: Database table instance
+            robot_sns: List of robot serial numbers to cleanup
+
+        Note: No change tracking needed since cleanup operations don't generate notifications
+        """
+        if not robot_sns:
+            return
+
+        # Build placeholders for batch query
+        robot_placeholders = "', '".join(robot_sns)
+
+        try:
+            # Batch check: find which robots actually have ongoing tasks
+            check_query = f"""
+                SELECT robot_sn, COUNT(*) as task_count
+                FROM {table.table_name}
+                WHERE robot_sn IN ('{robot_placeholders}')
+                AND is_report = 0
+                GROUP BY robot_sn
+            """
+
+            result = table.query_data(check_query)
+
+            # Extract robots that have ongoing tasks
+            robots_with_tasks = []
+            task_counts = {}
+
+            for row in result:
+                if isinstance(row, tuple):
+                    robot_sn, count = row[0], row[1]
+                elif isinstance(row, dict):
+                    robot_sn = row.get('robot_sn')
+                    count = row.get('task_count') or row.get('COUNT(*)', 0)
+                else:
+                    continue
+
+                if robot_sn and count > 0:
+                    robots_with_tasks.append(robot_sn)
+                    task_counts[robot_sn] = count
+
+            if not robots_with_tasks:
+                logger.info(f"No ongoing tasks found for any of the {len(robot_sns)} robots")
+                return
+
+            # Batch delete: only for robots that have tasks
+            robots_to_delete = "', '".join(robots_with_tasks)
+            delete_query = f"""
+                DELETE FROM {table.table_name}
+                WHERE robot_sn IN ('{robots_to_delete}')
+                AND is_report = 0
+            """
+
+            table.query_data(delete_query)
+
+            # Log success details
+            total_tasks_cleaned = sum(task_counts.values())
+            logger.info(f"Cleaned up {total_tasks_cleaned} ongoing tasks for {len(robots_with_tasks)} robots")
+
+            # Log which robots had no tasks (for debugging)
+            robots_with_no_tasks = [robot for robot in robot_sns if robot not in robots_with_tasks]
+            if robots_with_no_tasks:
+                logger.debug(f"No ongoing tasks to cleanup for {len(robots_with_no_tasks)} robots")
+
+        except Exception as e:
+            # If batch operation fails, fall back to individual processing for error tracking
+            logger.warning(f"Batch cleanup failed, falling back to individual processing: {e}")
+
+            failed_robots = []
+            cleaned_up_robots = []
+
+            for robot_sn in robot_sns:
+                try:
+                    # Individual check and delete
+                    check_query = f"""
+                        SELECT COUNT(*) FROM {table.table_name}
+                        WHERE robot_sn = '{robot_sn}'
+                        AND is_report = 0
+                    """
+
+                    result = table.query_data(check_query)
+                    count = 0
+                    if result:
+                        if isinstance(result[0], tuple):
+                            count = result[0][0]
+                        elif isinstance(result[0], dict):
+                            count = result[0].get('COUNT(*)', 0) or result[0].get('count', 0)
+                        else:
+                            count = result[0] if isinstance(result[0], int) else 0
+
+                    if count > 0:
+                        delete_query = f"""
+                            DELETE FROM {table.table_name}
+                            WHERE robot_sn = '{robot_sn}'
+                            AND is_report = 0
+                        """
+
+                        table.query_data(delete_query)
+                        cleaned_up_robots.append(robot_sn)
+
+                except Exception as individual_error:
+                    failed_robots.append(robot_sn)
+                    logger.warning(f"Failed to cleanup ongoing tasks for robot {robot_sn}: {individual_error}")
+
+            # Report individual processing results
+            if cleaned_up_robots:
+                logger.info(f"Individually cleaned up ongoing tasks for {len(cleaned_up_robots)} robots")
+            if failed_robots:
+                logger.error(f"Failed to cleanup ongoing tasks for {len(failed_robots)} robots: {failed_robots}")
+
+    @staticmethod
+    def _upsert_ongoing_tasks(table: RDSTable, ongoing_tasks_data: List[dict]):
         """
         Upsert ongoing tasks: update existing ongoing task or insert new one.
         Logic: Robot can only have 1 ongoing task, so update the most recent ongoing task if exists.
@@ -72,18 +215,21 @@ class TaskManagementService:
                                 'start_time': ongoing_task['start_time']
                             },
                             'change_type': 'update',
-                            'changed_fields': ['progress', 'status'] if existing_status != ongoing_task['status'] else ['progress'],  # Simplified
-                            'old_values': {},  # We don't have old values easily available
+                            'changed_fields': ['progress', 'status'] if existing_status != ongoing_task['status'] else ['progress'],
+                            'old_values': {},
                             'new_values': ongoing_task,
                             'database_key': existing_id
                         }
 
                         logger.debug(f"✅ Updated ongoing task progress for robot {robot_sn}: {ongoing_task.get('progress', 0)}%")
                     else:
-                        # Different task - insert new task but delete the old one
-                        TaskManagementService.delete_ongoing_task(table, robot_sn, existing_task_name)
-                        # insert new task
+                        # Different task - delete old task and insert new one
+                        TaskManagementService._delete_ongoing_task(table, robot_sn, existing_task_name)
+                        logger.info(f"🗑️ Deleted ongoing task for robot {robot_sn}: {existing_task_name} before inserting new one")
+
+                        # Insert new task
                         new_id = TaskManagementService._insert_new_ongoing_task_with_id(table, ongoing_task)
+                        logger.info(f"🆕 Inserted new ongoing task for robot {robot_sn}: {ongoing_task['task_name']}")
 
                         # Create change record for new task
                         unique_id = f"{robot_sn}_{ongoing_task['task_id']}_{ongoing_task['start_time']}"
@@ -100,11 +246,10 @@ class TaskManagementService:
                             'new_values': ongoing_task,
                             'database_key': new_id
                         }
-
-                        logger.debug(f"🔄 Robot {robot_sn} has new task: {ongoing_task['task_name']}")
                 else:
                     # No existing ongoing task - insert new one
                     new_id = TaskManagementService._insert_new_ongoing_task_with_id(table, ongoing_task)
+                    logger.info(f"🆕 Inserted new ongoing task for robot (no existing task) {robot_sn}: {ongoing_task['task_name']}")
 
                     # Create change record for new task
                     unique_id = f"{robot_sn}_{ongoing_task['task_id']}_{ongoing_task['start_time']}"
@@ -122,15 +267,13 @@ class TaskManagementService:
                         'database_key': new_id
                     }
 
-                    logger.debug(f"🆕 Inserted new ongoing task for robot {robot_sn}: {ongoing_task['task_name']}")
-
             except Exception as e:
                 logger.warning(f"⚠️ Error upserting ongoing task for robot {robot_sn}: {e}")
 
         return changes_detected
 
     @staticmethod
-    def delete_ongoing_task(table: RDSTable, robot_sn: str, task_name: str):
+    def _delete_ongoing_task(table: RDSTable, robot_sn: str, task_name: str):
         """Delete an ongoing task."""
         query = f"""
             DELETE FROM {table.table_name}

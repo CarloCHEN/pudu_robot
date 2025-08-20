@@ -87,19 +87,47 @@ class App:
             return data_df[robot_sn_column].unique().tolist()
         return []
 
-    def _initialize_tables_for_data(self, table_type: str, data_df, robot_sn_column='robot_sn') -> List[RDSTable]:
-        """Initialize tables for specific data, only for databases that have relevant robots"""
-        if data_df.empty:
+    def _initialize_tables_for_robots(self, table_type: str, robots: List[str]) -> tuple:
+        """
+        Initialize tables for specified robots.
+
+        Args:
+            table_type (str): Type of table to initialize (e.g., 'robot_status', 'robot_task', etc.)
+            robots (List[str]): List of robot SNs to initialize tables for
+
+        Returns:
+            tuple: (success: bool, tables: List[RDSTable])
+
+        Usage examples:
+            # For specific robots
+            success, tables = self._initialize_tables_for_robots('robot_task', ['robot1', 'robot2'])
+
+            # For all monitored robots
+            success, tables = self._initialize_tables_for_robots('robot_task', self.all_robots)
+
+            # For robots from data
+            robots_in_data = processed_data['robot_sn'].unique().tolist()
+            success, tables = self._initialize_tables_for_robots('robot_status', robots_in_data)
+        """
+        if not robots:
+            logger.info(f"No robots provided for {table_type}")
             return True, []
 
-        robots_in_data = self._get_robots_for_data(data_df, robot_sn_column)
-        # only get table configs for robots that exist in the data
-        # since we call apis for all robots, we need to filter out the robots that do not exist in the database
-        robots_in_data = [robot for robot in robots_in_data if robot in self.all_robots]
-        if len(robots_in_data) == 0:
-            return True, []
-        table_configs = self.config.get_table_configs_for_robots(table_type, robots_in_data)
+        # Filter to only robots that exist in our mapping
+        robots_in_mapping = [robot for robot in robots if robot in self.all_robots]
 
+        if not robots_in_mapping:
+            logger.info(f"No robots found in database mapping for {table_type}")
+            return True, []
+
+        # Get table configurations for these robots
+        table_configs = self.config.get_table_configs_for_robots(table_type, robots_in_mapping)
+
+        if not table_configs:
+            logger.warning(f"No table configurations found for {table_type}")
+            return False, []
+
+        # Initialize tables
         tables = []
         for table_config in table_configs:
             try:
@@ -111,13 +139,13 @@ class App:
                     primary_keys=table_config['primary_keys'],
                     reuse_connection=True
                 )
-                table.target_robots = table_config.get('robot_sns', [])  # Store which robots this table serves
+                table.target_robots = table_config.get('robot_sns', [])
                 tables.append(table)
                 logger.info(f"✅ Initialized {table_type} table: {table_config['database']}.{table_config['table_name']} for {len(table.target_robots)} robots")
             except Exception as e:
                 logger.error(f"❌ Failed to initialize {table_type} table {table_config['database']}.{table_config['table_name']}: {e}")
 
-        if len(tables) > 0:
+        if tables:
             return True, tables
         else:
             return False, []
@@ -472,18 +500,29 @@ class App:
             return 0, 1, {}
 
     def _process_ongoing_robot_tasks(self, table_type: str, ongoing_tasks_data):
-        """Process ongoing robot tasks with simple upsert logic and change tracking - using pre-fetched data"""
-        logger.info("📋 Processing ongoing robot tasks (simple upsert with change tracking)...")
+        """
+        Process ongoing robot tasks with complete upsert and cleanup logic.
+
+        Logic:
+        1. For robots with ongoing tasks from API: upsert (update existing or insert new)
+        2. For robots without ongoing tasks from API: cleanup existing ongoing tasks in database
+        3. Track all changes for notifications
+        """
+        logger.info("📋 Processing ongoing robot tasks (complete upsert with cleanup)...")
 
         try:
             processed_data = self._prepare_df_for_database(ongoing_tasks_data, columns_to_remove=['id', 'location_id'])
 
-            if processed_data.empty:
-                logger.info("No ongoing tasks from API - will clean up existing ongoing tasks")
-                return 0, 0, {}
+            # Get all robots that have data OR need cleanup
+            robots_with_tasks = set()
+            if not processed_data.empty:
+                robots_with_tasks = self._get_robots_for_data(processed_data, 'robot_sn')
 
-            # Initialize tables for robots in this data
-            success, tables = self._initialize_tables_for_data(table_type, processed_data, robot_sn_column='robot_sn')
+            logger.info(f"Robots with ongoing tasks from API: {len(robots_with_tasks)}")
+            logger.info(f"Total monitored robots: {len(self.all_robots)}")
+
+            # Initialize tables for all monitored robots (not just those with current tasks)
+            success, tables = self._initialize_tables_for_robots(table_type, self.all_robots)
             if not success:
                 logger.warning(f"No tables initialized for {table_type}")
                 return 0, 1, {}
@@ -498,22 +537,26 @@ class App:
             for table in tables:
                 try:
                     target_robots = getattr(table, 'target_robots', [])
-                    # Filter data to only include robots in target_robots
-                    if target_robots:
-                        table_data = processed_data[processed_data['robot_sn'].isin(target_robots)].copy()
-                    else:
-                        table_data = processed_data.copy()
-
-                    if table_data.empty:
-                        logger.info(f"ℹ️ No relevant data for {table.database_name}.{table.table_name}")
-                        successful_operations += 1  # Count as successful since no data needed
+                    if not target_robots:
+                        logger.info(f"ℹ️ No target robots for {table.database_name}.{table.table_name}")
+                        successful_operations += 1
                         continue
 
-                    # Convert to list of dicts
-                    data_list = table_data.to_dict(orient='records')
+                    # Separate robots with tasks vs robots needing cleanup
+                    table_robots_with_tasks = [robot for robot in target_robots if robot in robots_with_tasks]
+                    table_robots_needing_cleanup = [robot for robot in target_robots if robot not in robots_with_tasks]
 
-                    # Use TaskManagementService to handle simple upsert logic with change tracking
-                    changes = TaskManagementService.upsert_ongoing_tasks(table, data_list)
+                    # Process robots with ongoing tasks
+                    table_data = None
+                    if table_robots_with_tasks and not processed_data.empty:
+                        table_data = processed_data[processed_data['robot_sn'].isin(table_robots_with_tasks)].copy()
+
+                    # Use TaskManagementService to handle complete ongoing task management
+                    changes = TaskManagementService.manage_ongoing_tasks_complete(
+                        table,
+                        table_data.to_dict(orient='records') if table_data is not None and not table_data.empty else [],
+                        table_robots_needing_cleanup
+                    )
 
                     successful_operations += 1
                     logger.info(f"✅ Processed ongoing tasks for {table.database_name}.{table.table_name}")
@@ -546,8 +589,11 @@ class App:
                 logger.info(f"No {table_type} data to process")
                 return 0, 0, {}
 
+            # Extract robots from the data
+            robots_in_data = self._get_robots_for_data(processed_data, robot_column)
+
             # Initialize tables for robots in this data
-            success, tables = self._initialize_tables_for_data(table_type, processed_data, robot_column)
+            success, tables = self._initialize_tables_for_robots(table_type, robots_in_data)
 
             if not success:
                 logger.warning(f"No tables initialized for {table_type}")
