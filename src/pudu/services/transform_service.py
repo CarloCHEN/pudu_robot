@@ -4,9 +4,9 @@ import numpy as np
 import pandas as pd
 import requests
 import xml.etree.ElementTree as ET
-import cv2
 import json
 import io
+import cv2
 from PIL import Image
 from typing import Dict, List, Tuple, Optional, Any
 import concurrent.futures
@@ -146,14 +146,18 @@ class TransformService:
                     continue
 
                 # Perform map transformation
-                transformed_image = self._transform_task_map(map_name, map_url)
+                transformed_image = self._transform_task_map_cv2(map_name, map_url)
+
+                # # Save locally
+                # pil_image = Image.fromarray(transformed_image.astype(np.uint8))
+                # filename = f"transformed_map_{map_name}_{task_id}.png"
+                # pil_image.save(filename)
 
                 if transformed_image is not None:
                     # Upload to S3 and get public URL (with deduplication)
                     s3_url = self._upload_transformed_image_to_s3(
                         transformed_image, map_name, task_id, robot_sn, database_name, map_url
                     )
-
                     if s3_url:
                         # Update the result DataFrame with S3 URL
                         mask = (
@@ -354,11 +358,58 @@ class TransformService:
             logger.debug(f"Error transforming position for map {map_name}: {e}")
             return None, None
 
-    def _transform_task_map(self, map_name: str, map_url: str) -> Optional[np.ndarray]:
+    def _transform_task_map_pil_only(self, map_name: str, map_url: str) -> Optional[np.ndarray]:
+        """
+        Transform task map to floor plan overlay using only PIL (corrected version).
+        """
+        try:
+            map_info = self._get_map_info(map_name)
+            if not map_info:
+                return None
+
+            task_report_png_bytes = self._fetch_png_from_url(map_url)
+            floor_plan_png_bytes = self._fetch_png_from_url(map_info['floor_map'])
+
+            if not task_report_png_bytes or not floor_plan_png_bytes:
+                return None
+
+            task_img_rgb = np.array(Image.open(io.BytesIO(task_report_png_bytes)).convert('RGB'))
+            floor_img_rgb = np.array(Image.open(io.BytesIO(floor_plan_png_bytes)).convert('RGB'))
+
+            # Find green pixels in task image
+            green = np.array([28, 195, 61], dtype=np.uint8)
+            green_mask = np.all(task_img_rgb == green, axis=-1)
+
+            # Simple resize task image to floor image size
+            task_resized = np.array(Image.fromarray(task_img_rgb).resize(
+                (floor_img_rgb.shape[1], floor_img_rgb.shape[0]),
+                Image.NEAREST
+            ))
+
+            # Find green in resized image
+            green_mask_resized = np.all(task_resized == green, axis=-1)
+
+            # Apply overlay
+            overlay = floor_img_rgb.copy()
+            overlay[green_mask_resized] = green
+
+            # Alpha blend
+            alpha = 0.5
+            blended = (overlay.astype(np.float32) * alpha +
+                      floor_img_rgb.astype(np.float32) * (1 - alpha)).astype(np.uint8)
+
+            return blended
+
+        except Exception as e:
+            logger.debug(f"Error in simple overlay: {e}")
+            return None
+
+    def _transform_task_map_cv2(self, map_name: str, map_url: str) -> Optional[np.ndarray]:
         """
         Transform task map to floor plan overlay.
         Based on the convert_task_report_to_floor_plan method from the original code.
         """
+
         try:
             # Get map info (cached)
             map_info = self._get_map_info(map_name)
@@ -404,7 +455,7 @@ class TransformService:
             return blended
 
         except Exception as e:
-            logger.debug(f"Error transforming task map {map_name}: {e}")
+            logger.info(f"Error transforming task map {map_name}: {e}")
             return None
 
     def _get_map_info(self, map_name: str) -> Optional[Dict[str, Any]]:

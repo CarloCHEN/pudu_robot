@@ -1,3 +1,4 @@
+# pudu-webhook-api/database_writer.py
 from datetime import datetime
 import logging
 import time
@@ -12,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class DatabaseWriter:
-    """Enhanced database writer with change detection and proper data transformation"""
+    """Enhanced database writer with change detection and coordinate transformation"""
 
     def __init__(self, config_path: str = "database_config.yaml"):
         self.config = DatabaseConfig(config_path)
@@ -69,13 +70,10 @@ class DatabaseWriter:
 
                 # Handle different return types
                 if isinstance(first_row, (tuple, list)):
-                    # Result is tuple/list: (robot_name,) or [robot_name]
                     robot_name = first_row[0] if len(first_row) > 0 else None
                 elif isinstance(first_row, dict):
-                    # Result is dict: {'robot_name': 'value'}
                     robot_name = first_row.get('robot_name')
                 else:
-                    # Result is direct value
                     robot_name = first_row
 
                 # Return robot_name if it exists and is not empty, otherwise fallback to robot_sn
@@ -87,10 +85,8 @@ class DatabaseWriter:
 
         except Exception as e:
             logger.warning(f"Could not retrieve robot_name for {robot_sn} using config: {e}")
-            logger.warning(f"Error details: {type(e).__name__}: {str(e)}")
 
         return robot_sn  # Fallback to robot_sn if name not found
-
 
     def _transform_robot_status_data(self, robot_sn: str, status_data: Dict[str, Any]) -> Dict[str, Any]:
         """Transform callback status data to database format"""
@@ -103,24 +99,38 @@ class DatabaseWriter:
         return {k: v for k, v in db_data.items() if v is not None}
 
     def _transform_robot_pose_data(self, robot_sn: str, pose_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Transform callback pose data to database format"""
+        """Transform callback pose data to database format with coordinate transformation"""
+        # Basic database data structure
         db_data = {
             "robot_sn": robot_sn,
             "x": pose_data.get("x"),
             "y": pose_data.get("y"),
             "z": pose_data.get("z"),  # Note: callback uses 'yaw' but db expects 'z'
-            # convert to timestamp
             "update_time": datetime.fromtimestamp(pose_data.get("timestamp", int(time.time()))).strftime('%Y-%m-%d %H:%M:%S')
         }
 
         # Handle the yaw -> z mapping if needed
-        if "yaw" in pose_data and "z" not in db_data:
+        if "yaw" in pose_data and db_data["z"] is None:
             db_data["z"] = pose_data["yaw"]
 
-        # Transform robot coordinates
-        transformed_data = self.transform_service.transform_robot_coordinates_batch(pd.DataFrame([db_data]))
-        db_data["new_x"] = transformed_data["new_x"].values[0]
-        db_data["new_y"] = transformed_data["new_y"].values[0]
+        # Apply coordinate transformation
+        try:
+            transformed_data = self.transform_service.transform_robot_coordinates_single(db_data)
+
+            # Add transformed coordinates to database data
+            db_data["new_x"] = transformed_data.get("new_x")
+            db_data["new_y"] = transformed_data.get("new_y")
+
+            if db_data["new_x"] is not None and db_data["new_y"] is not None:
+                logger.debug(f"Applied coordinate transformation for robot {robot_sn}: ({db_data['x']}, {db_data['y']}) → ({db_data['new_x']}, {db_data['new_y']})")
+            else:
+                logger.debug(f"No coordinate transformation applied for robot {robot_sn}")
+
+        except Exception as e:
+            logger.warning(f"Error applying coordinate transformation for robot {robot_sn}: {e}")
+            # Set to None if transformation fails
+            db_data["new_x"] = None
+            db_data["new_y"] = None
 
         # Remove None values
         return {k: v for k, v in db_data.items() if v is not None}
@@ -152,7 +162,7 @@ class DatabaseWriter:
         return {k: v for k, v in db_data.items() if v is not None}
 
     def write_robot_status(self, robot_sn: str, status_data: Dict[str, Any]) -> Tuple[List[str], List[str], Dict]:
-        """Write robot status data with change detection and get database IDs"""
+        """Write robot status data with change detection  and get database IDs"""
         return self._write_with_change_detection(
             'robot_status',
             robot_sn,
@@ -161,33 +171,36 @@ class DatabaseWriter:
         )
 
     def write_robot_pose(self, robot_sn: str, pose_data: Dict[str, Any]) -> Tuple[List[str], List[str], Dict]:
-        """Write robot pose data with change detection and get database IDs"""
-        # write to robot_status table first
-        database_names, table_names, changes_detected = self._write_with_change_detection(
-            'robot_status',  # Pose data goes to robot_work_location table
-            robot_sn,
-            pose_data,
-            self._transform_robot_pose_data
-        )
-        # write to robot_work_location table
-        return self._write_with_change_detection(
-            'robot_work_location',  # Pose data goes to robot_work_location table
+        """Write robot pose data with change detection and coordinate transformation"""
+        # Write to robot_status table first (for status updates)
+        status_db_names, status_table_names, status_changes = self._write_with_change_detection(
+            'robot_status',
             robot_sn,
             pose_data,
             self._transform_robot_pose_data
         )
 
+        # Write to robot_work_location table (for location tracking with coordinates)
+        location_db_names, location_table_names, location_changes = self._write_with_change_detection(
+            'robot_work_location',
+            robot_sn,
+            pose_data,
+            self._transform_robot_pose_data
+        )
+
+        return location_db_names, location_table_names, location_changes
+
     def write_robot_power(self, robot_sn: str, power_data: Dict[str, Any]) -> Tuple[List[str], List[str], Dict]:
-        """Write robot power data with change detection and get database IDs"""
+        """Write robot power data with change detection"""
         return self._write_with_change_detection(
-            'robot_status',  # Power data goes to robot_status table
+            'robot_status',
             robot_sn,
             power_data,
             self._transform_robot_power_data
         )
 
     def write_robot_event(self, robot_sn: str, event_data: Dict[str, Any]) -> Tuple[List[str], List[str], Dict]:
-        """Write robot event data with change detection and get database IDs"""
+        """Write robot event data with change detection"""
         return self._write_with_change_detection(
             'robot_events',
             robot_sn,
@@ -206,7 +219,7 @@ class DatabaseWriter:
         except Exception as e:
             logger.warning(f"Could not get columns for {table.table_name}: {e}")
 
-        # Fallback: return empty list or known columns
+        # Fallback: return empty list
         return []
 
     def _filter_data_for_table(self, data: Dict[str, Any], table: RDSTable) -> Dict[str, Any]:
@@ -236,12 +249,7 @@ class DatabaseWriter:
         raw_data: Dict[str, Any],
         transform_func
     ) -> Tuple[List[str], List[str], Dict]:
-        """
-        Write data with change detection and return database IDs
-
-        Returns:
-            tuple: (database_names, table_names, changes_detected)
-        """
+        """Write data with change detection and return database information"""
         robot_name = self._get_robot_name(robot_sn)
 
         # Transform the raw callback data to database format
@@ -273,15 +281,14 @@ class DatabaseWriter:
                 if target_robots and robot_sn not in target_robots:
                     continue
 
-                # IMPORTANT: Filter transformed data to only include columns that exist in the table
-                # This prevents detect_data_changes from detecting new columns as changes
+                # Filter transformed data to only include columns that exist in the table
                 filtered_data = self._filter_data_for_table(transformed_data, table)
 
                 if not filtered_data:
                     logger.warning(f"No valid columns found for {table.table_name} after filtering")
                     continue
 
-                # Detect changes using the filtered data (only existing columns)
+                # Detect changes using the filtered data
                 changes = detect_data_changes(
                     table, [filtered_data], table_config['primary_keys']
                 )
@@ -290,7 +297,6 @@ class DatabaseWriter:
                     # Extract changed records for database insertion
                     changed_records = []
                     for change_info in changes.values():
-                        # Use the filtered data (which only contains valid columns)
                         changed_records.append(change_info['new_values'])
 
                     # Use batch_insert_with_ids to get database keys
@@ -299,21 +305,18 @@ class DatabaseWriter:
                     # Map database keys back to changes
                     pk_to_db_id = {}
                     for original_data, db_id in ids:
-                        # Create primary key tuple for matching
                         pk_values = tuple(str(original_data.get(pk, '')) for pk in table.primary_keys)
                         pk_to_db_id[pk_values] = db_id
 
                     # Add database_key to changes dictionary
                     for unique_id, change_info in changes.items():
-                        # Create primary key tuple from change info
                         pk_values = tuple(str(change_info['primary_key_values'].get(pk, '')) for pk in table.primary_keys)
-                        # Add database_key to the change info
                         db_id = pk_to_db_id.get(pk_values)
                         changes[unique_id]['database_key'] = db_id
+                        changes[unique_id]['robot_name'] = robot_name
 
                     database_names.append(table_config['database'])
                     table_names.append(table_config['table_name'])
-                    changes[unique_id]['robot_name'] = robot_name  # Add robot name to changes
 
                     # Store changes with table identifier
                     table_key = (table.database_name, table.table_name)
@@ -321,8 +324,7 @@ class DatabaseWriter:
 
                     logger.info(f"Updated {len(changed_records)} records in {table_config['database']}.{table_config['table_name']}")
                 else:
-                    logger.info(f"changes: {changes}; filtered_data: {filtered_data}; transformed_data: {transformed_data};")
-                    logger.info(f"No changes detected for {table_config['database']}.{table_config['table_name']}")
+                    logger.debug(f"No changes detected for {table_config['database']}.{table_config['table_name']}")
 
             except Exception as e:
                 logger.error(f"Failed to write to {table_config['database']}.{table_config['table_name']}: {e}")
@@ -340,3 +342,9 @@ class DatabaseWriter:
 
         self.table_cache.clear()
         self.config.close()
+
+        # Close transform service
+        try:
+            self.transform_service.close()
+        except Exception as e:
+            logger.warning(f"Error closing transform service: {e}")

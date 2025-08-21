@@ -1,15 +1,13 @@
-# src/pudu/services/transform_service.py
+# pudu-webhook-api/services/transform_service.py
 import logging
 import numpy as np
 import pandas as pd
 import requests
 import xml.etree.ElementTree as ET
-import cv2
 import json
 import io
 from PIL import Image
 from typing import Dict, List, Tuple, Optional, Any
-import concurrent.futures
 import threading
 from rds.rdsTable import RDSTable
 
@@ -17,92 +15,136 @@ logger = logging.getLogger(__name__)
 
 class TransformService:
     """
-    Service for transforming robot coordinates and task maps with S3 integration.
+    Service for transforming robot coordinates in webhook callbacks.
 
     This service handles:
     1. Robot position transformation: x,y,z coordinates → floor plan coordinates (new_x, new_y)
+    2. Map lookup for robots when map_name is not provided in callback
     """
 
     def __init__(self, config):
-        """Initialize transform service with database configuration and S3 service"""
+        """Initialize transform service with database configuration"""
         self.config = config
-        self.supported_databases = self.config.get_transform_supported_databases()
+        self.supported_databases = self._get_transform_supported_databases()
         self._map_info_cache = {}
         self._cache_lock = threading.Lock()
 
-    def transform_robot_coordinates_batch(self, location_data: dict) -> dict:
+    def _get_transform_supported_databases(self) -> List[str]:
+        """Get list of databases that support transformations"""
+        try:
+            return self.config.config.get('transform_supported_databases', [])
+        except Exception as e:
+            logger.warning(f"Could not get transform supported databases: {e}")
+            return []
+
+    def transform_robot_coordinates_single(self, robot_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Transform robot coordinates in batch and add new_x, new_y columns.
+        Transform robot coordinates for a single robot and add new_x, new_y fields.
 
         Args:
-            work_location_data: DataFrame with robot work location data including x, y, z coordinates
+            robot_data: Dict with robot data including robot_sn, x, y, z coordinates
 
         Returns:
-            DataFrame with added new_x, new_y columns
+            Dict with added new_x, new_y fields (None if transformation failed)
         """
-        # Add new coordinate columns initialized to None
-        result_data = location_data.copy()
+        result_data = robot_data.copy()
         result_data['new_x'] = None
         result_data['new_y'] = None
 
-        # Filter robots that need transformation and are in supported databases
-        robots_to_transform = self._filter_robots_for_coordinate_transformation(result_data)
+        try:
+            robot_sn = robot_data.get('robot_sn')
+            if not robot_sn:
+                logger.warning("No robot_sn provided for coordinate transformation")
+                return result_data
 
-        if robots_to_transform.empty:
-            logger.info("No robots need coordinate transformation")
-            return result_data
+            # Check if robot is in a supported database
+            database_name = self._get_database_for_robot(robot_sn)
+            if not database_name or database_name not in self.supported_databases:
+                logger.debug(f"Robot {robot_sn} not in transform-supported database: {database_name}")
+                return result_data
 
-        logger.info(f"Transforming coordinates for {len(robots_to_transform)} robots")
+            # Check if we have valid coordinates
+            x = robot_data.get('x')
+            y = robot_data.get('y')
+            z = robot_data.get('z')
 
-        # Transform coordinates for each robot
-        for _, robot_row in robots_to_transform.iterrows():
-            try:
-                robot_sn = robot_row['robot_sn']
-                database_name = self._get_database_for_robot(robot_sn)
-                if database_name not in self.supported_databases:
-                    logger.warning(f"Database {database_name} not supported for coordinate transformation of robot {robot_sn}")
-                    continue
-                map_name = robot_row['map_name']
-                x = float(robot_row['x'])
-                y = float(robot_row['y'])
+            if x is None or y is None:
+                logger.debug(f"Missing coordinates for robot {robot_sn}: x={x}, y={y}, z={z}")
+                return result_data
 
-                # Transform coordinates
-                new_x, new_y = self._transform_robot_position(map_name, x, y)
+            # Skip if robot is idle at origin (0,0)
+            if float(x) == 0 and float(y) == 0:
+                logger.debug(f"Robot {robot_sn} at origin (0,0), skipping transformation")
+                return result_data
 
-                if new_x is not None and new_y is not None:
-                    # Update the result DataFrame
-                    mask = result_data['robot_sn'] == robot_sn
-                    result_data.loc[mask, 'new_x'] = new_x
-                    result_data.loc[mask, 'new_y'] = new_y
-                    logger.debug(f"✅ Transformed robot {robot_sn}: ({x}, {y}) → ({new_x}, {new_y})")
-                else:
-                    logger.debug(f"⚠️ Could not transform coordinates for robot {robot_sn}")
+            # Get map name (either from data or lookup)
+            map_name = robot_data.get('map_name')
+            if not map_name:
+                map_name = self._get_current_map_for_robot(robot_sn, database_name)
 
-            except Exception as e:
-                logger.warning(f"⚠️ Error transforming robot {robot_row.get('robot_sn', 'unknown')}: {e}")
+            if not map_name:
+                logger.debug(f"No map_name found for robot {robot_sn}")
+                return result_data
 
-        transformed_count = len(result_data[result_data['new_x'].notna()])
-        logger.info(f"🤖 Coordinate transformations completed: {transformed_count} transformed")
+            # Transform coordinates
+            new_x, new_y = self._transform_robot_position(map_name, float(x), float(y))
+
+            if new_x is not None and new_y is not None:
+                result_data['new_x'] = new_x
+                result_data['new_y'] = new_y
+                logger.debug(f"✅ Transformed robot {robot_sn}: ({x}, {y}) → ({new_x}, {new_y})")
+            else:
+                logger.debug(f"⚠️ Could not transform coordinates for robot {robot_sn}")
+
+        except Exception as e:
+            logger.warning(f"⚠️ Error transforming robot {robot_data.get('robot_sn', 'unknown')}: {e}")
+
         return result_data
 
-    def _get_current_map_for_robot(self, robot_sn: str) -> Optional[str]:
-        """Get current map for a robot using the config resolver"""
-        database_name = self._get_database_for_robot(robot_sn)
-        if database_name not in self.supported_databases:
-            return None
-        table = RDSTable(
-            connection_config="credentials.yaml",
-            database_name=database_name,
-            table_name="work_location",
-            fields=None,
-            primary_keys=["robot_sn"]
-        )
-        query = f"""
-            SELECT map_name FROM work_location WHERE robot_sn = '{robot_sn}' AND status != 'idle' ORDER BY update_time DESC LIMIT 1
+    def _get_current_map_for_robot(self, robot_sn: str, database_name: str) -> Optional[str]:
         """
-        result = table.query_data(query)
-        table.close()
-        return result[0][0] if result else None
+        Get current map for a robot from the work_location table
+
+        Args:
+            robot_sn: Robot serial number
+
+        Returns:
+            Current map name if found, None otherwise
+        """
+        try:
+            table = RDSTable(
+                connection_config="credentials.yaml",
+                database_name=database_name,
+                table_name="mnt_robots_work_location",
+                fields=None,
+                primary_keys=["robot_sn"]
+            )
+
+            # Get the most recent work location record for this robot
+            query = f"""
+                SELECT map_name FROM mnt_robots_work_location
+                WHERE robot_sn = '{robot_sn}'
+                AND map_name IS NOT NULL
+                AND map_name != ''
+                ORDER BY update_time DESC
+                LIMIT 1
+            """
+
+            result = table.query_data(query)
+            table.close()
+
+            if result and len(result) > 0:
+                map_name = result[0][0] if isinstance(result[0], tuple) else result[0].get('map_name')
+                if map_name and str(map_name).strip():
+                    logger.debug(f"Found map_name for robot {robot_sn}: {map_name}")
+                    return str(map_name).strip()
+
+            logger.debug(f"No map_name found in work_location for robot {robot_sn}")
+            return None
+
+        except Exception as e:
+            logger.warning(f"Error getting current map for robot {robot_sn}: {e}")
+            return None
 
     def _get_database_for_robot(self, robot_sn: str) -> Optional[str]:
         """Get database name for a robot using the config resolver"""
@@ -113,52 +155,9 @@ class TransformService:
             logger.warning(f"Error getting database for robot {robot_sn}: {e}")
             return None
 
-    def _filter_robots_for_coordinate_transformation(self, robot_data: pd.DataFrame) -> pd.DataFrame:
-        """
-        Filter robots that need coordinate transformation and are in supported databases.
-        """
-        if robot_data.empty:
-            return robot_data
-
-        # First apply basic filtering (same as before)
-        valid_mask = (
-            # Not (x=0 and y=0 and status=idle)
-            ~(
-                (robot_data['x'].fillna(0) == 0) &
-                (robot_data['y'].fillna(0) == 0) &
-                (robot_data['status'].str.lower() == 'idle')
-            ) &
-            # Have valid coordinates
-            (robot_data['x'].notna()) &
-            (robot_data['y'].notna()) &
-            (robot_data['z'].notna()) &
-            # Have valid map_name
-            (robot_data['map_name'].notna()) &
-            (robot_data['map_name'].str.strip() != '')
-        )
-
-        basic_valid_robots = robot_data[valid_mask].copy()
-
-        if basic_valid_robots.empty:
-            return basic_valid_robots
-
-        # Filter by transform support
-        robot_sns = basic_valid_robots['robot_sn'].tolist()
-        supported_robots, _ = self.config.filter_robots_for_transform_support(robot_sns)
-
-        final_valid_robots = basic_valid_robots[
-            basic_valid_robots['robot_sn'].isin(supported_robots)
-        ].copy()
-
-        logger.info(f"Filtered {len(final_valid_robots)} robots for coordinate transformation "
-                   f"(from {len(robot_data)} total, {len(supported_robots)} in supported databases)")
-
-        return final_valid_robots
-
     def _transform_robot_position(self, map_name: str, x: float, y: float) -> Tuple[Optional[float], Optional[float]]:
         """
         Transform robot position from robot coordinates to floor plan coordinates.
-        Based on the position_to_pixel method from the original code.
         """
         try:
             # Get map info (cached)
@@ -209,7 +208,6 @@ class TransformService:
     def _get_map_info(self, map_name: str) -> Optional[Dict[str, Any]]:
         """
         Get map information from database with caching.
-        Based on the fetch_map_info method from the original code.
         """
         with self._cache_lock:
             if map_name in self._map_info_cache:
@@ -224,8 +222,7 @@ class TransformService:
                         database_name=db_name,
                         table_name="pro_floor_info",
                         fields=None,
-                        primary_keys=["robot_map_name"],
-                        reuse_connection=True
+                        primary_keys=["robot_map_name"]
                     )
 
                     query = f"""
@@ -274,6 +271,19 @@ class TransformService:
 
         except Exception as e:
             logger.debug(f"Error getting map info for {map_name}: {e}")
+            return None
+
+    def _fetch_png_from_url(self, url: str) -> Optional[bytes]:
+        """Fetch PNG image from URL."""
+        try:
+            response = requests.get(url, timeout=30)
+            if response.status_code == 200:
+                return response.content
+            else:
+                logger.debug(f'Failed to fetch PNG from {url}, status code: {response.status_code}')
+                return None
+        except Exception as e:
+            logger.debug(f'Error fetching PNG from {url}: {e}')
             return None
 
     def close(self):

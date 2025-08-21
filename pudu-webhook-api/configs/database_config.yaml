@@ -9,6 +9,10 @@ main_database: "ry-vue"
 notification_needed:
   - "project"
 
+# List of databases that support coordinate transformations
+transform_supported_databases:
+  - "university_of_florida"
+  
 # Table configurations
 # Use "main" for main database
 # "project" for dynamically resolved project databases

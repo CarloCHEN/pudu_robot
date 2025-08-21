@@ -76,10 +76,6 @@ pip install pyyaml python-dotenv -t . --quiet
 pip install python-dateutil pytz tzlocal -t . --quiet
 pip install requests -t . --quiet
 
-# for transform service
-pip install opencv-python -t . --quiet
-pip install Pillow -t . --quiet
-
 # Install pandas and numpy with platform-specific wheels for Lambda
 # Using manylinux2014_x86_64 which is compatible with Lambda's Amazon Linux 2
 pip install \
@@ -347,6 +343,49 @@ EOF
     echo "✅ Additional $service permissions added"
 }
 
+# Add this after the Secrets Manager policy section in your deploy script
+
+echo "🔧 Setting up S3 permissions..."
+
+S3_POLICY_DOC=$(cat <<EOF
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:PutObjectAcl",
+                "s3:DeleteObject"
+            ],
+            "Resource": [
+                "arn:aws:s3:::pudu-robot-transforms-*/*"
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "s3:ListBucket",
+                "s3:GetBucketLocation"
+            ],
+            "Resource": [
+                "arn:aws:s3:::pudu-robot-transforms-*"
+            ]
+        }
+    ]
+}
+EOF
+)
+
+aws iam put-role-policy \
+    --role-name $ROLE_NAME \
+    --policy-name "S3TransformBucketsPolicy" \
+    --policy-document "$S3_POLICY_DOC" \
+    --region $REGION >/dev/null
+
+echo "✅ S3 permissions configured for transform buckets"
+
 # Example: Add additional permissions if needed
 # Uncomment and modify as needed:
 # add_additional_permissions "S3" '["s3:GetObject", "s3:PutObject"]' '["arn:aws:s3:::my-bucket/*"]'
@@ -357,6 +396,9 @@ echo "🔧 Deploying Lambda function..."
 
 # Prepare environment variables with SNS topic ARN
 ENV_VARS="Variables={SUPPORT_TICKET_SNS_TOPIC_ARN=${SUPPORT_TOPIC_ARN},NOTIFICATION_API_HOST=${NOTIFICATION_API_HOST},NOTIFICATION_API_ENDPOINT=${NOTIFICATION_API_ENDPOINT},ICONS_CONFIG_PATH=${ICONS_CONFIG_PATH}}"
+
+PILLOW_LAYER_ARN="arn:aws:lambda:us-east-2:908027373537:layer:pudu-pillow-platform:2"
+OPENCV_LAYER_ARN="arn:aws:lambda:us-east-2:908027373537:layer:opencv-layer:1"
 
 if aws lambda get-function --function-name $FUNCTION_NAME --region $REGION >/dev/null 2>&1; then
     echo "Updating existing function..."
@@ -375,6 +417,7 @@ if aws lambda get-function --function-name $FUNCTION_NAME --region $REGION >/dev
         --timeout 900 \
         --memory-size 1024 \
         --environment "$ENV_VARS" \
+        --layers "$PILLOW_LAYER_ARN" "$OPENCV_LAYER_ARN" \
         --region $REGION
 else
     echo "Creating new function..."
@@ -388,6 +431,7 @@ else
         --memory-size 1024 \
         --environment "$ENV_VARS" \
         --description "Pudu Robot Data Pipeline with Support Ticket Monitoring" \
+        --layers "$PILLOW_LAYER_ARN" "$OPENCV_LAYER_ARN" \
         --region $REGION || {
         echo "❌ Lambda creation failed"
         echo "Role ARN: $ROLE_ARN"
