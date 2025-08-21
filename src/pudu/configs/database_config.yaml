@@ -12,6 +12,11 @@ notification_needed:
 transform_supported_databases:
   - "university_of_florida"
 
+s3_config:
+  region: "us-east-2"
+  buckets:
+    university_of_florida: "pudu-robot-transforms-university-of-florida-796835-us-east-2"
+
 # Table configurations
 # "main" - main db, "project" - dynamically resolved project's dbs
 tables:

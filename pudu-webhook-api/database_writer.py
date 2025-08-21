@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Tuple
 from configs.database_config import DatabaseConfig
 from rds.rdsTable import RDSTable
 from notifications.change_detector import detect_data_changes
+from services.transform_service import TransformService
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +16,7 @@ class DatabaseWriter:
 
     def __init__(self, config_path: str = "database_config.yaml"):
         self.config = DatabaseConfig(config_path)
+        self.transform_service = TransformService(self.config)
         self.table_cache = {}  # Cache RDSTable instances
 
     def _get_table(self, database_name: str, table_name: str, fields: List[str], primary_keys: List[str]) -> RDSTable:
@@ -114,6 +116,11 @@ class DatabaseWriter:
         # Handle the yaw -> z mapping if needed
         if "yaw" in pose_data and "z" not in db_data:
             db_data["z"] = pose_data["yaw"]
+
+        # Transform robot coordinates
+        transformed_data = self.transform_service.transform_robot_coordinates_batch(pd.DataFrame([db_data]))
+        db_data["new_x"] = transformed_data["new_x"].values[0]
+        db_data["new_y"] = transformed_data["new_y"].values[0]
 
         # Remove None values
         return {k: v for k, v in db_data.items() if v is not None}

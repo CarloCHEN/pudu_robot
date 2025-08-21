@@ -4,6 +4,7 @@ from pudu.rds import RDSTable
 from pudu.notifications import send_change_based_notifications, detect_data_changes, NotificationService
 from pudu.configs import DynamicDatabaseConfig
 from pudu.services.task_management_service import TaskManagementService
+from pudu.services.transform_service import TransformService
 from pudu.rds.rdsTable import ConnectionManager
 import logging
 from typing import Dict, List
@@ -25,7 +26,9 @@ class App:
         """Initialize the application with dynamic database configuration"""
         logger.info(f"Initializing App with config: {config_path}")
         self.config = DynamicDatabaseConfig(config_path)
+        s3_config = self._load_s3_config(config_path)
         self.notification_service = NotificationService()
+        self.transform_service = TransformService(self.config, s3_config)
 
         # Get all robots and their database mappings
         self.robot_db_mapping = self.config.resolver.get_robot_database_mapping()
@@ -35,6 +38,48 @@ class App:
         self.all_robots = list(self.robot_db_mapping.keys())
         self.db_to_robots = self.config.resolver.group_robots_by_database(self.all_robots)
         logger.info(f"Found robots in {len(self.db_to_robots)} databases: {list(self.db_to_robots.keys())}")
+
+        # Test S3 connectivity for transform-supported databases
+        self._test_s3_connectivity()
+
+    def _load_s3_config(self, config_path: str) -> Dict:
+        """Load S3 configuration from the database config file"""
+        try:
+            import yaml
+            with open(config_path, 'r') as file:
+                config = yaml.safe_load(file)
+                s3_config = config.get('s3_config', {})
+
+                if s3_config:
+                    logger.info(f"Loaded S3 config: region={s3_config.get('region', 'us-east-2')}, "
+                              f"buckets={len(s3_config.get('buckets', {}))}")
+                else:
+                    logger.warning("No S3 configuration found - transformed maps will not be uploaded")
+
+                return s3_config
+
+        except Exception as e:
+            logger.error(f"Error loading S3 config: {e}")
+            return {}
+
+    def _test_s3_connectivity(self):
+        """Test S3 connectivity for all configured databases"""
+        if hasattr(self.transform_service, 's3_service') and self.transform_service.s3_service:
+            logger.info("🔗 Testing S3 connectivity...")
+            connectivity_results = self.transform_service.test_s3_connectivity()
+
+            if connectivity_results:
+                successful = sum(1 for status in connectivity_results.values() if status)
+                total = len(connectivity_results)
+                logger.info(f"S3 connectivity test: {successful}/{total} databases accessible")
+
+                if successful < total:
+                    failed_dbs = [db for db, status in connectivity_results.items() if not status]
+                    logger.warning(f"S3 access issues for databases: {failed_dbs}")
+            else:
+                logger.warning("No S3 connectivity tests performed")
+        else:
+            logger.info("S3 service not configured - skipping connectivity test")
 
     def _fetch_all_api_data_parallel(self, start_time: str, end_time: str) -> Dict[str, any]:
         """
@@ -97,17 +142,6 @@ class App:
 
         Returns:
             tuple: (success: bool, tables: List[RDSTable])
-
-        Usage examples:
-            # For specific robots
-            success, tables = self._initialize_tables_for_robots('robot_task', ['robot1', 'robot2'])
-
-            # For all monitored robots
-            success, tables = self._initialize_tables_for_robots('robot_task', self.all_robots)
-
-            # For robots from data
-            robots_in_data = processed_data['robot_sn'].unique().tolist()
-            success, tables = self._initialize_tables_for_robots('robot_status', robots_in_data)
         """
         if not robots:
             logger.info(f"No robots provided for {table_type}")
@@ -198,8 +232,8 @@ class App:
                 changes = detect_data_changes(table, data_list, table.primary_keys)
 
                 if changes:
-                    # extract the 'new_values' from changes_detected which contains the original records
-                    # do not use data_list, because it can contain some original records
+                    # extract the 'new_values' from changes_detected which only contains the fields that are in the table
+                    # do not use data_list, because it can contain new fields that are not in the table
                     changed_records = []
                     for change_info in changes.values():
                         changed_records.append(change_info['new_values'])
@@ -620,6 +654,56 @@ class App:
             logger.error(f"Error processing {table_type} data: {e}")
             return 0, 1, {}
 
+    def _process_schedule_data_with_transforms(self, table_type: str, raw_data, robot_column: str, columns_to_remove: list = []):
+        """Process schedule data with map transformations applied"""
+        logger.info(f"📋 Processing {table_type} data with map transformations...")
+
+        try:
+            processed_data = self._prepare_df_for_database(raw_data, columns_to_remove=columns_to_remove)
+
+            if processed_data.empty:
+                logger.info(f"No {table_type} data to process")
+                return 0, 0, {}
+
+            # Apply map transformations to schedule data
+            logger.info("🔧 Applying map transformations to schedule data...")
+            transformed_data = self.transform_service.transform_task_maps_batch(processed_data)
+
+            # Log transformation results
+            total_count = len(transformed_data)
+            logger.info(f"Map transformation: {total_count} tasks processed")
+
+            # Extract robots from the data
+            robots_in_data = self._get_robots_for_data(transformed_data, robot_column)
+
+            # Initialize tables for robots in this data
+            success, tables = self._initialize_tables_for_robots(table_type, robots_in_data)
+
+            if not success:
+                logger.warning(f"No tables initialized for {table_type}")
+                return 0, 1, {}
+            elif len(tables) == 0:
+                logger.warning(f"No need to initialize tables for {table_type}")
+                return 0, 0, {}
+
+            # Insert data with robot filtering
+            successful_inserts, failed_inserts, all_changes = self._insert_to_database_with_filtering(
+                transformed_data, tables, table_type, robot_column
+            )
+
+            # Close table connections
+            for table in tables:
+                try:
+                    table.close()
+                except:
+                    pass
+
+            return successful_inserts, failed_inserts, all_changes
+
+        except Exception as e:
+            logger.error(f"Error processing {table_type} data with transforms: {e}")
+            return 0, 1, {}
+
     def run(self, start_time: str, end_time: str):
         """Run the dynamic data pipeline with parallel API processing"""
         pipeline_start = datetime.now()
@@ -679,9 +763,9 @@ class App:
 
             logger.info("=" * 50)
 
-            # 3. Report task data
+            # 3. Report task data WITH MAP TRANSFORMATIONS
             if api_data.get('schedule') is not None and not api_data['schedule'].empty:
-                successful, failed, changes = self._process_robot_data_with_prefetched(
+                successful, failed, changes = self._process_schedule_data_with_transforms(
                     'robot_task', api_data['schedule'], 'robot_sn', columns_to_remove=['id', 'location_id']
                 )
                 pipeline_stats['total_successful_inserts'] += successful
@@ -718,7 +802,7 @@ class App:
 
             logger.info("=" * 50)
 
-            # 6. Robot work location data
+            # 6. Robot work location data WITH COORDINATE TRANSFORMATIONS
             from pudu.services.work_location_service import WorkLocationService
             work_location_service = WorkLocationService()
             work_location_success = work_location_service.run_work_location_updates()

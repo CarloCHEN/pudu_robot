@@ -12,229 +12,224 @@ from typing import Dict, List, Tuple, Optional, Any
 import concurrent.futures
 import threading
 from pudu.rds.rdsTable import RDSTable
-from pudu.configs.database_config_loader import DynamicDatabaseConfig
+from pudu.services.s3_service import S3TransformService
 
 logger = logging.getLogger(__name__)
 
 class TransformService:
     """
-    Service for transforming robot coordinates and task maps with parallel processing capabilities.
+    Service for transforming robot coordinates and task maps with S3 integration.
 
     This service handles:
     1. Robot position transformation: x,y,z coordinates → floor plan coordinates (new_x, new_y)
-    2. Task map conversion: robot task maps → floor plan overlays
+    2. Task map conversion: robot task maps → floor plan overlays → S3 upload → public URLs
     3. Parallel processing for both transformations to improve performance
     """
 
-    def __init__(self, config_path: str = "database_config.yaml"):
-        """Initialize transform service with database configuration"""
-        self.config = DynamicDatabaseConfig(config_path)
+    def __init__(self, config, s3_config: Optional[Dict] = None):
+        """Initialize transform service with database configuration and S3 service"""
+        self.config = config
+        self.supported_databases = self.config.get_transform_supported_databases()
         self._map_info_cache = {}
         self._cache_lock = threading.Lock()
 
-    def run_parallel_transformations(self, robot_status_data: pd.DataFrame,
-                                   schedule_data: pd.DataFrame,
-                                   max_workers: int = 4) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        # Initialize S3 service
+        if s3_config:
+            region = s3_config.get('region', 'us-east-2')
+            bucket_mapping = s3_config.get('buckets', {})
+            self.s3_service = S3TransformService(region)
+            self.s3_service.update_bucket_mapping(bucket_mapping)
+            logger.info(f"Initialized S3 service for region {region} with {len(bucket_mapping)} buckets")
+        else:
+            self.s3_service = None
+            logger.warning("S3 service not initialized - transformed maps will not be uploaded")
+
+    def transform_robot_coordinates_batch(self, work_location_data: pd.DataFrame) -> pd.DataFrame:
         """
-        Run parallel transformations for both robot positions and task maps.
+        Transform robot coordinates in batch and add new_x, new_y columns.
 
         Args:
-            robot_status_data: DataFrame with robot status including x,y,z coordinates
-            schedule_data: DataFrame with task data including map_url
-            max_workers: Maximum number of parallel workers
-
-        Returns:
-            Tuple of (transformed_robot_status_data, transformed_schedule_data)
-        """
-        logger.info("🔄 Starting parallel transformations...")
-
-        transformed_robot_data = pd.DataFrame()
-        transformed_schedule_data = pd.DataFrame()
-
-        # Use ThreadPoolExecutor for parallel transformations
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="transform_worker") as executor:
-            # Submit both transformation tasks
-            futures = {}
-
-            if not robot_status_data.empty:
-                robot_future = executor.submit(self._transform_robot_positions_parallel, robot_status_data, max_workers)
-                futures['robot_positions'] = robot_future
-                logger.info(f"📡 Submitted robot position transformations for {len(robot_status_data)} robots")
-
-            if not schedule_data.empty:
-                schedule_future = executor.submit(self._transform_task_maps_parallel, schedule_data, max_workers)
-                futures['task_maps'] = schedule_future
-                logger.info(f"📡 Submitted task map transformations for {len(schedule_data)} tasks")
-
-            # Collect results as they complete
-            for task_name, future in futures.items():
-                try:
-                    if task_name == 'robot_positions':
-                        transformed_robot_data = future.result(timeout=120)
-                        logger.info(f"✅ Completed robot position transformations: {len(transformed_robot_data)} records")
-                    elif task_name == 'task_maps':
-                        transformed_schedule_data = future.result(timeout=180)
-                        logger.info(f"✅ Completed task map transformations: {len(transformed_schedule_data)} records")
-                except concurrent.futures.TimeoutError:
-                    logger.error(f"❌ Timeout in {task_name} transformation")
-                except Exception as e:
-                    logger.error(f"❌ Error in {task_name} transformation: {e}")
-
-        logger.info("🚀 Parallel transformations completed")
-        return transformed_robot_data, transformed_schedule_data
-
-    def _transform_robot_positions_parallel(self, robot_data: pd.DataFrame, max_workers: int) -> pd.DataFrame:
-        """
-        Transform robot positions in parallel using multiple workers.
-
-        Args:
-            robot_data: DataFrame with robot status data
-            max_workers: Maximum number of parallel workers
+            work_location_data: DataFrame with robot work location data including x, y, z coordinates
 
         Returns:
             DataFrame with added new_x, new_y columns
         """
-        logger.info(f"🤖 Starting parallel robot position transformations for {len(robot_data)} robots")
+        logger.info(f"🤖 Starting robot coordinate transformations for {len(work_location_data)} robots")
 
-        # Filter robots that need transformation
-        valid_robots = self._filter_robots_for_transformation(robot_data)
-
-        if valid_robots.empty:
-            logger.info("No robots need position transformation")
-            # Return original data with new columns set to None
-            result_data = robot_data.copy()
-            result_data['new_x'] = None
-            result_data['new_y'] = None
-            return result_data
-
-        # Split robots into chunks for parallel processing
-        robot_chunks = self._split_dataframe_into_chunks(valid_robots, max_workers)
-
-        transformed_results = []
-
-        # Process chunks in parallel
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="robot_transform") as executor:
-            future_to_chunk = {}
-
-            for i, chunk in enumerate(robot_chunks):
-                future = executor.submit(self._transform_robot_position_chunk, chunk, i)
-                future_to_chunk[future] = i
-
-            # Collect results
-            for future in concurrent.futures.as_completed(future_to_chunk, timeout=90):
-                chunk_id = future_to_chunk[future]
-                try:
-                    chunk_result = future.result()
-                    if not chunk_result.empty:
-                        transformed_results.append(chunk_result)
-                    logger.debug(f"✅ Completed robot position chunk {chunk_id}: {len(chunk_result)} records")
-                except Exception as e:
-                    logger.error(f"❌ Error processing robot chunk {chunk_id}: {e}")
-
-        # Combine all results
-        if transformed_results:
-            combined_transformed = pd.concat(transformed_results, ignore_index=True)
-        else:
-            combined_transformed = pd.DataFrame()
-
-        # Merge with original data to include robots that didn't need transformation
-        result_data = robot_data.copy()
+        # Add new coordinate columns initialized to None
+        result_data = work_location_data.copy()
         result_data['new_x'] = None
         result_data['new_y'] = None
 
-        if not combined_transformed.empty:
-            # Update the result with transformed coordinates
-            for _, row in combined_transformed.iterrows():
-                mask = result_data['robot_sn'] == row['robot_sn']
-                result_data.loc[mask, 'new_x'] = row['new_x']
-                result_data.loc[mask, 'new_y'] = row['new_y']
+        # Filter robots that need transformation and are in supported databases
+        robots_to_transform = self._filter_robots_for_coordinate_transformation(result_data)
 
-        logger.info(f"🤖 Robot position transformations completed: {len(combined_transformed)} transformed, {len(result_data)} total")
+        if robots_to_transform.empty:
+            logger.info("No robots need coordinate transformation")
+            return result_data
+
+        logger.info(f"Transforming coordinates for {len(robots_to_transform)} robots")
+
+        # Transform coordinates for each robot
+        for _, robot_row in robots_to_transform.iterrows():
+            try:
+                robot_sn = robot_row['robot_sn']
+                database_name = self._get_database_for_robot(robot_sn)
+                if database_name not in self.supported_databases:
+                    logger.warning(f"Database {database_name} not supported for coordinate transformation of robot {robot_sn}")
+                    continue
+                map_name = robot_row['map_name']
+                x = float(robot_row['x'])
+                y = float(robot_row['y'])
+
+                # Transform coordinates
+                new_x, new_y = self._transform_robot_position(map_name, x, y)
+
+                if new_x is not None and new_y is not None:
+                    # Update the result DataFrame
+                    mask = result_data['robot_sn'] == robot_sn
+                    result_data.loc[mask, 'new_x'] = new_x
+                    result_data.loc[mask, 'new_y'] = new_y
+                    logger.debug(f"✅ Transformed robot {robot_sn}: ({x}, {y}) → ({new_x}, {new_y})")
+                else:
+                    logger.debug(f"⚠️ Could not transform coordinates for robot {robot_sn}")
+
+            except Exception as e:
+                logger.warning(f"⚠️ Error transforming robot {robot_row.get('robot_sn', 'unknown')}: {e}")
+
+        transformed_count = len(result_data[result_data['new_x'].notna()])
+        logger.info(f"🤖 Coordinate transformations completed: {transformed_count} transformed")
         return result_data
 
-    def _transform_task_maps_parallel(self, schedule_data: pd.DataFrame, max_workers: int) -> pd.DataFrame:
+    def transform_task_maps_batch(self, schedule_data: pd.DataFrame) -> pd.DataFrame:
         """
-        Transform task maps in parallel using multiple workers.
+        Transform task maps in batch, upload to S3, and add new_map_url column.
 
         Args:
             schedule_data: DataFrame with task data including map_url
-            max_workers: Maximum number of parallel workers
 
         Returns:
-            DataFrame with transformation status added
+            DataFrame with added new_map_url column containing S3 URLs
         """
-        logger.info(f"🗺️ Starting parallel task map transformations for {len(schedule_data)} tasks")
+        logger.info(f"🗺️ Starting task map transformations for {len(schedule_data)} tasks")
 
-        # Filter tasks that need transformation
-        valid_tasks = self._filter_tasks_for_transformation(schedule_data)
+        # Add new map URL column initialized to empty string
+        result_data = schedule_data.copy()
+        result_data['new_map_url'] = ''
 
-        if valid_tasks.empty:
+        # Filter tasks that need transformation and are in supported databases
+        tasks_to_transform = self._filter_tasks_for_map_transformation(result_data)
+
+        if tasks_to_transform.empty:
             logger.info("No tasks need map transformation")
-            result_data = schedule_data.copy()
-            result_data['map_transformed'] = False
             return result_data
 
-        # Split tasks into chunks for parallel processing
-        task_chunks = self._split_dataframe_into_chunks(valid_tasks, max_workers)
+        logger.info(f"Transforming maps for {len(tasks_to_transform)} tasks")
 
-        transformed_results = []
+        # Transform maps for each task
+        for _, task_row in tasks_to_transform.iterrows():
+            try:
+                map_url = task_row['map_url']
+                map_name = task_row['map_name']
+                robot_sn = task_row['robot_sn']
+                task_name = task_row['task_name']
+                task_id = task_row.get('task_id', 'unknown')
+                start_time = task_row['start_time']
 
-        # Process chunks in parallel
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="map_transform") as executor:
-            future_to_chunk = {}
+                # Get database name for this robot
+                database_name = self._get_database_for_robot(robot_sn)
+                if not database_name:
+                    logger.warning(f"Could not determine database for robot {robot_sn}")
+                    continue
+                if database_name not in self.supported_databases:
+                    logger.warning(f"Database {database_name} not supported for map transformation of task {task_name} of robot {robot_sn}")
+                    continue
 
-            for i, chunk in enumerate(task_chunks):
-                future = executor.submit(self._transform_task_map_chunk, chunk, i)
-                future_to_chunk[future] = i
+                # Perform map transformation
+                transformed_image = self._transform_task_map(map_name, map_url)
 
-            # Collect results
-            for future in concurrent.futures.as_completed(future_to_chunk, timeout=120):
-                chunk_id = future_to_chunk[future]
-                try:
-                    chunk_result = future.result()
-                    if not chunk_result.empty:
-                        transformed_results.append(chunk_result)
-                    logger.debug(f"✅ Completed task map chunk {chunk_id}: {len(chunk_result)} records")
-                except Exception as e:
-                    logger.error(f"❌ Error processing task chunk {chunk_id}: {e}")
+                if transformed_image is not None:
+                    # Upload to S3 and get public URL (with deduplication)
+                    s3_url = self._upload_transformed_image_to_s3(
+                        transformed_image, map_name, task_id, robot_sn, database_name, map_url
+                    )
 
-        # Combine all results
-        if transformed_results:
-            combined_transformed = pd.concat(transformed_results, ignore_index=True)
-        else:
-            combined_transformed = pd.DataFrame()
+                    if s3_url:
+                        # Update the result DataFrame with S3 URL
+                        mask = (
+                            (result_data['robot_sn'] == robot_sn) &
+                            (result_data['task_name'] == task_name) &
+                            (result_data['start_time'] == start_time)
+                        )
+                        result_data.loc[mask, 'new_map_url'] = s3_url
+                        logger.info(f"✅ Transformed and uploaded map for task {task_name} (robot {robot_sn}): {s3_url}")
+                    else:
+                        logger.warning(f"⚠️ Failed to upload transformed map for task {task_name} of robot {robot_sn}")
+                else:
+                    logger.debug(f"⚠️ Could not transform map for task {task_name} of robot {robot_sn}")
 
-        # Merge with original data
-        result_data = schedule_data.copy()
-        result_data['map_transformed'] = False
+            except Exception as e:
+                logger.warning(f"⚠️ Error transforming task map for task {task_name} of robot {robot_sn}: {e}")
 
-        if not combined_transformed.empty:
-            # Update the result with transformation status
-            for _, row in combined_transformed.iterrows():
-                # Use multiple columns to match tasks since they might not have unique identifiers
-                mask = (
-                    (result_data['robot_sn'] == row['robot_sn']) &
-                    (result_data['task_name'] == row['task_name']) &
-                    (result_data['start_time'] == row['start_time'])
-                )
-                result_data.loc[mask, 'map_transformed'] = row['map_transformed']
-
-        logger.info(f"🗺️ Task map transformations completed: {len(combined_transformed)} processed, {len(result_data)} total")
+        uploaded_count = len(result_data[result_data['new_map_url'] != ''])
+        logger.info(f"🗺️ Task map transformations completed: {uploaded_count} uploaded to S3")
         return result_data
 
-    def _filter_robots_for_transformation(self, robot_data: pd.DataFrame) -> pd.DataFrame:
+    def _upload_transformed_image_to_s3(self,
+                                       image_array: np.ndarray,
+                                       map_name: str,
+                                       task_id: str,
+                                       robot_sn: str,
+                                       database_name: str,
+                                       original_map_url: str = None) -> Optional[str]:
         """
-        Filter robots that need position transformation.
+        Upload transformed image to S3 and return public URL
 
-        Skip robots where:
-        1. Both x and y are 0 and status is 'idle' (case insensitive)
-        2. x, y, or z coordinates are None/NaN
-        3. Robot doesn't have a valid map_name
+        Args:
+            image_array: Transformed image as numpy array
+            map_name: Name of the map
+            task_id: Task ID
+            robot_sn: Robot serial number
+            database_name: Database name to determine S3 bucket
+            original_map_url: Original map URL for deterministic naming
+
+        Returns:
+            Public S3 URL if successful, None if failed
+        """
+        if not self.s3_service:
+            logger.warning("S3 service not available - cannot upload transformed image")
+            return None
+
+        try:
+            return self.s3_service.upload_transformed_image(
+                image_array=image_array,
+                map_name=map_name,
+                task_id=task_id,
+                robot_sn=robot_sn,
+                database_name=database_name,
+                original_map_url=original_map_url
+            )
+        except Exception as e:
+            logger.error(f"Error uploading transformed image to S3: {e}")
+            return None
+
+    def _get_database_for_robot(self, robot_sn: str) -> Optional[str]:
+        """Get database name for a robot using the config resolver"""
+        try:
+            robot_to_db = self.config.resolver.get_robot_database_mapping([robot_sn])
+            return robot_to_db.get(robot_sn)
+        except Exception as e:
+            logger.warning(f"Error getting database for robot {robot_sn}: {e}")
+            return None
+
+    def _filter_robots_for_coordinate_transformation(self, robot_data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Filter robots that need coordinate transformation and are in supported databases.
         """
         if robot_data.empty:
             return robot_data
 
-        # Create boolean mask for valid robots
+        # First apply basic filtering (same as before)
         valid_mask = (
             # Not (x=0 and y=0 and status=idle)
             ~(
@@ -245,27 +240,38 @@ class TransformService:
             # Have valid coordinates
             (robot_data['x'].notna()) &
             (robot_data['y'].notna()) &
-            (robot_data['z'].notna())
+            (robot_data['z'].notna()) &
+            # Have valid map_name
+            (robot_data['map_name'].notna()) &
+            (robot_data['map_name'].str.strip() != '')
         )
 
-        valid_robots = robot_data[valid_mask].copy()
+        basic_valid_robots = robot_data[valid_mask].copy()
 
-        logger.info(f"Filtered {len(valid_robots)} robots for position transformation (from {len(robot_data)} total)")
-        return valid_robots
+        if basic_valid_robots.empty:
+            return basic_valid_robots
 
-    def _filter_tasks_for_transformation(self, schedule_data: pd.DataFrame) -> pd.DataFrame:
+        # Filter by transform support
+        robot_sns = basic_valid_robots['robot_sn'].tolist()
+        supported_robots, _ = self.config.filter_robots_for_transform_support(robot_sns)
+
+        final_valid_robots = basic_valid_robots[
+            basic_valid_robots['robot_sn'].isin(supported_robots)
+        ].copy()
+
+        logger.info(f"Filtered {len(final_valid_robots)} robots for coordinate transformation "
+                   f"(from {len(robot_data)} total, {len(supported_robots)} in supported databases)")
+
+        return final_valid_robots
+
+    def _filter_tasks_for_map_transformation(self, schedule_data: pd.DataFrame) -> pd.DataFrame:
         """
-        Filter tasks that need map transformation.
-
-        Skip tasks where:
-        1. map_url is None/null/empty
-        2. map_url doesn't start with 'https://'
-        3. map_url doesn't end with '.png' or '.jpg'
+        Filter tasks that need map transformation and are in supported databases.
         """
         if schedule_data.empty:
             return schedule_data
 
-        # Create boolean mask for valid tasks
+        # First apply basic filtering (same as before)
         valid_mask = (
             # Have non-null map_url
             (schedule_data['map_url'].notna()) &
@@ -273,141 +279,29 @@ class TransformService:
             # Starts with https://
             (schedule_data['map_url'].str.startswith('https://')) &
             # Ends with .png or .jpg
-            (schedule_data['map_url'].str.lower().str.endswith(('.png', '.jpg')))
+            (schedule_data['map_url'].str.lower().str.endswith(('.png', '.jpg'))) &
+            # Have valid map_name
+            (schedule_data['map_name'].notna()) &
+            (schedule_data['map_name'].str.strip() != '')
         )
 
-        valid_tasks = schedule_data[valid_mask].copy()
+        basic_valid_tasks = schedule_data[valid_mask].copy()
 
-        logger.info(f"Filtered {len(valid_tasks)} tasks for map transformation (from {len(schedule_data)} total)")
-        return valid_tasks
+        if basic_valid_tasks.empty:
+            return basic_valid_tasks
 
-    def _split_dataframe_into_chunks(self, df: pd.DataFrame, num_chunks: int) -> List[pd.DataFrame]:
-        """Split a DataFrame into roughly equal chunks for parallel processing"""
-        if df.empty:
-            return []
+        # Filter by transform support
+        robot_sns = basic_valid_tasks['robot_sn'].tolist()
+        supported_robots, _ = self.config.filter_robots_for_transform_support(robot_sns)
 
-        chunk_size = max(1, len(df) // num_chunks)
-        chunks = []
+        final_valid_tasks = basic_valid_tasks[
+            basic_valid_tasks['robot_sn'].isin(supported_robots)
+        ].copy()
 
-        for i in range(0, len(df), chunk_size):
-            chunk = df.iloc[i:i + chunk_size].copy()
-            chunks.append(chunk)
+        logger.info(f"Filtered {len(final_valid_tasks)} tasks for map transformation "
+                   f"(from {len(schedule_data)} total, {len(supported_robots)} robots in supported databases)")
 
-        return chunks
-
-    def _transform_robot_position_chunk(self, robot_chunk: pd.DataFrame, chunk_id: int) -> pd.DataFrame:
-        """Transform a chunk of robots' positions"""
-        logger.debug(f"🔄 Processing robot chunk {chunk_id} with {len(robot_chunk)} robots")
-
-        results = []
-
-        for _, robot_row in robot_chunk.iterrows():
-            try:
-                robot_sn = robot_row['robot_sn']
-                x = float(robot_row['x'])
-                y = float(robot_row['y'])
-
-                # Get map_name - this might come from robot_status or we might need to look it up
-                map_name = robot_row.get('map_name')
-                if not map_name:
-                    # Try to get map_name from current task if available
-                    map_name = self._get_current_map_for_robot(robot_sn)
-
-                if map_name:
-                    new_x, new_y = self._transform_robot_position(map_name, x, y)
-                    if new_x is not None and new_y is not None:
-                        results.append({
-                            'robot_sn': robot_sn,
-                            'new_x': new_x,
-                            'new_y': new_y
-                        })
-                        logger.debug(f"✅ Transformed robot {robot_sn}: ({x}, {y}) → ({new_x}, {new_y})")
-                    else:
-                        logger.debug(f"⚠️ Could not transform position for robot {robot_sn}")
-                else:
-                    logger.debug(f"⚠️ No map_name found for robot {robot_sn}")
-
-            except Exception as e:
-                logger.warning(f"⚠️ Error transforming robot {robot_row.get('robot_sn', 'unknown')}: {e}")
-
-        return pd.DataFrame(results)
-
-    def _transform_task_map_chunk(self, task_chunk: pd.DataFrame, chunk_id: int) -> pd.DataFrame:
-        """Transform a chunk of task maps"""
-        logger.debug(f"🔄 Processing task map chunk {chunk_id} with {len(task_chunk)} tasks")
-
-        results = []
-
-        for _, task_row in task_chunk.iterrows():
-            try:
-                map_url = task_row['map_url']
-                map_name = task_row['map_name']
-                robot_sn = task_row['robot_sn']
-                task_name = task_row['task_name']
-                start_time = task_row['start_time']
-
-                # Perform map transformation
-                transformed_image = self._transform_task_map(map_name, map_url)
-
-                if transformed_image is not None:
-                    # For now, we just mark it as transformed
-                    # Later we can save to S3 and store the URL
-                    results.append({
-                        'robot_sn': robot_sn,
-                        'task_name': task_name,
-                        'start_time': start_time,
-                        'map_transformed': True
-                    })
-                    logger.debug(f"✅ Transformed map for task {task_name} (robot {robot_sn})")
-                else:
-                    results.append({
-                        'robot_sn': robot_sn,
-                        'task_name': task_name,
-                        'start_time': start_time,
-                        'map_transformed': False
-                    })
-                    logger.debug(f"⚠️ Could not transform map for task {task_name}")
-
-            except Exception as e:
-                logger.warning(f"⚠️ Error transforming task map: {e}")
-
-        return pd.DataFrame(results)
-
-    def _get_current_map_for_robot(self, robot_sn: str) -> Optional[str]:
-        """
-        Get current map name for a robot by querying the database.
-        This is a fallback when map_name is not in robot_status data.
-        """
-        try:
-            # Get table configurations for this robot
-            table_configs = self.config.get_table_configs_for_robots('robot_work_location', [robot_sn])
-
-            for table_config in table_configs:
-                try:
-                    table = RDSTable(
-                        connection_config="credentials.yaml",
-                        database_name=table_config['database'],
-                        table_name=table_config['table_name'],
-                        fields=table_config.get('fields'),
-                        primary_keys=table_config['primary_keys']
-                    )
-
-                    query = f"SELECT map_name FROM {table.table_name} WHERE robot_sn = '{robot_sn}' ORDER BY update_time DESC LIMIT 1"
-                    result = table.query_data(query)
-
-                    if result:
-                        map_name = result[0][0] if isinstance(result[0], tuple) else result[0].get('map_name')
-                        table.close()
-                        return map_name
-
-                    table.close()
-                except Exception as e:
-                    logger.debug(f"Error getting map for robot {robot_sn}: {e}")
-
-        except Exception as e:
-            logger.debug(f"Error in _get_current_map_for_robot: {e}")
-
-        return None
+        return final_valid_tasks
 
     def _transform_robot_position(self, map_name: str, x: float, y: float) -> Tuple[Optional[float], Optional[float]]:
         """
@@ -523,18 +417,16 @@ class TransformService:
                 return self._map_info_cache[map_name]
 
         try:
-            # Query map info from database
-            # We need to find which database contains this map
-            all_project_databases = self.config.resolver.get_all_project_databases()
-
-            for db_name in all_project_databases:
+            # Query map info from transform-supported databases only
+            for db_name in self.supported_databases:
                 try:
                     table = RDSTable(
                         connection_config="credentials.yaml",
                         database_name=db_name,
                         table_name="pro_floor_info",
                         fields=None,
-                        primary_keys=["robot_map_name"]
+                        primary_keys=["robot_map_name"],
+                        reuse_connection=True
                     )
 
                     query = f"""
@@ -575,7 +467,7 @@ class TransformService:
                     logger.debug(f"Error querying map info from {db_name}: {e}")
                     continue
 
-            # If not found in any database, cache None to avoid repeated queries
+            # If not found in any supported database, cache None to avoid repeated queries
             with self._cache_lock:
                 self._map_info_cache[map_name] = None
 
@@ -601,33 +493,31 @@ class TransformService:
             logger.debug(f'Error fetching PNG from {url}: {e}')
             return None
 
+    def test_s3_connectivity(self) -> Dict[str, bool]:
+        """
+        Test S3 connectivity for all configured databases
+
+        Returns:
+            Dict mapping database names to connectivity status
+        """
+        if not self.s3_service:
+            logger.warning("S3 service not available for connectivity test")
+            return {}
+
+        supported_databases = self.config.get_transform_supported_databases()
+        connectivity_status = {}
+
+        for database_name in supported_databases:
+            try:
+                status = self.s3_service.test_bucket_access(database_name)
+                connectivity_status[database_name] = status
+                logger.info(f"S3 connectivity test for {database_name}: {'✅ PASS' if status else '❌ FAIL'}")
+            except Exception as e:
+                connectivity_status[database_name] = False
+                logger.error(f"S3 connectivity test error for {database_name}: {e}")
+
+        return connectivity_status
+
     def close(self):
         """Close database connections and cleanup"""
-        try:
-            self.config.close()
-        except Exception as e:
-            logger.warning(f"Error closing transform service: {e}")
-
-
-# Factory function for easy integration
-def run_parallel_transformations(robot_status_data: pd.DataFrame,
-                                schedule_data: pd.DataFrame,
-                                config_path: str = "database_config.yaml",
-                                max_workers: int = 4) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Convenience function to run parallel transformations.
-
-    Args:
-        robot_status_data: DataFrame with robot status including x,y,z coordinates
-        schedule_data: DataFrame with task data including map_url
-        config_path: Path to database configuration
-        max_workers: Maximum number of parallel workers
-
-    Returns:
-        Tuple of (transformed_robot_status_data, transformed_schedule_data)
-    """
-    transform_service = TransformService(config_path)
-    try:
-        return transform_service.run_parallel_transformations(robot_status_data, schedule_data, max_workers)
-    finally:
-        transform_service.close()
+        pass  # Config is managed externally

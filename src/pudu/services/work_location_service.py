@@ -13,6 +13,7 @@ class WorkLocationService:
     This service manages:
     1. Robot work location tracking (mnt_robots_work_location table)
     2. Map to floor mapping updates (mnt_robot_map_floor_mapping table)
+    3. Coordinate transformation for supported databases
     """
 
     def __init__(self, config_path: str = "database_config.yaml"):
@@ -23,7 +24,10 @@ class WorkLocationService:
             config_path (str): Path to database configuration YAML file
         """
         from pudu.configs.database_config_loader import DynamicDatabaseConfig # avoid circular import
+        from pudu.services.transform_service import TransformService
+
         self.config = DynamicDatabaseConfig(config_path)
+        self.transform_service = TransformService(self.config)
 
     def update_robot_work_locations_and_mappings(self) -> bool:
         """
@@ -34,8 +38,9 @@ class WorkLocationService:
 
         Process:
             1. Gets robot work location and mapping data from API
-            2. Updates mnt_robots_work_location tables in appropriate project databases
-            3. Updates mnt_robot_map_floor_mapping tables with resolved floor_ids
+            2. Transforms coordinates for robots in supported databases
+            3. Updates mnt_robots_work_location tables in appropriate project databases
+            4. Updates mnt_robot_map_floor_mapping tables with resolved floor_ids
         """
         try:
             logger.info("🗺️ Updating robot work locations and map floor mappings (dynamic)...")
@@ -45,7 +50,7 @@ class WorkLocationService:
 
             success = True
 
-            # Update work locations
+            # Update work locations (with coordinate transformation)
             if not work_location_data.empty:
                 success &= self._update_work_locations(work_location_data)
             else:
@@ -82,7 +87,7 @@ class WorkLocationService:
 
     def _update_work_locations(self, work_location_data: pd.DataFrame) -> bool:
         """
-        Update work location data with dynamic database resolution
+        Update work location data with dynamic database resolution and coordinate transformation
 
         Args:
             work_location_data (pd.DataFrame): DataFrame with columns:
@@ -98,8 +103,17 @@ class WorkLocationService:
             bool: True if all updates successful, False otherwise
         """
         try:
+            # Transform coordinates before saving to database
+            logger.info("🔧 Applying coordinate transformations...")
+            transformed_data = self.transform_service.transform_robot_coordinates_batch(work_location_data)
+
+            # Log transformation results
+            transformed_count = len(transformed_data[transformed_data['new_x'].notna()])
+            total_count = len(transformed_data)
+            logger.info(f"Coordinate transformation: {transformed_count}/{total_count} robots transformed")
+
             # Get robots from the data
-            robots_in_data = work_location_data['robot_sn'].unique().tolist()
+            robots_in_data = transformed_data['robot_sn'].unique().tolist()
 
             # Get table configurations for these specific robots
             table_configs = self.config.get_table_configs_for_robots('robot_work_location', robots_in_data)
@@ -115,21 +129,26 @@ class WorkLocationService:
                         database_name=table_config['database'],
                         table_name=table_config['table_name'],
                         fields=table_config.get('fields'),
-                        primary_keys=table_config['primary_keys']
+                        primary_keys=table_config['primary_keys'],
+                        reuse_connection=True
                     )
 
                     # Filter data for robots that belong to this database
                     target_robots = table_config.get('robot_sns', [])
                     if target_robots:
-                        filtered_data = work_location_data[work_location_data['robot_sn'].isin(target_robots)]
+                        filtered_data = transformed_data[transformed_data['robot_sn'].isin(target_robots)]
                     else:
-                        filtered_data = work_location_data
+                        filtered_data = transformed_data
 
                     if not filtered_data.empty:
                         data_list = filtered_data.to_dict(orient='records')
-                        table.batch_insert(data_list)  # Commented for testing
+                        table.batch_insert(data_list)
                         success_count += 1
-                        logger.info(f"✅ Updated work locations in {table_config['database']}.{table_config['table_name']} for {len(filtered_data)} robots")
+
+                        # Log transformation stats for this database
+                        db_transformed = len(filtered_data[filtered_data['new_x'].notna()])
+                        db_total = len(filtered_data)
+                        logger.info(f"✅ Updated work locations in {table_config['database']}.{table_config['table_name']} for {db_total} robots ({db_transformed} with coordinates transformed)")
                     else:
                         success_count += 1  # No data needed for this database
                         logger.info(f"ℹ️ No work location data for {table_config['database']}")
@@ -189,7 +208,8 @@ class WorkLocationService:
                         database_name=table_config['database'],
                         table_name=table_config['table_name'],
                         fields=table_config.get('fields'),
-                        primary_keys=table_config['primary_keys']
+                        primary_keys=table_config['primary_keys'],
+                        reuse_connection=True
                     )
 
                     # Update mappings for this database
@@ -305,7 +325,8 @@ class WorkLocationService:
                     database_name=table_config['database'],
                     table_name=table_config['table_name'],
                     fields=table_config.get('fields'),
-                    primary_keys=table_config['primary_keys']
+                    primary_keys=table_config['primary_keys'],
+                    reuse_connection=True
                 )
 
                 # Query robot management table for location_id (building_id)
@@ -389,7 +410,8 @@ class WorkLocationService:
                     database_name=table_config['database'],
                     table_name=table_config['table_name'],
                     fields=table_config.get('fields'),
-                    primary_keys=table_config['primary_keys']
+                    primary_keys=table_config['primary_keys'],
+                    reuse_connection=True
                 )
 
                 query = f"SELECT floor_id FROM {table.table_name} WHERE building_id = '{building_id}' AND floor_number = {floor_number}"
@@ -437,7 +459,7 @@ class WorkLocationService:
 
                     if existing_floor_id != new_floor_id:
                         record_id = existing_record[0] if isinstance(existing_record, tuple) else existing_record.get('id')
-                        table.update_field_by_filters('floor_id', str(new_floor_id), {'id': record_id})  # Commented for testing
+                        table.update_field_by_filters('floor_id', str(new_floor_id), {'id': record_id})
                         logger.info(f"Updated mapping for {map_name} in {table.database_name}.{table.table_name}: floor_id {existing_floor_id} -> {new_floor_id}")
                 else:# a new map
                     # Insert new mapping
@@ -445,7 +467,7 @@ class WorkLocationService:
                         'map_name': map_name,
                         'floor_id': new_floor_id
                     }
-                    table.insert_data(data)  # Commented for testing
+                    table.insert_data(data)
                     logger.info(f"Inserted new mapping for {map_name} in {table.database_name}.{table.table_name}: floor_id {new_floor_id}")
 
         except Exception as e:
@@ -460,9 +482,10 @@ class WorkLocationService:
 
         Process:
             1. Calls get_robot_work_location_and_mapping_data() to get current robot states
-            2. Updates mnt_robots_work_location tables across all relevant project databases
-            3. Resolves and updates mnt_robot_map_floor_mapping tables
-            4. Handles cleanup and error reporting
+            2. Applies coordinate transformations for supported databases
+            3. Updates mnt_robots_work_location tables across all relevant project databases
+            4. Resolves and updates mnt_robot_map_floor_mapping tables
+            5. Handles cleanup and error reporting
         """
         logger.info("🚀 Starting dynamic work location updates...")
 

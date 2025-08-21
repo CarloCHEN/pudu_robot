@@ -76,6 +76,10 @@ pip install pyyaml python-dotenv -t . --quiet
 pip install python-dateutil pytz tzlocal -t . --quiet
 pip install requests -t . --quiet
 
+# for transform service
+pip install opencv-python -t . --quiet
+pip install Pillow -t . --quiet
+
 # Install pandas and numpy with platform-specific wheels for Lambda
 # Using manylinux2014_x86_64 which is compatible with Lambda's Amazon Linux 2
 pip install \

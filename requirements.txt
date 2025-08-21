@@ -20,3 +20,6 @@ tzlocal>=5.0
 # HTTP requests (if needed)
 requests>=2.31.0
 
+# cv2
+opencv-python
+Pillow
