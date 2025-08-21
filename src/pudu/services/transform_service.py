@@ -233,7 +233,7 @@ class TransformService:
         if robot_data.empty:
             return robot_data
 
-        # First apply basic filtering (same as before)
+        # First apply basic filtering
         valid_mask = (
             # Not (x=0 and y=0 and status=idle)
             ~(
@@ -275,7 +275,7 @@ class TransformService:
         if schedule_data.empty:
             return schedule_data
 
-        # First apply basic filtering (same as before)
+        # First apply basic filtering
         valid_mask = (
             # Have non-null map_url
             (schedule_data['map_url'].notna()) &
@@ -357,52 +357,6 @@ class TransformService:
         except Exception as e:
             logger.debug(f"Error transforming position for map {map_name}: {e}")
             return None, None
-
-    def _transform_task_map_pil_only(self, map_name: str, map_url: str) -> Optional[np.ndarray]:
-        """
-        Transform task map to floor plan overlay using only PIL (corrected version).
-        """
-        try:
-            map_info = self._get_map_info(map_name)
-            if not map_info:
-                return None
-
-            task_report_png_bytes = self._fetch_png_from_url(map_url)
-            floor_plan_png_bytes = self._fetch_png_from_url(map_info['floor_map'])
-
-            if not task_report_png_bytes or not floor_plan_png_bytes:
-                return None
-
-            task_img_rgb = np.array(Image.open(io.BytesIO(task_report_png_bytes)).convert('RGB'))
-            floor_img_rgb = np.array(Image.open(io.BytesIO(floor_plan_png_bytes)).convert('RGB'))
-
-            # Find green pixels in task image
-            green = np.array([28, 195, 61], dtype=np.uint8)
-            green_mask = np.all(task_img_rgb == green, axis=-1)
-
-            # Simple resize task image to floor image size
-            task_resized = np.array(Image.fromarray(task_img_rgb).resize(
-                (floor_img_rgb.shape[1], floor_img_rgb.shape[0]),
-                Image.NEAREST
-            ))
-
-            # Find green in resized image
-            green_mask_resized = np.all(task_resized == green, axis=-1)
-
-            # Apply overlay
-            overlay = floor_img_rgb.copy()
-            overlay[green_mask_resized] = green
-
-            # Alpha blend
-            alpha = 0.5
-            blended = (overlay.astype(np.float32) * alpha +
-                      floor_img_rgb.astype(np.float32) * (1 - alpha)).astype(np.uint8)
-
-            return blended
-
-        except Exception as e:
-            logger.debug(f"Error in simple overlay: {e}")
-            return None
 
     def _transform_task_map_cv2(self, map_name: str, map_url: str) -> Optional[np.ndarray]:
         """

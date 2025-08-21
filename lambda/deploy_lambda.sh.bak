@@ -76,6 +76,9 @@ pip install pyyaml python-dotenv -t . --quiet
 pip install python-dateutil pytz tzlocal -t . --quiet
 pip install requests -t . --quiet
 
+# Image processing packages
+pip install Pillow -t . --quiet
+
 # Install pandas and numpy with platform-specific wheels for Lambda
 # Using manylinux2014_x86_64 which is compatible with Lambda's Amazon Linux 2
 pip install \
@@ -134,7 +137,7 @@ ZIP_SIZE=$(stat -f%z pudu-robot-pipeline.zip 2>/dev/null || stat -c%s pudu-robot
 ZIP_SIZE_MB=$((ZIP_SIZE / 1024 / 1024))
 echo "📦 ZIP size: ${ZIP_SIZE_MB}MB"
 
-if [ $ZIP_SIZE -gt 52428800 ]; then  # 50MB
+if [ $ZIP_SIZE -gt 52428800 ]; then  # 40MB
     echo "❌ Package too large (${ZIP_SIZE_MB}MB). Reducing further..."
     rm -rf boto3/docs botocore/docs 2>/dev/null || true
     find . -name "*.dist-info" -type d -exec rm -rf {} + 2>/dev/null || true
@@ -397,8 +400,8 @@ echo "🔧 Deploying Lambda function..."
 # Prepare environment variables with SNS topic ARN
 ENV_VARS="Variables={SUPPORT_TICKET_SNS_TOPIC_ARN=${SUPPORT_TOPIC_ARN},NOTIFICATION_API_HOST=${NOTIFICATION_API_HOST},NOTIFICATION_API_ENDPOINT=${NOTIFICATION_API_ENDPOINT},ICONS_CONFIG_PATH=${ICONS_CONFIG_PATH}}"
 
-PILLOW_LAYER_ARN="arn:aws:lambda:us-east-2:908027373537:layer:pudu-pillow-platform:2"
-OPENCV_LAYER_ARN="arn:aws:lambda:us-east-2:908027373537:layer:opencv-layer:1"
+# PILLOW_LAYER_ARN="arn:aws:lambda:us-east-2:908027373537:layer:pudu-pillow-platform:2"
+OPENCV_LAYER_ARN="arn:aws:lambda:us-east-2:908027373537:layer:pudu-opencv-minimal:1"
 
 if aws lambda get-function --function-name $FUNCTION_NAME --region $REGION >/dev/null 2>&1; then
     echo "Updating existing function..."
@@ -417,7 +420,7 @@ if aws lambda get-function --function-name $FUNCTION_NAME --region $REGION >/dev
         --timeout 900 \
         --memory-size 1024 \
         --environment "$ENV_VARS" \
-        --layers "$PILLOW_LAYER_ARN" "$OPENCV_LAYER_ARN" \
+        --layers "$OPENCV_LAYER_ARN" \
         --region $REGION
 else
     echo "Creating new function..."
@@ -431,7 +434,7 @@ else
         --memory-size 1024 \
         --environment "$ENV_VARS" \
         --description "Pudu Robot Data Pipeline with Support Ticket Monitoring" \
-        --layers "$PILLOW_LAYER_ARN" "$OPENCV_LAYER_ARN" \
+        --layers "$OPENCV_LAYER_ARN" \
         --region $REGION || {
         echo "❌ Lambda creation failed"
         echo "Role ARN: $ROLE_ARN"
