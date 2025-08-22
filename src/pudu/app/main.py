@@ -655,7 +655,7 @@ class App:
             return 0, 1, {}
 
     def _process_schedule_data_with_transforms(self, table_type: str, raw_data, robot_column: str, columns_to_remove: list = []):
-        """Process schedule data with map transformations applied"""
+        """Process schedule data with map transformations applied - with efficiency check"""
         logger.info(f"📋 Processing {table_type} data with map transformations...")
 
         try:
@@ -665,31 +665,74 @@ class App:
                 logger.info(f"No {table_type} data to process")
                 return 0, 0, {}
 
-            # Apply map transformations to schedule data
-            logger.info("🔧 Applying map transformations to schedule data...")
-            transformed_data = self.transform_service.transform_task_maps_batch(processed_data)
+            # NEW: Check existing new_map_url values to avoid redundant transformations
+            filtered_data = self._filter_tasks_needing_transformation(processed_data)
 
-            # Log transformation results
-            total_count = len(transformed_data)
-            logger.info(f"Map transformation: {total_count} tasks processed")
+            if filtered_data.empty:
+                logger.info("All tasks already have transformed maps, skipping transformation")
+                # Process data without transformation - don't add new_map_url column
+                robots_in_data = self._get_robots_for_data(processed_data, robot_column)
+                success, tables = self._initialize_tables_for_robots(table_type, robots_in_data)
 
-            # Extract robots from the data
-            robots_in_data = self._get_robots_for_data(transformed_data, robot_column)
+                if not success or len(tables) == 0:
+                    return 0, 0, {}
 
-            # Initialize tables for robots in this data
-            success, tables = self._initialize_tables_for_robots(table_type, robots_in_data)
+                successful_inserts, failed_inserts, all_changes = self._insert_to_database_with_filtering(
+                    processed_data, tables, table_type, robot_column
+                )
 
-            if not success:
+                for table in tables:
+                    try:
+                        table.close()
+                    except:
+                        pass
+
+                return successful_inserts, failed_inserts, all_changes
+
+            # Apply map transformations only to tasks that need them
+            logger.info(f"🔧 Applying map transformations to {len(filtered_data)} tasks (out of {len(processed_data)} total)...")
+            transformed_subset = self.transform_service.transform_task_maps_batch(filtered_data)
+
+            # Use original processed_data and only update new_map_url for transformed tasks
+            tasks_with_urls, tasks_without_urls = self._update_with_transformed_urls(processed_data, transformed_subset)
+
+            # Process both groups separately to avoid NULL inserts
+            all_changes = {}
+            successful_inserts = 0
+            failed_inserts = 0
+
+            # Extract robots from all data
+            all_robots = self._get_robots_for_data(processed_data, robot_column)
+            success, tables = self._initialize_tables_for_robots(table_type, all_robots)
+
+            if not success or len(tables) == 0:
                 logger.warning(f"No tables initialized for {table_type}")
                 return 0, 1, {}
-            elif len(tables) == 0:
-                logger.warning(f"No need to initialize tables for {table_type}")
-                return 0, 0, {}
 
-            # Insert data with robot filtering
-            successful_inserts, failed_inserts, all_changes = self._insert_to_database_with_filtering(
-                transformed_data, tables, table_type, robot_column
-            )
+            # Process tasks with transformed URLs (includes new_map_url column)
+            if not tasks_with_urls.empty:
+                logger.info(f"Processing {len(tasks_with_urls)} tasks with transformed URLs")
+                s1, f1, c1 = self._insert_to_database_with_filtering(
+                    tasks_with_urls, tables, table_type, robot_column
+                )
+                successful_inserts += s1
+                failed_inserts += f1
+                all_changes.update(c1)
+
+            # Process tasks without URLs (no new_map_url column - preserves existing DB values)
+            if not tasks_without_urls.empty:
+                logger.info(f"Processing {len(tasks_without_urls)} tasks without transformed URLs")
+                s2, f2, c2 = self._insert_to_database_with_filtering(
+                    tasks_without_urls, tables, table_type, robot_column
+                )
+                successful_inserts += s2
+                failed_inserts += f2
+                all_changes.update(c2)
+
+            # Log transformation results
+            total_count = len(processed_data)
+            transformed_count = len(filtered_data)
+            logger.info(f"Map transformation: {transformed_count}/{total_count} tasks processed")
 
             # Close table connections
             for table in tables:
@@ -703,6 +746,142 @@ class App:
         except Exception as e:
             logger.error(f"Error processing {table_type} data with transforms: {e}")
             return 0, 1, {}
+
+    def _filter_tasks_needing_transformation(self, processed_data):
+        """
+        Filter tasks that need map transformation by checking existing new_map_url values in database
+
+        Returns:
+            pd.DataFrame: Tasks that need transformation (no existing valid new_map_url)
+        """
+        tasks_needing_transform = []
+
+        # Get robots from the data to determine which tables to check
+        robots_in_data = self._get_robots_for_data(processed_data, 'robot_sn')
+
+        # Get table configurations for these robots
+        table_configs = self.config.get_table_configs_for_robots('robot_task', robots_in_data)
+
+        # Check each task against database
+        for _, task_row in processed_data.iterrows():
+            robot_sn = task_row['robot_sn']
+            task_name = task_row['task_name']
+            start_time = task_row['start_time']
+            map_url = task_row.get('map_url', '')
+
+            # Skip if no map_url (basic filtering)
+            if not map_url or not map_url.startswith('https://'):
+                continue
+
+            needs_transform = True
+
+            # Check if this task already has a valid new_map_url in any relevant database
+            for table_config in table_configs:
+                target_robots = table_config.get('robot_sns', [])
+                if robot_sn not in target_robots:
+                    continue
+
+                try:
+                    table = RDSTable(
+                        connection_config="credentials.yaml",
+                        database_name=table_config['database'],
+                        table_name=table_config['table_name'],
+                        fields=table_config.get('fields'),
+                        primary_keys=table_config['primary_keys'],
+                        reuse_connection=True
+                    )
+
+                    # Query for existing new_map_url
+                    query = f"""
+                        SELECT new_map_url FROM {table.table_name}
+                        WHERE robot_sn = '{robot_sn}'
+                        AND task_name = '{task_name}'
+                        AND start_time = '{start_time}'
+                        AND new_map_url IS NOT NULL
+                        AND new_map_url != ''
+                        AND new_map_url LIKE 'https://%'
+                        LIMIT 1
+                    """
+
+                    result = table.query_data(query)
+                    table.close()
+
+                    if result:
+                        # Task already has transformed map URL
+                        needs_transform = False
+                        logger.debug(f"Task {task_name} for robot {robot_sn} already has transformed map")
+                        break
+
+                except Exception as e:
+                    logger.debug(f"Error checking existing new_map_url for {robot_sn}: {e}")
+                    continue
+
+            if needs_transform:
+                tasks_needing_transform.append(task_row)
+
+        return pd.DataFrame(tasks_needing_transform) if tasks_needing_transform else pd.DataFrame()
+
+    def _update_with_transformed_urls(self, original_data, transformed_subset):
+        """
+        Safely update original data with new_map_url only for transformed tasks
+
+        Args:
+            original_data: Full dataset (NO new_map_url column)
+            transformed_subset: Subset that was transformed (HAS new_map_url column)
+
+        Returns:
+            pd.DataFrame: Original data with new_map_url column added ONLY for rows that actually have URLs
+        """
+        # Create a copy of original data
+        result_data = original_data.copy()
+
+        # Only process if we have transformed data with URLs
+        if not transformed_subset.empty and 'new_map_url' in transformed_subset.columns:
+            # Create a mapping of transformed URLs
+            transformed_urls = {}
+
+            for _, transformed_row in transformed_subset.iterrows():
+                robot_sn = transformed_row['robot_sn']
+                task_name = transformed_row['task_name']
+                start_time = transformed_row['start_time']
+                new_map_url = transformed_row.get('new_map_url', '')
+
+                # Only store valid transformed URLs
+                if new_map_url and new_map_url.startswith('https://'):
+                    key = (robot_sn, task_name, start_time)
+                    transformed_urls[key] = new_map_url
+
+            # Only add new_map_url column if we have valid URLs to add
+            if transformed_urls:
+                # Add new_map_url column and populate only for transformed tasks
+                result_data['new_map_url'] = result_data.apply(
+                    lambda row: transformed_urls.get(
+                        (row['robot_sn'], row['task_name'], row['start_time']),
+                        None
+                    ),
+                    axis=1
+                )
+
+                # Remove rows where new_map_url is None to avoid NULL inserts
+                # Split into two groups: with URLs and without URLs
+                tasks_with_urls = result_data[result_data['new_map_url'].notna()].copy()
+                tasks_without_urls = result_data[result_data['new_map_url'].isna()].copy()
+
+                # Remove new_map_url column from tasks without URLs
+                if not tasks_without_urls.empty:
+                    tasks_without_urls = tasks_without_urls.drop(columns=['new_map_url'])
+
+                # Combine back - this ensures new_map_url column only exists where there are actual URLs
+                if not tasks_with_urls.empty and not tasks_without_urls.empty:
+                    # Need to handle different column sets
+                    return tasks_with_urls, tasks_without_urls
+                elif not tasks_with_urls.empty:
+                    return tasks_with_urls, pd.DataFrame()
+                else:
+                    return pd.DataFrame(), tasks_without_urls
+
+        # No transformation needed, return original data as-is
+        return result_data, pd.DataFrame()
 
     def run(self, start_time: str, end_time: str):
         """Run the dynamic data pipeline with parallel API processing"""

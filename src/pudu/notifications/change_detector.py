@@ -242,7 +242,7 @@ def detect_data_changes(table, data_list: list, primary_keys: list) -> Dict[str,
                         'old_values': existing_original,
                         'new_values': full_new_values
                     }
-                    logger.info(f"Detected update for record {unique_id} (robot {robot_sn}): {len(changed_fields)} fields changed")
+                    logger.info(f"Detected update for record {unique_id} (robot {robot_sn}): {changed_fields} fields changed")
             else:
                 # New record
                 # Only check fields that exist in the table
