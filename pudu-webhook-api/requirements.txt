@@ -23,4 +23,3 @@ requests>=2.31.0
 
 # Image processing
 Pillow
-opencv-python-headless

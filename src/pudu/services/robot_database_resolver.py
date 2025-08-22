@@ -40,7 +40,7 @@ class RobotDatabaseResolver:
             else:
                 query = base_query
 
-            logger.info(f"Resolving robot database mappings with query: {query}")
+            #logger.info(f"Resolving robot database mappings with query: {query}")
             results = self.main_db.query_data(query)
 
             robot_to_database = {}
@@ -60,7 +60,7 @@ class RobotDatabaseResolver:
                     if project_id:
                         self._project_info_cache[project_id] = project_name
 
-            logger.info(f"Resolved {len(robot_to_database)} robot database mappings")
+            #logger.info(f"Resolved {len(robot_to_database)} robot database mappings")
             return robot_to_database
 
         except Exception as e:
