@@ -9,15 +9,15 @@ main_database: "ry-vue"
 notification_needed:
   - "project"
 
-region: "us-east-1"
+region: "us-east-2"
 
 transform_supported_databases:
-  - "foxx_irvine_office"
+  - "university_of_florida"
 
 s3_config:
-  region: "us-east-1"
+  region: "us-east-2"
   buckets:
-    foxx_irvine_office: "pudu-robot-transforms-foxx-irvine-office-845829-us-east-1"
+    university_of_florida: "pudu-robot-transforms-university-of-florida-889717-us-east-2"
 
 tables:
   # Main Database Tables (ry-vue)
@@ -88,7 +88,7 @@ tables:
   robot_work_location:
     - database: "project"
       table_name: "mnt_robots_work_location"
-      primary_keys: ["robot_sn"]
+      primary_keys: ["robot_sn", "update_time"]
       fields: null
       description: "Robot work location tracking in project database"
 

@@ -25,10 +25,11 @@ class App:
     def __init__(self, config_path: str = "database_config.yaml"):
         """Initialize the application with dynamic database configuration"""
         logger.info(f"Initializing App with config: {config_path}")
+        self.config_path = config_path
         self.config = DynamicDatabaseConfig(config_path)
-        s3_config = self._load_s3_config(config_path)
+        self.s3_config = self._load_s3_config(config_path)
         self.notification_service = NotificationService()
-        self.transform_service = TransformService(self.config, s3_config)
+        self.transform_service = TransformService(self.config, self.s3_config)
 
         # Get all robots and their database mappings
         self.robot_db_mapping = self.config.resolver.get_robot_database_mapping()
@@ -983,9 +984,18 @@ class App:
 
             # 6. Robot work location data WITH COORDINATE TRANSFORMATIONS
             from pudu.services.work_location_service import WorkLocationService
-            work_location_service = WorkLocationService()
+
+            logger.info("=" * 50)
+            logger.info("🗺️ PROCESSING WORK LOCATION DATA WITH ARCHIVAL")
+            logger.info("=" * 50)
+
+            work_location_service = WorkLocationService(self.config, self.s3_config)
             work_location_success = work_location_service.run_work_location_updates()
 
+            if work_location_success:
+                logger.info("✅ Work location updates with archival completed successfully")
+            else:
+                logger.warning("⚠️ Work location updates completed with some failures")
             # Calculate execution time and print summary
             pipeline_end = datetime.now()
             execution_time = (pipeline_end - pipeline_start).total_seconds()

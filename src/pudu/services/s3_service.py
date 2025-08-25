@@ -7,6 +7,7 @@ from typing import Optional, Dict
 from PIL import Image
 import numpy as np
 from botocore.exceptions import ClientError
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -315,9 +316,70 @@ class S3TransformService:
             logger.error(f"❌ Unexpected error testing S3 bucket: {e}")
             return False
 
+    def upload_work_location_data(self, archive_data: pd.DataFrame, robot_sn: str, database_name: str) -> bool:
+        """
+        Upload robot work location data to S3 for archival
+
+        S3 structure:
+        robot-work-location-archive/
+        ├── database=university_of_florida/
+        │   └── year=2025/month=01/day=15/
+        │       └── robot_sn=811064412050012/
+        │           └── batch_20250115_1400.parquet
+
+        Args:
+            archive_data (pd.DataFrame): Work location data to archive
+            robot_sn (str): Robot serial number
+            database_name (str): Database name to determine S3 bucket
+
+        Returns:
+            bool: True if upload successful, False otherwise
+
+
+        """
+        try:
+            # Get bucket name for this database
+            bucket_name = self.bucket_mapping.get(database_name)
+            if not bucket_name:
+                logger.warning(f"No S3 bucket configured for database: {database_name}")
+                return False
+
+            # Create S3 key with date partitioning
+            current_time = datetime.now()
+            date_str = current_time.strftime('%Y-%m-%d')
+            timestamp_str = current_time.strftime('%Y%m%d_%H%M%S')
+
+            s3_key = f"robot-work-location-archive/database={database_name}/year={current_time.year}/month={current_time.month:02d}/day={current_time.day:02d}/robot_sn={robot_sn}/batch_{timestamp_str}.parquet"
+
+            # Convert DataFrame to parquet bytes
+            parquet_buffer = io.BytesIO()
+            archive_data.to_parquet(parquet_buffer, index=False, engine='pyarrow')
+            parquet_bytes = parquet_buffer.getvalue()
+
+            # Upload to S3
+            self.s3_client.put_object(
+                Bucket=bucket_name,
+                Key=s3_key,
+                Body=parquet_bytes,
+                ContentType='application/octet-stream',
+                Metadata={
+                    'robot_sn': robot_sn,
+                    'database_name': database_name,
+                    'record_count': str(len(archive_data)),
+                    'archive_date': date_str,
+                    'content_type': 'work_location_data'
+                }
+            )
+
+            logger.info(f"📦 Uploaded {len(archive_data)} work location records to S3: s3://{bucket_name}/{s3_key}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error uploading work location data to S3: {e}")
+            return False
 
 # Factory function for easy integration
-def create_s3_service(region: str = 'us-east-1', 
+def create_s3_service(region: str = 'us-east-1',
                      bucket_mapping: Optional[Dict[str, str]] = None) -> S3TransformService:
     """
     Create S3 service with optional bucket mapping

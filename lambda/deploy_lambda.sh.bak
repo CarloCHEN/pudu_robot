@@ -19,7 +19,7 @@ IMAGE_TAG="latest"
 ICONS_CONFIG_PATH="icons.yaml"
 
 # Notification API Configuration
-NOTIFICATION_API_HOST="alb-streamnexus-demo-775802511.us-east-1.elb.amazonaws.com"
+NOTIFICATION_API_HOST="alb-notice-1223048054.us-east-2.elb.amazonaws.com"
 NOTIFICATION_API_ENDPOINT="/notification-api/robot/notification/send"
 
 # SNS Configuration - CHANGE THIS EMAIL TO YOUR ACTUAL EMAIL
@@ -96,6 +96,9 @@ requests>=2.31.0
 # Image processing - full OpenCV for containers
 Pillow>=10.0.0
 opencv-python>=4.8.0
+
+# Arrow for efficient data processing
+pyarrow>=12.0.0,<18.0.0
 EOF
 
 # Create Dockerfile if it doesn't exist

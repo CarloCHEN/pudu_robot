@@ -113,6 +113,11 @@ class DatabaseWriter:
         if "yaw" in pose_data and db_data["z"] is None:
             db_data["z"] = pose_data["yaw"]
 
+        # NEW: Add original coordinates (preserve API values)
+        db_data["original_x"] = pose_data.get("x")
+        db_data["original_y"] = pose_data.get("y")
+        db_data["original_z"] = pose_data.get("z") if pose_data.get("z") is not None else pose_data.get("yaw")
+
         # Apply coordinate transformation
         try:
             transformed_data = self.transform_service.transform_robot_coordinates_single(db_data)
@@ -120,6 +125,7 @@ class DatabaseWriter:
             # Add transformed coordinates to database data
             db_data["new_x"] = transformed_data.get("new_x")
             db_data["new_y"] = transformed_data.get("new_y")
+            db_data["new_z"] = db_data["z"]  # No z transformation, keep original
 
             if db_data["new_x"] is not None and db_data["new_y"] is not None:
                 logger.debug(f"Applied coordinate transformation for robot {robot_sn}: ({db_data['x']}, {db_data['y']}) → ({db_data['new_x']}, {db_data['new_y']})")
@@ -131,6 +137,7 @@ class DatabaseWriter:
             # Set to None if transformation fails
             db_data["new_x"] = None
             db_data["new_y"] = None
+            db_data["new_z"] = None
 
         # Remove None values
         return {k: v for k, v in db_data.items() if v is not None}

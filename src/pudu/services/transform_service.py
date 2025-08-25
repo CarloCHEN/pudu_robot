@@ -42,7 +42,7 @@ class TransformService:
             logger.info(f"Initialized S3 service for region {region} with {len(bucket_mapping)} buckets")
         else:
             self.s3_service = None
-            logger.warning("S3 service not initialized - transformed maps will not be uploaded")
+            
 
     def transform_robot_coordinates_batch(self, work_location_data: pd.DataFrame) -> pd.DataFrame:
         """

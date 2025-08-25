@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Robot Task Management - Weekly Snapshot</title>
+<style>
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #f5f5f7;
+    color: #1d1d1f;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+/* Header Navigation */
+.nav-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 30px;
+    border-bottom: 1px solid #d2d2d7;
+}
+
+.nav-tab {
+    padding: 12px 24px;
+    background: none;
+    border: none;
+    color: #86868b;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    border-bottom: 3px solid transparent;
+    transition: all 0.2s ease;
+}
+
+.nav-tab.active {
+    color: #007AFF;
+    border-bottom-color: #007AFF;
+}
+
+.nav-tab:hover:not(.active) {
+    color: #1d1d1f;
+}
+
+/* Date Range Section */
+.date-range-section {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    margin-bottom: 20px;
+    padding: 15px 20px;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.date-input {
+    padding: 8px 12px;
+    border: 1px solid #d2d2d7;
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+.date-buttons {
+    display: flex;
+    gap: 8px;
+}
+
+.date-btn {
+    padding: 8px 16px;
+    background: #f2f2f7;
+    border: none;
+    border-radius: 8px;
+    color: #1d1d1f;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s ease;
+}
+
+.date-btn.active {
+    background: #007AFF;
+    color: white;
+}
+
+.date-btn:hover:not(.active) {
+    background: #e5e5ea;
+}
+
+/* Overview Section - Updated with View Switcher */
+.overview-section {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.overview-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    padding: 20px 20px 0 20px;
+}
+
+.overview-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #1d1d1f;
+}
+
+.overview-filters {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+/* View Switcher */
+.view-switcher {
+    display: flex;
+    background: #f2f2f7;
+    border-radius: 8px;
+    padding: 4px;
+    margin: 0 20px 20px 20px;
+}
+
+.view-btn {
+    padding: 8px 16px;
+    background: none;
+    border: none;
+    color: #86868b;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.view-btn.active {
+    background: white;
+    color: #007AFF;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.view-btn:hover:not(.active) {
+    color: #1d1d1f;
+}
+
+/* Content Views */
+.view-content {
+    display: none;
+    padding: 0 20px 20px 20px;
+}
+
+.view-content.active {
+    display: block;
+}
+
+/* Weekly Snapshot Content */
+.weekly-snapshot-view {
+    padding: 0;
+}
+
+.weekly-filters {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 16px 20px;
+    border-bottom: 1px solid #e5e5ea;
+}
+
+.filter-select {
+    padding: 6px 12px;
+    border: 1px solid #d2d2d7;
+    border-radius: 6px;
+    font-size: 14px;
+    background: white;
+}
+
+.search-input {
+    padding: 6px 12px;
+    border: 1px solid #d2d2d7;
+    border-radius: 6px;
+    font-size: 14px;
+    width: 200px;
+}
+
+/* Weekly Grid */
+.weekly-grid {
+    padding: 20px;
+}
+
+.grid-header {
+    display: grid;
+    grid-template-columns: 200px repeat(7, 60px);
+    gap: 10px;
+    margin-bottom: 16px;
+    font-weight: 600;
+    color: #86868b;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.grid-row {
+    display: grid;
+    grid-template-columns: 200px repeat(7, 60px);
+    gap: 10px;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid #f0f0f5;
+}
+
+.grid-row:last-child {
+    border-bottom: none;
+}
+
+.plan-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: #1d1d1f;
+    cursor: pointer;
+    transition: color 0.2s ease;
+}
+
+.plan-name:hover {
+    color: #007AFF;
+}
+
+/* Progress Circles */
+.progress-circle {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+    position: relative;
+}
+
+.progress-circle:hover {
+    transform: scale(1.1);
+}
+
+.progress-circle.success {
+    background: #34C759;
+    color: white;
+}
+
+.progress-circle.low-efficiency {
+    background: #FFCC02;
+    color: #1d1d1f;
+}
+
+.progress-circle.incomplete {
+    background: #FF9500;
+    color: white;
+}
+
+.progress-circle.failed {
+    background: #FF3B30;
+    color: white;
+}
+
+.progress-circle.not-scheduled {
+    background: #E5E5EA;
+    color: #86868b;
+}
+
+/* Tooltip */
+.tooltip {
+    position: absolute;
+    bottom: 120%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1d1d1f;
+    color: white;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    z-index: 100;
+}
+
+.tooltip::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: #1d1d1f;
+}
+
+.progress-circle:hover .tooltip {
+    opacity: 1;
+}
+
+.action-btn {
+    padding: 6px 12px;
+    background: #007AFF;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.action-btn:hover {
+    background: #0056CC;
+}
+
+.task-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px;
+    border: 1px solid #e5e5ea;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    transition: border-color 0.2s ease;
+}
+
+.task-card:hover {
+    border-color: #007AFF;
+}
+
+.task-info h3 {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.task-meta {
+    font-size: 12px;
+    color: #86868b;
+}
+
+.task-status {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.status-scheduled {
+    background: #E3F2FD;
+    color: #1976D2;
+}
+
+.status-progress {
+    background: #E8F5E8;
+    color: #2E7D32;
+}
+
+.status-interrupt {
+    background: #FFF3E0;
+    color: #F57C00;
+}
+
+.snapshot-period {
+    display: flex;
+    gap: 8px;
+    padding: 16px 20px 0 20px;
+}
+
+.period-btn {
+    padding: 8px 16px;
+    background: #f2f2f7;
+    border: none;
+    border-radius: 8px;
+    color: #1d1d1f;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s ease;
+}
+
+.period-btn.active {
+    background: #007AFF;
+    color: white;
+}
+
+.period-btn:hover:not(.active) {
+    background: #e5e5ea;
+}
+
+.monthly-grid {
+    padding: 20px;
+}
+</style>
+</head>
+<body>
+<div class="container">
+<!-- Navigation Tabs -->
+<div class="nav-tabs">
+    <button class="nav-tab">Fleet</button>
+    <button class="nav-tab">Spatial Monitoring</button>
+    <button class="nav-tab active">Task</button>
+    <button class="nav-tab">Performance</button>
+    <button class="nav-tab">Cost</button>
+</div>
+
+<!-- Date Range Section -->
+<div class="date-range-section">
+    <input type="date" class="date-input" value="2020-06-18">
+    <span>-</span>
+    <input type="date" class="date-input" value="2020-07-18">
+    <div class="date-buttons">
+        <button class="date-btn active">Today</button>
+        <button class="date-btn">Yesterday</button>
+        <button class="date-btn">This week</button>
+        <button class="date-btn">This month</button>
+    </div>
+</div>
+
+<!-- Overview Section with View Switcher -->
+<div class="overview-section">
+    <div class="overview-header">
+        <h2 class="overview-title">Overview</h2>
+        <div class="overview-filters">
+            <label>Filter by:</label>
+            <select class="filter-select">
+                <option>All Status</option>
+                <option>In Progress</option>
+                <option>Scheduled</option>
+                <option>Issues</option>
+            </select>
+            <label>Sort by:</label>
+            <select class="filter-select">
+                <option>Option Selections</option>
+                <option>Date</option>
+                <option>Status</option>
+                <option>Performance</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- View Switcher -->
+    <div class="view-switcher">
+        <button class="view-btn active" onclick="switchView('list')">List</button>
+        <button class="view-btn" onclick="switchView('board')">Board</button>
+        <button class="view-btn" onclick="switchView('gantt')">Gantt</button>
+        <button class="view-btn" onclick="switchView('snapshot')">Snapshot</button>
+    </div>
+
+    <!-- List View -->
+    <div class="view-content active" id="listView">
+        <div class="task-card">
+            <div class="task-info">
+                <h3>Floor Bot Alpha</h3>
+                <div class="task-meta">Map Name: Main warehouse - Floor 1</div>
+            </div>
+            <div class="task-status status-scheduled">Scheduled</div>
+        </div>
+
+        <div class="task-card">
+            <div class="task-info">
+                <h3>Floor Bot Alpha</h3>
+                <div class="task-meta">Map Name: Main warehouse - Floor 1</div>
+            </div>
+            <div class="task-status status-progress">In Progress</div>
+        </div>
+
+        <div class="task-card">
+            <div class="task-info">
+                <h3>Floor Bot Alpha</h3>
+                <div class="task-meta">Map Name: Main warehouse - Floor 1</div>
+            </div>
+            <div class="task-status status-interrupt">Interrupt</div>
+        </div>
+    </div>
+
+    <!-- Board View -->
+    <div class="view-content" id="boardView">
+        <div style="padding: 40px; text-align: center; color: #86868b;">
+            <h3>Board View</h3>
+            <p>Kanban-style task management board would be displayed here</p>
+        </div>
+    </div>
+
+    <!-- Gantt View -->
+    <div class="view-content" id="ganttView">
+        <div style="padding: 40px; text-align: center; color: #86868b;">
+            <h3>Gantt View</h3>
+            <p>Timeline and dependency visualization would be displayed here</p>
+        </div>
+    </div>
+
+    <!-- Snapshot View -->
+    <div class="view-content" id="snapshotView">
+        <!-- Filters -->
+        <div class="weekly-filters">
+            <label>Filter:</label>
+
+            <select class="filter-select" id="timeRangeSelect">
+                <option>This Week</option>
+                <option>Last Week</option>
+                <option>Custom Range</option>
+            </select>
+            <input type="text" class="search-input" placeholder="🔍 Search plans...">
+        </div>
+
+        <!-- Weekly Snapshot -->
+        <div class="weekly-grid" id="weeklySnapshot">
+            <div class="grid-header">
+                <div>Cleaning Plan</div>
+                <div>Mon<br><span style="font-size: 10px; font-weight: 400;">Jun 10</span></div>
+                <div>Tue<br><span style="font-size: 10px; font-weight: 400;">Jun 11</span></div>
+                <div>Wed<br><span style="font-size: 10px; font-weight: 400;">Jun 12</span></div>
+                <div>Thu<br><span style="font-size: 10px; font-weight: 400;">Jun 13</span></div>
+                <div>Fri<br><span style="font-size: 10px; font-weight: 400;">Jun 14</span></div>
+                <div>Sat<br><span style="font-size: 10px; font-weight: 400;">Jun 15</span></div>
+                <div>Sun<br><span style="font-size: 10px; font-weight: 400;">Jun 16</span></div>
+            </div>
+
+            <div class="grid-row">
+                <div class="plan-name" onclick="filterByPlan('2nd Floor Main')">2nd Floor Main</div>
+                <div class="progress-circle success">✓
+                    <div class="tooltip">All tasks completed<br>3 runs: 100%, 95%, 98%<br>Total: 450 m² cleaned</div>
+                </div>
+                <div class="progress-circle low-efficiency">⚡
+                    <div class="tooltip">Low coverage detected<br>2 runs: 45%, 38% completed<br>Below 50% threshold</div>
+                </div>
+                <div class="progress-circle success">✓
+                    <div class="tooltip">All tasks completed<br>3 runs: 100%, 88%, 92%<br>Total: 450 m² cleaned</div>
+                </div>
+                <div class="progress-circle incomplete">!
+                    <div class="tooltip">Some tasks incomplete<br>2 completed, 1 interrupted<br>Area: 300/450 m²</div>
+                </div>
+                <div class="progress-circle success">✓
+                    <div class="tooltip">All tasks completed<br>3 runs: 100%, 100%, 95%<br>Total: 450 m² cleaned</div>
+                </div>
+                <div class="progress-circle not-scheduled">-
+                    <div class="tooltip">Not scheduled</div>
+                </div>
+                <div class="progress-circle not-scheduled">-
+                    <div class="tooltip">Not scheduled</div>
+                </div>
+            </div>
+
+            <div class="grid-row">
+                <div class="plan-name" onclick="filterByPlan('3rd Floor Heart')">3rd Floor Heart</div>
+                <div class="progress-circle success">✓
+                    <div class="tooltip">All tasks completed<br>1 run: 95% completed<br>Total: 171 m² cleaned</div>
+                </div>
+                <div class="progress-circle success">✓
+                    <div class="tooltip">All tasks completed<br>1 run: 100% completed<br>Total: 180 m² cleaned</div>
+                </div>
+                <div class="progress-circle low-efficiency">⚡
+                    <div class="tooltip">Low coverage detected<br>1 run: 42% completed<br>Below 50% threshold</div>
+                </div>
+                <div class="progress-circle success">✓
+                    <div class="tooltip">All tasks completed<br>1 run: 89% completed<br>Total: 160 m² cleaned</div>
+                </div>
+                <div class="progress-circle success">✓
+                    <div class="tooltip">All tasks completed<br>1 run: 100% completed<br>Total: 180 m² cleaned</div>
+                </div>
+                <div class="progress-circle not-scheduled">-
+                    <div class="tooltip">Not scheduled</div>
+                </div>
+                <div class="progress-circle not-scheduled">-
+                    <div class="tooltip">Not scheduled</div>
+                </div>
+            </div>
+
+            <div class="grid-row">
+                <div class="plan-name" onclick="filterByPlan('5th Floor Main')">5th Floor Main</div>
+                <div class="progress-circle success">✓
+                    <div class="tooltip">All tasks completed<br>1 run: 100% completed<br>Total: 320 m² cleaned</div>
+                </div>
+                <div class="progress-circle success">✓
+                    <div class="tooltip">All tasks completed<br>1 run: 95% completed<br>Total: 304 m² cleaned</div>
+                </div>
+                <div class="progress-circle success">✓
+                    <div class="tooltip">All tasks completed<br>1 run: 98% completed<br>Total: 314 m² cleaned</div>
+                </div>
+                <div class="progress-circle success">✓
+                    <div class="tooltip">All tasks completed<br>1 run: 92% completed<br>Total: 294 m² cleaned</div>
+                </div>
+                <div class="progress-circle success">✓
+                    <div class="tooltip">All tasks completed<br>1 run: 100% completed<br>Total: 320 m² cleaned</div>
+                </div>
+                <div class="progress-circle success">✓
+                    <div class="tooltip">All tasks completed<br>1 run: 88% completed<br>Total: 282 m² cleaned</div>
+                </div>
+                <div class="progress-circle success">✓
+                    <div class="tooltip">All tasks completed<br>1 run: 96% completed<br>Total: 307 m² cleaned</div>
+                </div>
+            </div>
+
+            <div class="grid-row">
+                <div class="plan-name" onclick="filterByPlan('Children Hallway')">Children Hallway</div>
+                <div class="progress-circle success">✓
+                    <div class="tooltip">All tasks completed<br>1 run: 85% completed<br>Total: 72 m² cleaned</div>
+                </div>
+                <div class="progress-circle success">✓
+                    <div class="tooltip">All tasks completed<br>1 run: 92% completed<br>Total: 78 m² cleaned</div>
+                </div>
+                <div class="progress-circle success">✓
+                    <div class="tooltip">All tasks completed<br>1 run: 88% completed<br>Total: 75 m² cleaned</div>
+                </div>
+                <div class="progress-circle not-scheduled">-
+                    <div class="tooltip">Not scheduled</div>
+                </div>
+                <div class="progress-circle success">✓
+                    <div class="tooltip">All tasks completed<br>1 run: 100% completed<br>Total: 85 m² cleaned</div>
+                </div>
+                <div class="progress-circle failed">✗
+                    <div class="tooltip">No tasks completed<br>10 runs: avg 4% (range 0-6%)<br>Total: 12 m² cleaned</div>
+                </div>
+                <div class="progress-circle not-scheduled">-
+                    <div class="tooltip">Not scheduled</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+
+<script>
+function switchView(viewType) {
+    // Update active button
+    document.querySelectorAll('.view-btn').forEach(btn => btn.classList.remove('active'));
+    event.target.classList.add('active');
+
+    // Hide all views
+    document.querySelectorAll('.view-content').forEach(content => content.classList.remove('active'));
+
+    // Show selected view
+    document.getElementById(viewType + 'View').classList.add('active');
+}
+
+function filterByPlan(planName) {
+    alert(`Filtering tasks for: ${planName}`);
+    // In real implementation, this would filter the overview section
+    // to show only tasks related to this cleaning plan
+}
+
+// Initialize UI
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('Robot Task Management UI initialized');
+});
+</script>
+</body>
+</html>

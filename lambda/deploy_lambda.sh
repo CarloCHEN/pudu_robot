@@ -96,6 +96,9 @@ requests>=2.31.0
 # Image processing - full OpenCV for containers
 Pillow>=10.0.0
 opencv-python>=4.8.0
+
+# Arrow for efficient data processing
+pyarrow>=12.0.0,<18.0.0
 EOF
 
 # Create Dockerfile if it doesn't exist

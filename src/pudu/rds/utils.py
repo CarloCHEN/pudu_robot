@@ -92,8 +92,8 @@ def batch_insert(cursor, table_name: str, data_list: list, primary_keys: list):
 
     # Prepare values as a bulk insert
     values = ", ".join([
-        "(" + ", ".join([f"'{value}'" if value is not None else "NULL" for value in row.values()]) + ")"
-        for row in data_list
+       "(" + ", ".join(["NULL" if (value is None or pd.isna(value)) else f"'{value}'" for value in row.values()]) + ")"
+       for row in data_list
     ])
 
     # Add ON DUPLICATE KEY UPDATE if primary keys are present
@@ -104,6 +104,7 @@ def batch_insert(cursor, table_name: str, data_list: list, primary_keys: list):
         sql = f"INSERT INTO {table_name} ({columns}) VALUES {values} ON DUPLICATE KEY UPDATE {update_clause}"
     else:
         sql = f"INSERT INTO {table_name} ({columns}) VALUES {values}"
+
     # Execute the SQL statement
     cursor.execute(sql)
     cursor.connection.commit()

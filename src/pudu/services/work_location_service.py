@@ -1,8 +1,10 @@
 import logging
 import pandas as pd
 from typing import List, Dict, Optional
+from datetime import datetime, timedelta
 from pudu.rds.rdsTable import RDSTable
 from pudu.apis.foxx_api import get_robot_work_location_and_mapping_data
+
 
 logger = logging.getLogger(__name__)
 
@@ -11,23 +13,31 @@ class WorkLocationService:
     Service to handle robot work location and map floor mapping updates with dynamic database resolution.
 
     This service manages:
-    1. Robot work location tracking (mnt_robots_work_location table)
+    1. Robot work location tracking (mnt_robots_work_location table) with historical data
     2. Map to floor mapping updates (mnt_robot_map_floor_mapping table)
     3. Coordinate transformation for supported databases
+    4. Data archival to S3 to maintain performance
     """
 
-    def __init__(self, config_path: str = "database_config.yaml"):
+    def __init__(self, config, s3_config: Dict):
         """
         Initialize with dynamic database configuration
 
         Args:
-            config_path (str): Path to database configuration YAML file
+            config: DynamicDatabaseConfig object
+            s3_config: S3 configuration dictionary
         """
-        from pudu.configs.database_config_loader import DynamicDatabaseConfig # avoid circular import
         from pudu.services.transform_service import TransformService
 
-        self.config = DynamicDatabaseConfig(config_path)
-        self.transform_service = TransformService(self.config)
+        self.config = config
+        self.s3_config = s3_config
+        self.transform_service = TransformService(self.config, self.s3_config)
+
+        # NEW: Archival configuration for historical data management
+        self.MAX_RETENTION_HOURS = 24      # 24 hours max
+        self.MAX_RETENTION_COUNT = 1000    # 1000 records max
+        self.ARCHIVE_BATCH_SIZE = 100      # Archive 100 records at a time
+        self.MIN_ARCHIVE_THRESHOLD = 50    # Only archive if we have at least 50 excess records
 
     def update_robot_work_locations_and_mappings(self) -> bool:
         """
@@ -39,8 +49,9 @@ class WorkLocationService:
         Process:
             1. Gets robot work location and mapping data from API
             2. Transforms coordinates for robots in supported databases
-            3. Updates mnt_robots_work_location tables in appropriate project databases
-            4. Updates mnt_robot_map_floor_mapping tables with resolved floor_ids
+            3. Updates mnt_robots_work_location tables in appropriate project databases (APPEND mode)
+            4. Runs archival process to maintain performance
+            5. Updates mnt_robot_map_floor_mapping tables with resolved floor_ids
         """
         try:
             logger.info("🗺️ Updating robot work locations and map floor mappings (dynamic)...")
@@ -50,9 +61,9 @@ class WorkLocationService:
 
             success = True
 
-            # Update work locations (with coordinate transformation)
+            # MODIFIED: Update work locations (with coordinate transformation and archival)
             if not work_location_data.empty:
-                success &= self._update_work_locations(work_location_data)
+                success &= self._update_work_locations_with_archival(work_location_data)
             else:
                 logger.info("No work location data to update")
 
@@ -85,9 +96,374 @@ class WorkLocationService:
         logger.debug(f"Prepared DataFrame with {processed_df.shape[0]} rows and {processed_df.shape[1]} columns")
         return processed_df
 
+    def _update_work_locations_with_archival(self, work_location_data: pd.DataFrame) -> bool:
+        """
+        NEW METHOD: Update work location data with coordinate transformation and archival management
+
+        Args:
+            work_location_data (pd.DataFrame): DataFrame with columns:
+                - robot_sn (str): Robot serial number
+                - map_name (str): Name of the map robot is on (None if idle)
+                - x (float): X coordinate (None if idle)
+                - y (float): Y coordinate (None if idle)
+                - z (float): Z coordinate (None if idle)
+                - status (str): 'normal' if in task, 'idle' if not in task
+                - update_time (str): Timestamp of update
+
+        Returns:
+            bool: True if all updates successful, False otherwise
+        """
+        try:
+            # Transform coordinates and prepare enhanced data
+            enhanced_data = self._prepare_enhanced_work_location_data(work_location_data)
+
+            # Get robots from the data
+            robots_in_data = enhanced_data['robot_sn'].unique().tolist()
+
+            # Get table configurations for these specific robots
+            table_configs = self.config.get_table_configs_for_robots('robot_work_location', robots_in_data)
+
+            success_count = 0
+            total_count = len(table_configs)
+
+            for table_config in table_configs:
+                try:
+                    # Initialize table
+                    table = RDSTable(
+                        connection_config="credentials.yaml",
+                        database_name=table_config['database'],
+                        table_name=table_config['table_name'],
+                        fields=table_config.get('fields'),
+                        primary_keys=table_config['primary_keys'],
+                        reuse_connection=True
+                    )
+
+                    # Filter data for robots that belong to this database
+                    target_robots = table_config.get('robot_sns', [])
+                    if target_robots:
+                        filtered_data = enhanced_data[enhanced_data['robot_sn'].isin(target_robots)]
+                    else:
+                        filtered_data = enhanced_data
+
+                    if not filtered_data.empty:
+                        # APPEND new data (not update existing records)
+                        data_list = filtered_data.to_dict(orient='records')
+
+                        # Use INSERT ON DUPLICATE KEY UPDATE for historical data with (robot_sn, update_time) unique constraint
+                        table.batch_insert(data_list)
+
+                        # Run archival after inserting new data
+                        self._run_archival_for_table(table)
+
+                        # MODIFIED: Log transformation stats for this database
+                        db_transformed = len(filtered_data[filtered_data['new_x'].notna()])
+                        db_total = len(filtered_data)
+                        logger.info(f"✅ Appended work locations to {table_config['database']}.{table_config['table_name']} for {db_total} robots ({db_transformed} with coordinates transformed)")
+                        success_count += 1
+                    else:
+                        success_count += 1  # No data needed for this database
+                        logger.info(f"ℹ️ No work location data for {table_config['database']}")
+
+                    table.close()
+
+                except Exception as e:
+                    logger.error(f"❌ Failed to update work locations in {table_config['database']}.{table_config['table_name']}: {e}")
+
+            return success_count > 0
+
+        except Exception as e:
+            logger.error(f"Error in _update_work_locations_with_archival: {e}")
+            return False
+
+    def _prepare_enhanced_work_location_data(self, work_location_data: pd.DataFrame) -> pd.DataFrame:
+        """
+        NEW METHOD: Prepare enhanced work location data with coordinate transformation and proper column mapping
+
+        Returns DataFrame with columns:
+        - robot_sn, map_name, status, update_time
+        - x, y, z (current/converted coordinates)
+        - new_x, new_y, new_z (floor plan coordinates)
+        - original_x, original_y, original_z (original robot coordinates)
+        """
+        try:
+            # Transform coordinates before saving to database
+            logger.info("🔧 Applying coordinate transformations...")
+            transformed_data = self.transform_service.transform_robot_coordinates_batch(work_location_data)
+
+            # Create enhanced data with proper column mapping
+            enhanced_data = transformed_data.copy()
+
+            # Map original coordinates to original_* columns
+            enhanced_data['original_x'] = enhanced_data['x']
+            enhanced_data['original_y'] = enhanced_data['y']
+            enhanced_data['original_z'] = enhanced_data['z']
+
+            # For new_z, keep original z value (no z transformation implemented)
+            enhanced_data['new_z'] = enhanced_data['z']
+
+            # x, y could be original or converted
+            enhanced_data['x'] = enhanced_data['original_x']
+            enhanced_data['y'] = enhanced_data['original_y']
+
+            # Ensure None values stay as None (not converted to 0) for idle robots
+            idle_mask = enhanced_data['status'] == 'idle'
+            coordinate_cols = ['x', 'y', 'z', 'original_x', 'original_y', 'original_z']
+
+            for col in coordinate_cols:
+                if col in enhanced_data.columns:
+                    # Convert nan values to None for idle robots (pandas converts None to nan)
+                    enhanced_data.loc[idle_mask & (enhanced_data[col].isna()), col] = None
+
+            # Handle new_x, new_y - set to null when no transformation available
+            if 'new_x' in enhanced_data.columns:
+                enhanced_data.loc[enhanced_data['new_x'].isna(), 'new_x'] = None
+            if 'new_y' in enhanced_data.columns:
+                enhanced_data.loc[enhanced_data['new_y'].isna(), 'new_y'] = None
+
+            # Handle map_name - set to null when robot is idle
+            enhanced_data.loc[enhanced_data['status'] == 'idle', 'map_name'] = None
+
+            # Log transformation results
+            transformed_count = len(enhanced_data[enhanced_data['new_x'].notna()])
+            total_count = len(enhanced_data)
+            logger.info(f"Enhanced work location data: {transformed_count}/{total_count} robots with coordinate transformation")
+
+            return enhanced_data
+
+        except Exception as e:
+            logger.error(f"Error preparing enhanced work location data: {e}")
+            return work_location_data.copy()
+
+
+    def _run_archival_for_table(self, table: RDSTable):
+        """
+        Run archival process for a specific table to maintain performance
+        """
+        try:
+            # Check which robots need archival
+            robots_needing_archive = self._check_robots_needing_archive(table)
+
+            if not robots_needing_archive:
+                logger.debug(f"No archival needed for {table.database_name}.{table.table_name}")
+                return
+
+            logger.info(f"📦 {len(robots_needing_archive)} robots need archival in {table.database_name}")
+
+            for robot_sn, archive_info in robots_needing_archive.items():
+                try:
+                    # Get data to archive
+                    archive_data = self._get_archive_data_for_robot(table, robot_sn, archive_info)
+
+                    if not archive_data.empty:
+                        # Archive to S3
+                        s3_success = self._upload_robot_data_to_s3(archive_data, robot_sn, table.database_name)
+
+                        if s3_success:
+                            # Delete from database
+                            self._delete_archived_data(table, robot_sn, archive_data)
+                            logger.info(f"✅ Archived {len(archive_data)} records for robot {robot_sn}")
+                        else:
+                            logger.warning(f"⚠️ Failed to upload to S3 for robot {robot_sn}, keeping data in DB")
+
+                except Exception as e:
+                    logger.error(f"❌ Error archiving robot {robot_sn}: {e}")
+
+        except Exception as e:
+            logger.error(f"Error running archival for {table.database_name}.{table.table_name}: {e}")
+
+    def _check_robots_needing_archive(self, table: RDSTable) -> Dict[str, Dict]:
+        """
+        Check which robots need archival based on dual conditions:
+        - Keep max 24 hours OR 1000 records (whichever is LESS)
+        """
+        robots_needing_archive = {}
+
+        try:
+            # Get all robots that have data in this table
+            robots_query = f"SELECT DISTINCT robot_sn FROM {table.table_name}"
+            robot_results = table.query_data(robots_query)
+
+            for robot_record in robot_results:
+                robot_sn = robot_record[0] if isinstance(robot_record, tuple) else robot_record.get('robot_sn')
+                if not robot_sn:
+                    continue
+
+                archive_info = self._check_robot_archive_needs(table, robot_sn)
+                if archive_info:
+                    robots_needing_archive[robot_sn] = archive_info
+
+        except Exception as e:
+            logger.error(f"Error checking archive needs: {e}")
+
+        return robots_needing_archive
+
+    def _check_robot_archive_needs(self, table: RDSTable, robot_sn: str) -> Optional[Dict]:
+        """
+        NEW METHOD: Check if specific robot needs archival based on time AND count limits
+        """
+        try:
+            # Get robot's data statistics
+            stats_query = f"""
+                SELECT
+                    COUNT(*) as total_count,
+                    MIN(update_time) as oldest_time,
+                    MAX(update_time) as newest_time
+                FROM {table.table_name}
+                WHERE robot_sn = '{robot_sn}'
+            """
+
+            result = table.query_data(stats_query)
+            if not result:
+                return None
+
+            stats = result[0]
+            total_count = stats[0] if isinstance(stats, tuple) else stats.get('total_count')
+            oldest_time = stats[1] if isinstance(stats, tuple) else stats.get('oldest_time')
+
+            if total_count < self.MIN_ARCHIVE_THRESHOLD:
+                return None  # Not enough data to bother archiving
+
+            # Convert string timestamps to datetime if needed
+            if isinstance(oldest_time, str):
+                oldest_time = pd.to_datetime(oldest_time)
+
+            current_time = datetime.now()
+            time_cutoff = current_time - timedelta(hours=self.MAX_RETENTION_HOURS)
+
+            # Check both conditions: time-based and count-based
+            archive_info = None
+
+            # Condition 1: Count limit exceeded
+            if total_count > self.MAX_RETENTION_COUNT:
+                excess_count = total_count - self.MAX_RETENTION_COUNT
+                archive_info = {
+                    'excess_count': excess_count,
+                    'cutoff_method': 'count',
+                    'reason': f'Count limit exceeded: {total_count} > {self.MAX_RETENTION_COUNT}',
+                    'archive_count': min(excess_count, self.ARCHIVE_BATCH_SIZE) # archive at most ARCHIVE_BATCH_SIZE records
+                }
+
+            # Condition 2: Time limit exceeded
+            elif oldest_time < time_cutoff:
+                # Count how many records are older than 24 hours
+                old_count_query = f"""
+                    SELECT COUNT(*)
+                    FROM {table.table_name}
+                    WHERE robot_sn = '{robot_sn}'
+                    AND update_time < '{time_cutoff.strftime('%Y-%m-%d %H:%M:%S')}'
+                """
+
+                old_count_result = table.query_data(old_count_query)
+                old_count = old_count_result[0][0] if old_count_result else 0
+
+                if old_count > 0:
+                    archive_info = {
+                        'excess_count': old_count,
+                        'cutoff_method': 'time',
+                        'cutoff_time': time_cutoff,
+                        'reason': f'Time limit exceeded: oldest record from {oldest_time} < {time_cutoff}',
+                        'archive_count': min(old_count, self.ARCHIVE_BATCH_SIZE) # archive at most ARCHIVE_BATCH_SIZE records
+                    }
+
+            if archive_info:
+                logger.debug(f"🗂️ Robot {robot_sn} needs archive: {archive_info['reason']}")
+
+            return archive_info
+
+        except Exception as e:
+            logger.error(f"Error checking archive needs for robot {robot_sn}: {e}")
+            return None
+
+    def _get_archive_data_for_robot(self, table: RDSTable, robot_sn: str, archive_info: Dict) -> pd.DataFrame:
+        """
+        NEW METHOD: Get the specific data that should be archived for a robot
+        """
+        try:
+            if archive_info['cutoff_method'] == 'count':
+                # Archive oldest records when count limit exceeded
+                query = f"""
+                    SELECT * FROM {table.table_name}
+                    WHERE robot_sn = '{robot_sn}'
+                    ORDER BY update_time ASC
+                    LIMIT {archive_info['archive_count']}
+                """
+            else:  # time-based
+                # Archive records older than cutoff time
+                cutoff_time = archive_info['cutoff_time']
+                query = f"""
+                    SELECT * FROM {table.table_name}
+                    WHERE robot_sn = '{robot_sn}'
+                    AND update_time < '{cutoff_time.strftime('%Y-%m-%d %H:%M:%S')}'
+                    ORDER BY update_time ASC
+                    LIMIT {archive_info['archive_count']}
+                """
+
+            # Use execute_query to get DataFrame
+            archive_data = table.execute_query(query)
+
+            logger.debug(f"📦 Retrieved {len(archive_data)} records for archival: robot {robot_sn}")
+            return archive_data
+
+        except Exception as e:
+            logger.error(f"Error getting archive data for robot {robot_sn}: {e}")
+            return pd.DataFrame()
+
+    def _upload_robot_data_to_s3(self, archive_data: pd.DataFrame, robot_sn: str, database_name: str) -> bool:
+        """
+        NEW METHOD: Upload robot work location data to S3 for archival
+
+        Uses the existing S3 service if available, or creates a simple S3 uploader
+        """
+        try:
+            # Use transform service's S3 service if available
+            if hasattr(self.transform_service, 's3_service') and self.transform_service.s3_service:
+                return self.transform_service.s3_service.upload_work_location_data(
+                    archive_data, robot_sn, database_name
+                )
+            else:
+                logger.warning(f"S3 service not available, cannot archive data for robot {robot_sn}")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error uploading robot data to S3 for {robot_sn}: {e}")
+            return False
+
+    def _delete_archived_data(self, table: RDSTable, robot_sn: str, archived_data: pd.DataFrame):
+        """
+        Delete the data that was successfully archived
+        """
+        try:
+            if archived_data.empty:
+                return
+
+            # Use 'id' column for precise deletion if available
+            if 'id' in archived_data.columns:
+                ids = archived_data['id'].tolist()
+                ids_str = ','.join(map(str, ids))
+                delete_query = f"DELETE FROM {table.table_name} WHERE id IN ({ids_str})"
+            else:
+                # Fallback: delete by robot_sn and time range
+                min_time = archived_data['update_time'].min()
+                max_time = archived_data['update_time'].max()
+                delete_query = f"""
+                    DELETE FROM {table.table_name}
+                    WHERE robot_sn = '{robot_sn}'
+                    AND update_time BETWEEN '{min_time}' AND '{max_time}'
+                    LIMIT {len(archived_data)}
+                """
+
+            table.cursor.execute(delete_query)
+            table.cursor.connection.commit()
+
+            logger.debug(f"🗑️ Deleted {len(archived_data)} archived records for robot {robot_sn}")
+
+        except Exception as e:
+            logger.error(f"Error deleting archived data for robot {robot_sn}: {e}")
+
     def _update_work_locations(self, work_location_data: pd.DataFrame) -> bool:
         """
-        Update work location data with dynamic database resolution and coordinate transformation
+        DEPRECATED: Update work location data with dynamic database resolution and coordinate transformation
+        This method is kept for reference but replaced by _update_work_locations_with_archival
 
         Args:
             work_location_data (pd.DataFrame): DataFrame with columns:
@@ -179,16 +555,14 @@ class WorkLocationService:
             bool: True if all updates successful, False otherwise
         """
         try:
-            # Get all robots that have mapping data (simplified - no separate function needed)
+            # Get all robots that have mapping data
             robots_with_mappings = self._get_robots_using_maps(mapping_data, work_location_data)
 
             if not robots_with_mappings:
                 logger.info("No robots found for map floor mappings")
                 return True
 
-            # Resolve floor_ids for each map based on work_location_data (no extra DB queries!)
-            # result is: {map_name: floor_id}
-            # TODO: _update_map_floor_mappings_for_table needs to only insert map_name in its project database
+            # Resolve floor_ids for each map based on work_location_data
             resolved_mappings = self._resolve_floor_ids_dynamic(mapping_data, work_location_data)
 
             if resolved_mappings.empty:
@@ -212,10 +586,20 @@ class WorkLocationService:
                         reuse_connection=True
                     )
 
-                    # Update mappings for this database
-                    self._update_map_floor_mappings_for_table(table, resolved_mappings)
-                    success_count += 1
+                    # FIXED: Filter mappings for this specific database
+                    target_robots = table_config.get('robot_sns', [])
+                    database_mappings = self._filter_mappings_for_database(
+                        resolved_mappings, work_location_data, target_robots
+                    )
 
+                    if not database_mappings.empty:
+                        # Update mappings for this database
+                        self._update_map_floor_mappings_for_table(table, database_mappings)
+                        logger.info(f"✅ Updated {len(database_mappings)} mappings in {table_config['database']}.{table_config['table_name']}")
+                    else:
+                        logger.info(f"ℹ️ No relevant mappings for {table_config['database']}")
+
+                    success_count += 1
                     table.close()
 
                 except Exception as e:
@@ -473,6 +857,36 @@ class WorkLocationService:
         except Exception as e:
             logger.error(f"Error updating map floor mappings in {table.database_name}.{table.table_name}: {e}")
 
+    def _filter_mappings_for_database(self, resolved_mappings: pd.DataFrame, work_location_data: pd.DataFrame, target_robots: List[str]) -> pd.DataFrame:
+        """
+        Filter resolved mappings to only include maps used by robots in the target database
+
+        Args:
+            resolved_mappings (pd.DataFrame): All resolved mappings
+            work_location_data (pd.DataFrame): Robot work location data
+            target_robots (List[str]): Robot SNs that belong to this database
+
+        Returns:
+            pd.DataFrame: Filtered mappings relevant to this database
+        """
+        if resolved_mappings.empty or not target_robots:
+            return pd.DataFrame()
+
+        # Get maps used by robots in this database
+        maps_used_by_target_robots = work_location_data[
+            (work_location_data['robot_sn'].isin(target_robots)) &
+            (work_location_data['status'] == 'normal') &
+            (work_location_data['map_name'].notna())
+        ]['map_name'].unique().tolist()
+
+        # Filter resolved mappings to only include maps used by target robots
+        filtered_mappings = resolved_mappings[
+            resolved_mappings['map_name'].isin(maps_used_by_target_robots)
+        ].copy()
+
+        logger.debug(f"Filtered {len(filtered_mappings)} mappings for {len(target_robots)} robots using maps: {maps_used_by_target_robots}")
+        return filtered_mappings
+
     def run_work_location_updates(self) -> bool:
         """
         Run all work location related updates with dynamic database resolution
@@ -483,18 +897,19 @@ class WorkLocationService:
         Process:
             1. Calls get_robot_work_location_and_mapping_data() to get current robot states
             2. Applies coordinate transformations for supported databases
-            3. Updates mnt_robots_work_location tables across all relevant project databases
-            4. Resolves and updates mnt_robot_map_floor_mapping tables
-            5. Handles cleanup and error reporting
+            3. Updates mnt_robots_work_location tables across all relevant project databases (APPEND mode)
+            4. Runs archival process to maintain 24h/1000 record limits per robot
+            5. Resolves and updates mnt_robot_map_floor_mapping tables
+            6. Handles cleanup and error reporting
         """
-        logger.info("🚀 Starting dynamic work location updates...")
+        logger.info("🚀 Starting dynamic work location updates with archival...")
 
         try:
             # Update both robot work locations and map floor mappings efficiently
             success = self.update_robot_work_locations_and_mappings()
 
             if success:
-                logger.info("✅ Dynamic work location updates completed successfully")
+                logger.info("✅ Dynamic work location updates with archival completed successfully")
             else:
                 logger.warning("⚠️ Dynamic work location updates completed with some failures")
 
