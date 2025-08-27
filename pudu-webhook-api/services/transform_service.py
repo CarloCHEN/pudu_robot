@@ -50,6 +50,8 @@ class TransformService:
         result_data = robot_data.copy()
         result_data['new_x'] = None
         result_data['new_y'] = None
+        result_data['original_x'] = None
+        result_data['original_y'] = None
 
         try:
             robot_sn = robot_data.get('robot_sn')
@@ -87,11 +89,13 @@ class TransformService:
                 return result_data
 
             # Transform coordinates
-            new_x, new_y = self._transform_robot_position(map_name, float(x), float(y))
+            robot_map_x, robot_map_y, new_x, new_y = self._transform_robot_position(map_name, float(x), float(y))
 
             if new_x is not None and new_y is not None:
                 result_data['new_x'] = new_x
                 result_data['new_y'] = new_y
+                result_data['original_x'] = robot_map_x
+                result_data['original_y'] = robot_map_y
                 logger.debug(f"✅ Transformed robot {robot_sn}: ({x}, {y}) → ({new_x}, {new_y})")
             else:
                 logger.debug(f"⚠️ Could not transform coordinates for robot {robot_sn}")
@@ -163,14 +167,14 @@ class TransformService:
             # Get map info (cached)
             map_info = self._get_map_info(map_name)
             if not map_info:
-                return None, None
+                return None, None, None, None
 
             # Get robot map and transform
             robot_map_xml = map_info.get('robot_map_xml')
             transform_robot_to_floor = map_info.get('transform_robot_to_floor')
 
             if not robot_map_xml or transform_robot_to_floor is None:
-                return None, None
+                return None, None, None, None
 
             # Parse robot map XML to get resolution and origin
             root = ET.fromstring(robot_map_xml)
@@ -178,7 +182,7 @@ class TransformService:
             origin_element = root.find('origin')
 
             if resolution_element is None or origin_element is None:
-                return None, None
+                return None, None, None, None
 
             resolution = float(resolution_element.text)
             origin = list(map(float, origin_element.text.split()))
@@ -186,7 +190,7 @@ class TransformService:
             # Get robot map image to determine dimensions
             robot_map_png_bytes = self._fetch_png_from_url(map_info['robot_map'])
             if not robot_map_png_bytes:
-                return None, None
+                return None, None, None, None
 
             robot_map_rgb = np.array(Image.open(io.BytesIO(robot_map_png_bytes)).convert('RGB'))
 
@@ -199,11 +203,11 @@ class TransformService:
             floor_plan_u = int(robot_position_on_floor[0])
             floor_plan_v = int(robot_position_on_floor[1])
 
-            return float(floor_plan_u), float(floor_plan_v)
+            return float(robot_map_u), float(robot_map_v), float(floor_plan_u), float(floor_plan_v)
 
         except Exception as e:
             logger.debug(f"Error transforming position for map {map_name}: {e}")
-            return None, None
+            return None, None, None, None
 
     def _get_map_info(self, map_name: str) -> Optional[Dict[str, Any]]:
         """

@@ -80,7 +80,7 @@ class S3TransformService:
             # Get bucket for this database
             bucket_name = self.get_bucket_for_database(database_name)
             if not bucket_name:
-                logger.error(f"No S3 bucket configured for database: {database_name}")
+                logger.error(f"No S3 bucket configured for database: {database_name} for image upload")
                 return None
 
             # Generate deterministic S3 key (path) for the image
@@ -334,14 +334,12 @@ class S3TransformService:
 
         Returns:
             bool: True if upload successful, False otherwise
-
-
         """
         try:
             # Get bucket name for this database
             bucket_name = self.bucket_mapping.get(database_name)
             if not bucket_name:
-                logger.warning(f"No S3 bucket configured for database: {database_name}")
+                logger.warning(f"No S3 bucket configured for database: {database_name} for work location data upload")
                 return False
 
             # Create S3 key with date partitioning

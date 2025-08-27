@@ -63,6 +63,63 @@ class DatabaseConfig:
 
         return resolved_configs
 
+    def get_transform_supported_databases(self) -> List[str]:
+        """
+        Get list of databases that support transformations (have floor plan mapping data).
+
+        Returns:
+            List[str]: Database names that support transformations
+        """
+        return self.config.get('transform_supported_databases', [])
+
+    def filter_robots_for_transform_support(self, robot_sns: List[str]) -> tuple:
+        """
+        Filter robots based on whether their database supports transformations.
+
+        Args:
+            robot_sns: List of robot serial numbers
+
+        Returns:
+            tuple: (robots_with_transform_support, robots_without_transform_support)
+        """
+        # Get robot to database mapping
+        robot_to_db = self.resolver.get_robot_database_mapping(robot_sns)
+
+        # Get databases that support transformations
+        supported_databases = self.get_transform_supported_databases()
+
+        robots_with_support = []
+        robots_without_support = []
+
+        for robot_sn in robot_sns:
+            database_name = robot_to_db.get(robot_sn)
+            if database_name and database_name in supported_databases:
+                robots_with_support.append(robot_sn)
+            else:
+                robots_without_support.append(robot_sn)
+                if database_name:
+                    logger.debug(f"Robot {robot_sn} in database {database_name} - transformations not supported")
+                else:
+                    logger.debug(f"Robot {robot_sn} - no database mapping found")
+
+        logger.info(f"Transform filtering: {len(robots_with_support)} robots with support, {len(robots_without_support)} without support")
+        return robots_with_support, robots_without_support
+
+    def get_robots_in_transform_supported_databases(self) -> List[str]:
+        """
+        Get all robots that are in databases supporting transformations.
+
+        Returns:
+            List[str]: Robot serial numbers in transform-supported databases
+        """
+        # Get all robots
+        all_robots = list(self.resolver.get_robot_database_mapping().keys())
+
+        # Filter for transform support
+        supported_robots, _ = self.filter_robots_for_transform_support(all_robots)
+
+        return supported_robots
+    
     def get_notification_databases(self) -> List[str]:
         """Get list of databases that need notifications"""
         notification_needed = self.config.get('notification_needed', [])

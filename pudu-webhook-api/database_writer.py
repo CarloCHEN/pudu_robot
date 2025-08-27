@@ -113,11 +113,6 @@ class DatabaseWriter:
         if "yaw" in pose_data and db_data["z"] is None:
             db_data["z"] = pose_data["yaw"]
 
-        # NEW: Add original coordinates (preserve API values)
-        db_data["original_x"] = pose_data.get("x")
-        db_data["original_y"] = pose_data.get("y")
-        db_data["original_z"] = pose_data.get("z") if pose_data.get("z") is not None else pose_data.get("yaw")
-
         # Apply coordinate transformation
         try:
             transformed_data = self.transform_service.transform_robot_coordinates_single(db_data)
@@ -125,7 +120,15 @@ class DatabaseWriter:
             # Add transformed coordinates to database data
             db_data["new_x"] = transformed_data.get("new_x")
             db_data["new_y"] = transformed_data.get("new_y")
-            db_data["new_z"] = db_data["z"]  # No z transformation, keep original
+            db_data["new_z"] = db_data["z"] if db_data["new_x"] is not None and db_data["new_y"] is not None else None  # No z transformation, keep original
+
+            # NEW: Add original coordinates (preserve API values)
+            db_data["original_x"] = transformed_data.get("original_x")
+            db_data["original_y"] = transformed_data.get("original_y")
+            db_data["original_z"] = db_data["z"] if db_data["new_x"] is not None and db_data["new_y"] is not None else None
+
+            db_data["x"] = db_data["new_x"]
+            db_data["y"] = db_data["new_y"]
 
             if db_data["new_x"] is not None and db_data["new_y"] is not None:
                 logger.debug(f"Applied coordinate transformation for robot {robot_sn}: ({db_data['x']}, {db_data['y']}) → ({db_data['new_x']}, {db_data['new_y']})")
@@ -138,6 +141,12 @@ class DatabaseWriter:
             db_data["new_x"] = None
             db_data["new_y"] = None
             db_data["new_z"] = None
+            db_data["original_x"] = None
+            db_data["original_y"] = None
+            db_data["original_z"] = None
+            db_data["x"] = None
+            db_data["y"] = None
+            db_data["z"] = None
 
         # Remove None values
         return {k: v for k, v in db_data.items() if v is not None}
@@ -188,12 +197,19 @@ class DatabaseWriter:
         )
 
         # Write to robot_work_location table (for location tracking with coordinates)
-        location_db_names, location_table_names, location_changes = self._write_with_change_detection(
-            'robot_work_location',
-            robot_sn,
-            pose_data,
-            self._transform_robot_pose_data
-        )
+        if robot_sn in self.config.filter_robots_for_transform_support([robot_sn])[0]:
+            logger.info(f"🔍 Robot {robot_sn} is in a transform-supported database, writing to robot_work_location table")
+            location_db_names, location_table_names, location_changes = self._write_with_change_detection(
+                'robot_work_location',
+                robot_sn,
+                pose_data,
+                self._transform_robot_pose_data
+            )
+        else:
+            logger.info(f"🔍 Robot {robot_sn} is not in a transform-supported database, skipping robot_work_location table")
+            location_db_names = []
+            location_table_names = []
+            location_changes = {}
 
         return location_db_names, location_table_names, location_changes
 

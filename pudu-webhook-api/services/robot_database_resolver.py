@@ -1,4 +1,5 @@
 import logging
+import sys
 import traceback
 from typing import Dict, List, Optional
 from rds.rdsTable import RDSDatabase
@@ -92,12 +93,9 @@ class RobotDatabaseResolver:
         self._project_info_cache = {}  # Cache for project info to avoid repeated queries
 
         try:
-            logger.info(f"[STEP 1] Starting get_robot_database_mapping with robot_sns: {robot_sns}")
-
             # Step 1: Validate inputs
             step = "input_validation"
             if robot_sns is not None:
-                logger.info(f"[STEP 2] Validating robot_sns list with {len(robot_sns)} items")
                 if not isinstance(robot_sns, list):
                     logger.error(f"[ERROR] robot_sns is not a list: {type(robot_sns)}")
                     return {}
@@ -106,51 +104,39 @@ class RobotDatabaseResolver:
                     if not isinstance(sn, str) or not sn.strip():
                         logger.error(f"[ERROR] Invalid robot_sn at index {i}: {sn} (type: {type(sn)})")
                         return {}
-                logger.info(f"[STEP 2] ✓ Input validation passed")
             else:
-                logger.info(f"[STEP 2] ✓ robot_sns is None, will fetch all robots")
+                logger.info(f"robot_sns is None, will fetch all robots")
 
             # Step 2: Test database connection
             step = "database_connection_test"
-            logger.info(f"[STEP 3] Testing database connection...")
             try:
                 connection_test = "SELECT 1 as test_value"
-                logger.info(f"[STEP 3] Executing connection test query: {connection_test}")
                 test_result = self.main_db.query_data(connection_test)
-                logger.info(f"[STEP 3] ✓ Connection test result: {test_result}")
             except Exception as conn_error:
-                logger.error(f"[STEP 3] ✗ Database connection failed: {conn_error}")
-                logger.error(f"[STEP 3] Connection error type: {type(conn_error)}")
-                logger.error(f"[STEP 3] Connection error traceback: {traceback.format_exc()}")
+                logger.error(f"Database connection failed: {conn_error}")
+                logger.error(f"Connection error type: {type(conn_error)}")
+                logger.error(f"Connection error traceback: {traceback.format_exc()}")
                 return {}
 
             # Step 3: Check if tables exist
             step = "table_existence_check"
-            logger.info(f"[STEP 4] Checking if required tables exist...")
             try:
                 # Check mnt_robots_management table
                 check_mrm = "SELECT COUNT(*) as count FROM mnt_robots_management LIMIT 1"
-                logger.info(f"[STEP 4] Checking mnt_robots_management table: {check_mrm}")
                 mrm_result = self.main_db.query_data(check_mrm)
-                logger.info(f"[STEP 4] mnt_robots_management check result: {mrm_result}")
 
                 # Check pro_project_info table
                 check_ppi = "SELECT COUNT(*) as count FROM pro_project_info LIMIT 1"
-                logger.info(f"[STEP 4] Checking pro_project_info table: {check_ppi}")
                 ppi_result = self.main_db.query_data(check_ppi)
-                logger.info(f"[STEP 4] pro_project_info check result: {ppi_result}")
-                logger.info(f"[STEP 4] ✓ Both tables exist and are accessible")
 
             except Exception as table_error:
-                logger.error(f"[STEP 4] ✗ Table existence check failed: {table_error}")
-                logger.error(f"[STEP 4] Table error type: {type(table_error)}")
-                logger.error(f"[STEP 4] Table error traceback: {traceback.format_exc()}")
+                logger.error(f"Table existence check failed: {table_error}")
+                logger.error(f"Table error type: {type(table_error)}")
+                logger.error(f"Table error traceback: {traceback.format_exc()}")
                 return {}
 
             # Step 4: Build and validate query
             step = "query_building"
-            logger.info(f"[STEP 5] Building main query...")
-
             base_query = """
                 SELECT mrm.robot_sn, mrm.project_id, ppi.project_name
                 FROM mnt_robots_management mrm
@@ -158,64 +144,51 @@ class RobotDatabaseResolver:
                 WHERE mrm.project_id IS NOT NULL
                 AND ppi.project_name IS NOT NULL
             """
-            logger.info(f"[STEP 5] Base query built: {base_query.strip()}")
 
             if robot_sns:
-                logger.info(f"[STEP 5] Adding robot_sn filter for {len(robot_sns)} robots")
                 # Sanitize robot_sns to prevent SQL injection
                 sanitized_sns = []
                 for sn in robot_sns:
                     sanitized_sn = sn.replace("'", "''")  # Escape single quotes
                     sanitized_sns.append(sanitized_sn)
-                    logger.debug(f"[STEP 5] Sanitized '{sn}' -> '{sanitized_sn}'")
 
                 robot_list = "', '".join(sanitized_sns)
                 query = f"{base_query} AND mrm.robot_sn IN ('{robot_list}')"
-                logger.info(f"[STEP 5] Robot filter added. Robot list: [{robot_list}]")
             else:
                 query = base_query
-                logger.info(f"[STEP 5] No robot filter applied")
-
-            logger.info(f"[STEP 5] ✓ Final query: {query}")
 
             # Step 5: Execute main query
             step = "main_query_execution"
-            logger.info(f"[STEP 6] Executing main query...")
             try:
-                logger.info(f"[STEP 6] About to call self.main_db.query_data() with query")
                 results = self.main_db.query_data(query)
-                logger.info(f"[STEP 6] ✓ Query executed successfully")
-                logger.info(f"[STEP 6] Raw results type: {type(results)}")
-                logger.info(f"[STEP 6] Raw results length: {len(results) if results else 0}")
 
                 if results:
-                    logger.info(f"[STEP 6] First result sample: {results[0] if len(results) > 0 else 'None'}")
-                    logger.info(f"[STEP 6] First result type: {type(results[0]) if len(results) > 0 else 'None'}")
+                    logger.info(f"First result sample: {results[0] if len(results) > 0 else 'None'}")
+                    logger.info(f"First result type: {type(results[0]) if len(results) > 0 else 'None'}")
                 else:
-                    logger.warning(f"[STEP 6] ⚠ Query returned no results")
+                    logger.warning(f"Query returned no results")
 
             except Exception as query_error:
-                logger.error(f"[STEP 6] ✗ Main query execution failed: {query_error}")
-                logger.error(f"[STEP 6] Query error type: {type(query_error)}")
-                logger.error(f"[STEP 6] Query error args: {query_error.args if hasattr(query_error, 'args') else 'No args'}")
-                logger.error(f"[STEP 6] Query error traceback: {traceback.format_exc()}")
+                logger.error(f"Main query execution failed: {query_error}")
+                logger.error(f"Query error type: {type(query_error)}")
+                logger.error(f"Query error args: {query_error.args if hasattr(query_error, 'args') else 'No args'}")
+                logger.error(f"Query error traceback: {traceback.format_exc()}")
 
                 # Try to get more specific error info
                 if hasattr(query_error, 'errno'):
-                    logger.error(f"[STEP 6] MySQL errno: {query_error.errno}")
+                    logger.error(f"MySQL errno: {query_error.errno}")
                 if hasattr(query_error, 'msg'):
-                    logger.error(f"[STEP 6] MySQL msg: {query_error.msg}")
+                    logger.error(f"MySQL msg: {query_error.msg}")
                 if hasattr(query_error, 'sqlstate'):
-                    logger.error(f"[STEP 6] MySQL sqlstate: {query_error.sqlstate}")
+                    logger.error(f"MySQL sqlstate: {query_error.sqlstate}")
 
                 return {}
 
             # Step 6: Process results
             step = "result_processing"
-            logger.info(f"[STEP 7] Processing query results...")
 
             if not results:
-                logger.warning(f"[STEP 7] No results to process, returning empty dict")
+                logger.warning(f"No results to process, returning empty dict")
                 return {}
 
             robot_to_database = {}
@@ -224,7 +197,7 @@ class RobotDatabaseResolver:
 
             for i, result in enumerate(results):
                 try:
-                    logger.debug(f"[STEP 7] Processing result {i}: {result} (type: {type(result)})")
+                    logger.debug(f"Processing result {i}: {result} (type: {type(result)})")
 
                     robot_sn = None
                     project_id = None
@@ -232,48 +205,42 @@ class RobotDatabaseResolver:
 
                     if isinstance(result, tuple) and len(result) >= 3:
                         robot_sn, project_id, project_name = result[0], result[1], result[2]
-                        logger.debug(f"[STEP 7] Extracted from tuple - robot_sn: {robot_sn}, project_id: {project_id}, project_name: {project_name}")
+                        logger.debug(f"Extracted from tuple - robot_sn: {robot_sn}, project_id: {project_id}, project_name: {project_name}")
                     elif isinstance(result, dict):
                         robot_sn = result.get('robot_sn')
                         project_id = result.get('project_id')
                         project_name = result.get('project_name')
-                        logger.debug(f"[STEP 7] Extracted from dict - robot_sn: {robot_sn}, project_id: {project_id}, project_name: {project_name}")
+                        logger.debug(f"Extracted from dict - robot_sn: {robot_sn}, project_id: {project_id}, project_name: {project_name}")
                     else:
-                        logger.warning(f"[STEP 7] Unexpected result format at index {i}: {result} (type: {type(result)})")
+                        logger.warning(f"Unexpected result format at index {i}: {result} (type: {type(result)})")
                         error_count += 1
                         continue
 
                     if robot_sn and project_name:
                         robot_to_database[robot_sn] = project_name
                         processed_count += 1
-                        logger.debug(f"[STEP 7] ✓ Added mapping: {robot_sn} -> {project_name}")
+                        logger.debug(f"✓ Added mapping: {robot_sn} -> {project_name}")
 
                         # Cache project info
                         if project_id:
                             self._project_info_cache[project_id] = project_name
-                            logger.debug(f"[STEP 7] ✓ Cached project info: {project_id} -> {project_name}")
+                            logger.debug(f"✓ Cached project info: {project_id} -> {project_name}")
                     else:
-                        logger.warning(f"[STEP 7] ⚠ Missing required data in result {i}: robot_sn='{robot_sn}', project_name='{project_name}'")
+                        logger.warning(f"⚠ Missing required data in result {i}: robot_sn='{robot_sn}', project_name='{project_name}'")
                         error_count += 1
 
                 except Exception as row_error:
-                    logger.error(f"[STEP 7] ✗ Error processing result row {i}: {row_error}")
-                    logger.error(f"[STEP 7] Row error type: {type(row_error)}")
-                    logger.error(f"[STEP 7] Row error traceback: {traceback.format_exc()}")
+                    logger.error(f"✗ Error processing result row {i}: {row_error}")
+                    logger.error(f"Row error type: {type(row_error)}")
+                    logger.error(f"Row error traceback: {traceback.format_exc()}")
                     error_count += 1
                     continue
 
-            logger.info(f"[STEP 7] ✓ Result processing completed:")
-            logger.info(f"[STEP 7]   - Total results: {len(results)}")
-            logger.info(f"[STEP 7]   - Successfully processed: {processed_count}")
-            logger.info(f"[STEP 7]   - Errors encountered: {error_count}")
-            logger.info(f"[STEP 7]   - Final mapping count: {len(robot_to_database)}")
-
             # Step 7: Return results
             step = "return_results"
-            logger.info(f"[STEP 8] Returning {len(robot_to_database)} robot database mappings")
+            logger.info(f"Returning {len(robot_to_database)} robot database mappings")
             if robot_to_database:
-                logger.info(f"[STEP 8] Sample mappings: {dict(list(robot_to_database.items())[:3])}")
+                logger.info(f"Sample mappings: {dict(list(robot_to_database.items())[:3])}")
 
             return robot_to_database
 

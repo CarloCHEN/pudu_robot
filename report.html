@@ -1,0 +1,1694 @@
+</div>
+</div>
+
+<script>
+    // Page navigation
+    function showPage(pageId) {
+        // Hide all pages
+        document.getElementById('reports-list-page').classList.add('hidden');
+        document.getElementById('create-report-page').classList.add('hidden');
+
+        // Show selected page
+        if (pageId === 'reports-list') {
+            document.getElementById('reports-list-page').classList.remove('hidden');
+            // Update tab states
+            document.getElementById('reports-tab').classList.remove('border-transparent', 'text-gray-500');
+            document.getElementById('reports-tab').classList.add('border-blue-500', 'text-blue-600');
+            document.getElementById('create-tab').classList.remove('border-blue-500', 'text-blue-600');
+            document.getElementById('create-tab').classList.add('border-transparent', 'text-gray-500');
+        } else if (pageId === 'create-report') {
+            document.getElementById('create-report-page').classList.remove('hidden');
+            // Update tab states
+            document.getElementById('create-tab').classList.remove('border-transparent', 'text-gray-500');
+            document.getElementById('create-tab').classList.add('border-blue-500', 'text-blue-600');
+            document.getElementById('reports-tab').classList.remove('border-blue-500', 'text-blue-600');
+            document.getElementById('reports-tab').classList.add('border-transparent', 'text-gray-500');
+        }
+    }
+
+    // Report Filters
+    function applyFilters() {
+        const locationFilter = document.getElementById('filter-location').value;
+        const robotFilter = document.getElementById('filter-robot').value;
+        const dateRangeFilter = document.getElementById('filter-date-range').value;
+        const dateFromFilter = document.getElementById('filter-date-from').value;
+        const dateToFilter = document.getElementById('filter-date-to').value;
+
+        const reportRows = document.querySelectorAll('.report-row');
+        let visibleCount = 0;
+
+        reportRows.forEach(row => {
+            let show = true;
+
+            // Location filter
+            if (locationFilter && row.dataset.location !== locationFilter && row.dataset.location !== '') {
+                show = false;
+            }
+
+            // Robot filter
+            if (robotFilter && !row.dataset.robot.includes(robotFilter) && row.dataset.robot !== '') {
+                show = false;
+            }
+
+            // Date range filter
+            if (dateRangeFilter && dateRangeFilter !== 'custom') {
+                const reportDate = new Date(row.dataset.date);
+                const today = new Date();
+                let daysDiff = Math.floor((today - reportDate) / (1000 * 60 * 60 * 24));
+
+                if (dateRangeFilter === 'last-7-days' && daysDiff > 7) show = false;
+                if (dateRangeFilter === 'last-30-days' && daysDiff > 30) show = false;
+                if (dateRangeFilter === 'last-90-days' && daysDiff > 90) show = false;
+            }
+
+            // Custom date range filter
+            if (dateRangeFilter === 'custom' && (dateFromFilter || dateToFilter)) {
+                const reportDate = new Date(row.dataset.date);
+                if (dateFromFilter && reportDate < new Date(dateFromFilter)) show = false;
+                if (dateToFilter && reportDate > new Date(dateToFilter)) show = false;
+            }
+
+            if (show) {
+                row.style.display = '';
+                visibleCount++;
+            } else {
+                row.style.display = 'none';
+            }
+        });
+
+        // Update results count
+        document.getElementById('results-count').textContent = `Showing ${visibleCount} reports`;
+
+        // Show/hide empty state
+        const emptyState = document.getElementById('empty-state');
+        const tableBody = document.getElementById('reports-table-body');
+
+        if (visibleCount === 0) {
+            tableBody.style.display = 'none';
+            emptyState.classList.remove('hidden');
+        } else {
+            tableBody.style.display = '';
+            emptyState.classList.add('hidden');
+        }
+
+        updateActiveFilters();
+    }
+
+    function updateActiveFilters() {
+        const activeFiltersDiv = document.getElementById('active-filters');
+        const locationFilter = document.getElementById('filter-location');
+        const robotFilter = document.getElementById('filter-robot');
+        const dateRangeFilter = document.getElementById('filter-date-range');
+
+        let activeFilters = [];
+
+        if (locationFilter.value) {
+            activeFilters.push(`Location: ${locationFilter.options[locationFilter.selectedIndex].text}`);
+        }
+        if (robotFilter.value) {
+            activeFilters.push(`Robot: ${robotFilter.value}`);
+        }
+        if (dateRangeFilter.value) {
+            activeFilters.push(`Date: ${dateRangeFilter.options[dateRangeFilter.selectedIndex].text}`);
+        }
+
+        if (activeFilters.length > 0) {
+            activeFiltersDiv.classList.remove('hidden');
+            const filtersHtml = activeFilters.map(filter =>
+                `<span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                    ${filter}
+                    <button class="ml-1 text-blue-600 hover:text-blue-800" onclick="clearSpecificFilter('${filter}')">×</button>
+                </span>`
+            ).join('');
+            activeFiltersDiv.innerHTML = `<span class="text-sm font-medium text-gray-700">Active Filters:</span> ${filtersHtml}`;
+        } else {
+            activeFiltersDiv.classList.add('hidden');
+        }
+    }
+
+    function resetFilters() {
+        document.getElementById('filter-location').value = '';
+        document.getElementById('filter-robot').value = '';
+        document.getElementById('filter-date-range').value = '';
+        document.getElementById('filter-date-from').value = '';
+        document.getElementById('filter-date-to').value = '';
+        document.getElementById('custom-date-filter').classList.add('hidden');
+        applyFilters();
+    }
+
+    function toggleCustomDateRange() {
+        const dateRangeFilter = document.getElementById('filter-date-range');
+        const customDateFilter = document.getElementById('custom-date-filter');
+
+        if (dateRangeFilter.value === 'custom') {
+            customDateFilter.classList.remove('hidden');
+        } else {
+            customDateFilter.classList.add('hidden');
+            document.getElementById('filter-date-from').value = '';
+            document.getElementById('filter-date-to').value = '';
+        }
+    }
+
+    function changeSort() {
+        // Implement sorting logic here
+        console.log('Sorting changed');
+    }
+
+    // Report Actions
+    function viewReport(reportId) {
+        alert(`Opening report ${reportId} for viewing`);
+        // Here you would navigate to the report view page or open in modal
+    }
+
+    function downloadReport(reportId) {
+        // Create a temporary download link
+        const link = document.createElement('a');
+        link.href = `#`; // Replace with actual download URL
+        link.download = `robot-report-${reportId}.pdf`;
+        link.textContent = 'Download Report';
+
+        // Simulate download
+        alert(`Downloading report ${reportId} as PDF...`);
+        // In real implementation: link.click();
+    }
+
+    function shareReport(reportId) {
+        const shareModal = `
+            <div class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50" id="share-modal">
+                <div class="bg-white rounded-lg p-6 w-96">
+                    <h3 class="text-lg font-semibold mb-4">Share Report</h3>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Share Link</label>
+                            <div class="flex">
+                                <input type="text" value="https://robotmgmt.ufl.edu/reports/${reportId}"
+                                       class="flex-1 p-2 border border-gray-300 rounded-l-md text-sm" readonly>
+                                <button class="px-3 py-2 bg-blue-500 text-white rounded-r-md text-sm hover:bg-blue-600"
+                                        onclick="copyToClipboard('https://robotmgmt.ufl.edu/reports/${reportId}')">Copy</button>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Send via Email</label>
+                            <input type="email" placeholder="Enter email address"
+                                   class="w-full p-2 border border-gray-300 rounded-md text-sm">
+                        </div>
+                    </div>
+                    <div class="flex justify-end space-x-2 mt-6">
+                        <button onclick="closeShareModal()" class="px-4 py-2 text-gray-600 hover:text-gray-800">Cancel</button>
+                        <button class="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600">Send</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.insertAdjacentHTML('beforeend', shareModal);
+    }
+
+    function closeShareModal() {
+        const modal = document.getElementById('share-modal');
+        if (modal) modal.remove();
+    }
+
+    function copyToClipboard(text) {
+        navigator.clipboard.writeText(text).then(() => {
+            alert('Link copied to clipboard!');
+        });
+    }
+
+    function deleteReport(reportId) {
+        if (confirm('Are you sure you want to delete this report? This action cannot be undone.')) {
+            // Remove the row from the table
+            const row = document.querySelector(`[onclick*="${reportId}"]`).closest('tr');
+            row.remove();
+
+            // Update filters to reflect new count
+            applyFilters();
+
+            alert(`Report ${reportId} has been deleted.`);
+        }
+    }
+
+    // Step navigation (for create report page)
+    function nextStep(step) {
+        document.getElementById(`step${step - 1}`).classList.add('hidden');
+        document.getElementById(`step${step}`).classList.remove('hidden');
+
+        // Update progress
+        const progressLine = document.getElementById('progress-line');
+        const stepCircle = document.getElementById(`step${step}-circle`);
+
+        if (step === 2) {
+            progressLine.style.width = '66.66%';
+            stepCircle.classList.remove('bg-gray-300', 'text-gray-600');
+            stepCircle.classList.add('bg-blue-500', 'text-white');
+            stepCircle.nextElementSibling.classList.remove('text-gray-500');
+            stepCircle.nextElementSibling.classList.add('text-gray-700');
+        } else if (step === 3) {
+            progressLine.style.width = '100%';
+            stepCircle.classList.remove('bg-gray-300', 'text-gray-600');
+            stepCircle.classList.add('bg-blue-500', 'text-white');
+            stepCircle.nextElementSibling.classList.remove('text-gray-500');
+            stepCircle.nextElementSibling.classList.add('text-gray-700');
+        }
+    }
+
+    function previousStep(step) {
+        document.getElementById(`step${step + 1}`).classList.add('hidden');
+        document.getElementById(`step${step}`).classList.remove('hidden');
+
+        // Update progress
+        const progressLine = document.getElementById('progress-line');
+        const nextStepCircle = document.getElementById(`step${step + 1}-circle`);
+
+        if (step === 1) {
+            progressLine.style.width = '33.33%';
+            nextStepCircle.classList.remove('bg-blue-500', 'text-white');
+            nextStepCircle.classList.add('bg-gray-300', 'text-gray-600');
+            nextStepCircle.nextElementSibling.classList.remove('text-gray-700');
+            nextStepCircle.nextElementSibling.classList.add('text-gray-500');
+        } else if (step === 2) {
+            progressLine.style.width = '66.66%';
+            nextStepCircle.classList.remove('bg-blue-500', 'text-white');
+            nextStepCircle.classList.add('bg-gray-300', 'text-gray-600');
+            nextStepCircle.nextElementSibling.classList.remove('text-gray-700');
+            nextStepCircle.nextElementSibling.classList.add('text-gray-500');
+        }
+    }
+
+    // Tab switching (for create report page)
+    function switchTab(tabName) {
+        // Hide all tab contents
+        document.querySelectorAll('.tab-content').forEach(tab => tab.classList.add('hidden'));
+        document.querySelectorAll('.tab-button').forEach(button => {
+            button.classList.remove('border-blue-500', 'text-blue-600', 'active');
+            button.classList.add('border-transparent', 'text-gray-500');
+        });
+
+        // Show selected tab
+        document.getElementById(tabName + '-tab').classList.remove('hidden');
+        event.target.classList.remove('border-transparent', 'text-gray-500');
+        event.target.classList.add('border-blue-500', 'text-blue-600', 'active');
+    }
+
+    // Show/hide email options (for create report page)
+    document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('input[name="delivery"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                const emailOptions = document.getElementById('email-options');
+                if (this.value === 'email') {
+                    emailOptions.classList.remove('hidden');
+                } else {
+                    emailOptions.classList.add('hidden');
+                }
+            });
+        });
+
+        // Show/hide recurring options
+        document.querySelectorAll('input[name="schedule"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                const recurringOptions = document.getElementById('recurring-options');
+                if (this.value === 'recurring') {
+                    recurringOptions.classList.remove('hidden');
+                } else {
+                    recurringOptions.classList.add('hidden');
+                }
+            });
+        });
+
+        // Show/hide custom date range
+        const timeRangeSelect = document.getElementById('time-range');
+        if (timeRangeSelect) {
+            timeRangeSelect.addEventListener('change', function() {
+                const customRange = document.getElementById('custom-date-range');
+                if (this.value === 'custom') {
+                    customRange.classList.remove('hidden');
+                    customRange.previousElementSibling.classList.add('md:col-span-1');
+                } else {
+                    customRange.classList.add('hidden');
+                    customRange.previousElementSibling.classList.remove('md:col-span-1');
+                }
+            });
+        }
+    });
+
+    // Module selection (for create report page)
+    function selectModule(moduleId) {
+        // Remove selection from all modules
+        document.querySelectorAll('.border-blue-500').forEach(el => {
+            if (el.classList.contains('bg-blue-50')) {
+                el.classList.remove('border-blue-500', 'bg-blue-50');
+                el.classList.add('border-gray-200', 'bg-white');
+                const checkIcon = el.querySelector('.fa-check-circle');
+                if (checkIcon) checkIcon.remove();
+            }
+        });
+
+        // Select clicked module
+        const selectedModule = event.currentTarget;
+        selectedModule.classList.remove('border-gray-200', 'bg-white');
+        selectedModule.classList.add('border-blue-500', 'bg-blue-50');
+
+        // Add check icon if not present
+        if (!selectedModule.querySelector('.fa-check-circle')) {
+            const iconContainer = selectedModule.querySelector('.flex.items-center.justify-between');
+            iconContainer.innerHTML = iconContainer.innerHTML.split('<i class="fas fa-check-circle')[0] + '<i class="fas fa-check-circle text-blue-500"></i>';
+        }
+
+        // Show content categories for selected module
+        if (moduleId === 'robot-management') {
+            const content = document.getElementById('robot-management-content');
+            if (content) content.style.display = 'block';
+        }
+    }
+
+    // Location dropdown interactions (for create report page)
+    function updateStates() {
+        const country = document.getElementById('country-select').value;
+        const stateSelect = document.getElementById('state-select');
+
+        if (stateSelect) {
+            stateSelect.innerHTML = '<option value="">All States</option>';
+            if (country === 'US') {
+                stateSelect.innerHTML += '<option value="FL" selected>Florida</option>';
+                stateSelect.innerHTML += '<option value="CA">California</option>';
+                stateSelect.innerHTML += '<option value="TX">Texas</option>';
+            }
+            updateCities();
+        }
+    }
+
+    function updateCities() {
+        const stateSelect = document.getElementById('state-select');
+        const citySelect = document.getElementById('city-select');
+
+        if (stateSelect && citySelect) {
+            const state = stateSelect.value;
+            citySelect.innerHTML = '<option value="">All Cities</option>';
+            if (state === 'FL') {
+                citySelect.innerHTML += '<option value="Gainesville" selected>Gainesville</option>';
+                citySelect.innerHTML += '<option value="Miami">Miami</option>';
+                citySelect.innerHTML += '<option value="Tampa">Tampa</option>';
+            }
+            updateBuildings();
+        }
+    }
+
+    function updateBuildings() {
+        const citySelect = document.getElementById('city-select');
+        const buildingSelect = document.getElementById('building-select');
+
+        if (citySelect && buildingSelect) {
+            const city = citySelect.value;
+            buildingSelect.innerHTML = '<option value="">All Buildings</option>';
+            if (city === 'Gainesville') {
+                buildingSelect.innerHTML += '<option value="marston">Marston Science Library</option>';
+                buildingSelect.innerHTML += '<option value="dental">Dental Science Building</option>';
+                buildingSelect.innerHTML += '<option value="turlington">Turlington Hall</option>';
+                buildingSelect.innerHTML += '<option value="reitz">Reitz Union</option>';
+            }
+            updateRobotsByLocation();
+        }
+    }
+
+    function updateRobotsByLocation() {
+        updateSelectionSummary();
+    }
+
+    // Update selection summary (for create report page)
+    function updateSelectionSummary() {
+        const summaryElement = document.getElementById('selection-summary');
+        if (summaryElement) {
+            const country = document.getElementById('country-select')?.value || '';
+            const state = document.getElementById('state-select')?.value || '';
+            const city = document.getElementById('city-select')?.value || '';
+            const building = document.getElementById('building-select')?.value || '';
+            const robotName = document.getElementById('robot-name-select')?.value || '';
+            const robotSN = document.getElementById('robot-sn-select')?.value || '';
+
+            let summary = 'Currently selected: ';
+
+            if (robotName || robotSN) {
+                summary += robotName ? `Robot ${robotName}` : `Robot SN ${robotSN}`;
+            } else if (building) {
+                const buildingNames = {
+                    'marston': 'Marston Science Library',
+                    'dental': 'Dental Science Building',
+                    'turlington': 'Turlington Hall',
+                    'reitz': 'Reitz Union'
+                };
+                summary += `All robots in ${buildingNames[building]}`;
+            } else if (city) {
+                summary += `All robots in ${city}`;
+            } else if (state) {
+                summary += `All robots in ${state}`;
+            } else if (country) {
+                summary += `All robots in ${country}`;
+            } else {
+                summary += 'All robots';
+            }
+
+            // Add robot type if selected
+            const selectedTypes = document.querySelectorAll('.robot-type:checked');
+            if (selectedTypes.length > 0 && selectedTypes.length < document.querySelectorAll('.robot-type').length) {
+                const types = Array.from(selectedTypes).map(cb => cb.value).join(', ');
+                summary += ` (Type: ${types})`;
+            }
+
+            summaryElement.textContent = summary;
+        }
+    }
+
+    // Content category selection updates (for create report page)
+    document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('.content-category').forEach(checkbox => {
+            checkbox.addEventListener('change', function() {
+                const parent = this.closest('label');
+                if (this.checked) {
+                    parent.classList.remove('border-gray-200', 'bg-white');
+                    parent.classList.add('border-blue-200', 'bg-blue-50');
+                } else {
+                    parent.classList.remove('border-blue-200', 'bg-blue-50');
+                    parent.classList.add('border-gray-200', 'bg-white');
+                }
+            });
+        });
+
+        // Detail level selection updates
+        document.querySelectorAll('input[name="detail-level"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                document.querySelectorAll('input[name="detail-level"]').forEach(r => {
+                    const parent = r.closest('label');
+                    parent.classList.remove('border-blue-200', 'bg-blue-50');
+                    parent.classList.add('border-gray-200');
+                });
+
+                const parent = this.closest('label');
+                parent.classList.remove('border-gray-200');
+                parent.classList.add('border-blue-200', 'bg-blue-50');
+            });
+        });
+
+        // Add event listeners for robot selection updates
+        const robotNameSelect = document.getElementById('robot-name-select');
+        const robotSNSelect = document.getElementById('robot-sn-select');
+
+        if (robotNameSelect) robotNameSelect.addEventListener('change', updateSelectionSummary);
+        if (robotSNSelect) robotSNSelect.addEventListener('change', updateSelectionSummary);
+
+        document.querySelectorAll('.robot-type').forEach(cb => {
+            cb.addEventListener('change', updateSelectionSummary);
+        });
+
+        // Initialize
+        updateSelectionSummary();
+    });
+
+    // Email management functions (for create report page)
+    function addEmailRecipient() {
+        const input = document.querySelector('#email-options input[type="email"]');
+        if (input) {
+            const email = input.value.trim();
+
+            if (email && isValidEmail(email)) {
+                const tagsContainer = document.getElementById('email-tags');
+                if (tagsContainer) {
+                    const tag = document.createElement('span');
+                    tag.className = 'bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm flex items-center';
+                    tag.innerHTML = `
+                        ${email}
+                        <button class="ml-2 text-blue-600 hover:text-blue-800" onclick="removeEmailTag(this)">×</button>
+                    `;
+                    tagsContainer.appendChild(tag);
+                    input.value = '';
+                }
+            }
+        }
+    }
+
+    function removeEmailTag(button) {
+        button.parentElement.remove();
+    }
+
+    function isValidEmail(email) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return emailRegex.test(email);
+    }
+
+    // Generate report function
+    function generateReport() {
+        // Collect all form data
+        const formData = {
+            service: 'robot-management',
+            contentCategories: Array.from(document.querySelectorAll('.content-category:checked')).map(cb => cb.value),
+            location: {
+                country: document.getElementById('country-select')?.value || '',
+                state: document.getElementById('state-select')?.value || '',
+                city: document.getElementById('city-select')?.value || '',
+                building: document.getElementById('building-select')?.value || ''
+            },
+            robot: {
+                name: document.getElementById('robot-name-select')?.value || '',
+                serialNumber: document.getElementById('robot-sn-select')?.value || ''
+            },
+            robotTypes: Array.from(document.querySelectorAll('.robot-type:checked')).map(cb => cb.value),
+            timeRange: document.getElementById('time-range')?.value || '',
+            detailLevel: document.querySelector('input[name="detail-level"]:checked')?.value || '',
+            delivery: document.querySelector('input[name="delivery"]:checked')?.value || '',
+            schedule: document.querySelector('input[name="schedule"]:checked')?.value || '',
+            emailRecipients: Array.from(document.querySelectorAll('#email-tags span')).map(tag => tag.textContent.trim().replace('×', ''))
+        };
+
+        // Show loading state
+        const button = event.target;
+        const originalText = button.innerHTML;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Generating Report...';
+        button.disabled = true;
+
+        // Simulate report generation
+        setTimeout(() => {
+            alert('Report generation initiated! You will receive notification when ready.');
+            button.innerHTML = originalText;
+            button.disabled = false;
+
+            // Switch to reports list page to show the new report
+            showPage('reports-list');
+
+            console.log('Report configuration:', formData);
+        }, 2000);
+    }
+</script>
+</body>
+</html><!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Robot Management Reports</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-50 min-h-screen">
+<!-- Navigation Tabs -->
+<div class="bg-white shadow-sm border-b">
+    <div class="container mx-auto px-6">
+        <div class="flex space-x-8">
+            <button onclick="showPage('reports-list')" id="reports-tab" class="py-4 px-2 border-b-2 border-blue-500 text-blue-600 font-medium">
+                <i class="fas fa-list mr-2"></i>Generated Reports
+            </button>
+            <button onclick="showPage('create-report')" id="create-tab" class="py-4 px-2 border-b-2 border-transparent text-gray-500 font-medium hover:text-gray-700">
+                <i class="fas fa-plus mr-2"></i>Create New Report
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Generated Reports Page -->
+<div id="reports-list-page" class="container mx-auto px-6 py-8">
+    <!-- Header -->
+    <div class="flex justify-between items-center mb-8">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-800">Generated Reports</h1>
+            <p class="text-gray-600 mt-2">View and manage your robot management reports</p>
+        </div>
+        <button onclick="showPage('create-report')" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-medium transition-colors">
+            <i class="fas fa-plus mr-2"></i>Create New Report
+        </button>
+    </div>
+
+    <!-- Filters -->
+    <div class="bg-white rounded-lg shadow-sm p-6 mb-8">
+        <div class="flex flex-wrap items-center gap-4">
+            <!-- Location Filter -->
+            <div class="flex-1 min-w-48">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Location</label>
+                <select id="filter-location" class="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500" onchange="applyFilters()">
+                    <option value="">All Locations</option>
+                    <option value="marston">Marston Science Library</option>
+                    <option value="dental">Dental Science Building</option>
+                    <option value="turlington">Turlington Hall</option>
+                    <option value="reitz">Reitz Union</option>
+                </select>
+            </div>
+
+            <!-- Robot Filter -->
+            <div class="flex-1 min-w-48">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Robot</label>
+                <select id="filter-robot" class="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500" onchange="applyFilters()">
+                    <option value="">All Robots</option>
+                    <option value="UF-MSL-01">UF-MSL-01</option>
+                    <option value="UF-MSL-02">UF-MSL-02</option>
+                    <option value="UF-MSL-03">UF-MSL-03</option>
+                    <option value="UF-DSB-01">UF-DSB-01</option>
+                    <option value="UF-DSB-02">UF-DSB-02</option>
+                    <option value="UF-DSB-03">UF-DSB-03</option>
+                </select>
+            </div>
+
+            <!-- Date Range Filter -->
+            <div class="flex-1 min-w-48">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Date Range</label>
+                <select id="filter-date-range" class="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500" onchange="toggleCustomDateRange(); applyFilters()">
+                    <option value="">All Time</option>
+                    <option value="last-7-days">Last 7 Days</option>
+                    <option value="last-30-days">Last 30 Days</option>
+                    <option value="last-90-days">Last 90 Days</option>
+                    <option value="custom">Custom Range</option>
+                </select>
+            </div>
+
+            <!-- Reset Filters -->
+            <div class="flex items-end">
+                <button onclick="resetFilters()" class="p-2 text-gray-500 hover:text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50">
+                    <i class="fas fa-undo"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Custom Date Range (Hidden by default) -->
+        <div id="custom-date-filter" class="hidden mt-4 flex items-center gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">From</label>
+                <input type="date" id="filter-date-from" class="p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500" onchange="applyFilters()">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">To</label>
+                <input type="date" id="filter-date-to" class="p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500" onchange="applyFilters()">
+            </div>
+        </div>
+
+        <!-- Active Filters Display -->
+        <div id="active-filters" class="hidden mt-4 flex flex-wrap gap-2">
+            <span class="text-sm font-medium text-gray-700">Active Filters:</span>
+        </div>
+    </div>
+
+    <!-- Reports Table -->
+    <div class="bg-white rounded-lg shadow-sm overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200">
+            <div class="flex justify-between items-center">
+                <h2 class="text-lg font-semibold text-gray-800">Reports</h2>
+                <div class="flex items-center space-x-2">
+                    <span class="text-sm text-gray-500" id="results-count">Showing 12 reports</span>
+                    <div class="border-l border-gray-300 pl-2">
+                        <select class="text-sm border-0 focus:ring-0" onchange="changeSort()">
+                            <option value="newest">Newest First</option>
+                            <option value="oldest">Oldest First</option>
+                            <option value="name">Name A-Z</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Report Name</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Robot(s)</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Period</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Generated</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="reports-table-body" class="bg-white divide-y divide-gray-200">
+                    <!-- Sample Reports Data -->
+                    <tr class="report-row" data-location="marston" data-robot="UF-MSL-01,UF-MSL-02,UF-MSL-03" data-date="2025-03-28">
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div>
+                                <div class="text-sm font-medium text-gray-900">March 2025 - Marston Library Performance</div>
+                                <div class="text-xs text-gray-500">Detailed Analysis</div>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm text-gray-900">Marston Science Library</div>
+                            <div class="text-xs text-gray-500">Gainesville, FL</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm text-gray-900">3 robots</div>
+                            <div class="text-xs text-gray-500">UF-MSL-01, UF-MSL-02, UF-MSL-03</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">Mar 1-31, 2025</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold bg-blue-100 text-blue-800 rounded-full">
+                                Performance Report
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Mar 28, 2025 2:15 PM</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold bg-green-100 text-green-800 rounded-full">
+                                <i class="fas fa-check mr-1"></i>Ready
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <div class="flex space-x-2">
+                                <button class="text-blue-600 hover:text-blue-800" onclick="viewReport('report-1')" title="View Report">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                                <button class="text-green-600 hover:text-green-800" onclick="downloadReport('report-1')" title="Download PDF">
+                                    <i class="fas fa-download"></i>
+                                </button>
+                                <button class="text-purple-600 hover:text-purple-800" onclick="shareReport('report-1')" title="Share">
+                                    <i class="fas fa-share"></i>
+                                </button>
+                                <button class="text-red-600 hover:text-red-800" onclick="deleteReport('report-1')" title="Delete">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+
+                    <tr class="report-row" data-location="dental" data-robot="UF-DSB-01,UF-DSB-02,UF-DSB-03" data-date="2025-03-28">
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div>
+                                <div class="text-sm font-medium text-gray-900">March 2025 - Dental Science Building Report</div>
+                                <div class="text-xs text-gray-500">Comprehensive Report</div>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm text-gray-900">Dental Science Building</div>
+                            <div class="text-xs text-gray-500">Gainesville, FL</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm text-gray-900">3 robots</div>
+                            <div class="text-xs text-gray-500">UF-DSB-01, UF-DSB-02, UF-DSB-03</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">Mar 1-31, 2025</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold bg-purple-100 text-purple-800 rounded-full">
+                                Full Analysis
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Mar 28, 2025 1:45 PM</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold bg-green-100 text-green-800 rounded-full">
+                                <i class="fas fa-check mr-1"></i>Ready
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <div class="flex space-x-2">
+                                <button class="text-blue-600 hover:text-blue-800" onclick="viewReport('report-2')" title="View Report">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                                <button class="text-green-600 hover:text-green-800" onclick="downloadReport('report-2')" title="Download PDF">
+                                    <i class="fas fa-download"></i>
+                                </button>
+                                <button class="text-purple-600 hover:text-purple-800" onclick="shareReport('report-2')" title="Share">
+                                    <i class="fas fa-share"></i>
+                                </button>
+                                <button class="text-red-600 hover:text-red-800" onclick="deleteReport('report-2')" title="Delete">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+
+                    <tr class="report-row" data-location="marston" data-robot="UF-MSL-01" data-date="2025-03-25">
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div>
+                                <div class="text-sm font-medium text-gray-900">Weekly Performance - MSL Robot 01</div>
+                                <div class="text-xs text-gray-500">Executive Summary</div>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm text-gray-900">Marston Science Library</div>
+                            <div class="text-xs text-gray-500">Gainesville, FL</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm text-gray-900">1 robot</div>
+                            <div class="text-xs text-gray-500">UF-MSL-01</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">Mar 18-25, 2025</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold bg-gray-100 text-gray-800 rounded-full">
+                                Weekly Report
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Mar 25, 2025 6:00 AM</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold bg-green-100 text-green-800 rounded-full">
+                                <i class="fas fa-check mr-1"></i>Ready
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <div class="flex space-x-2">
+                                <button class="text-blue-600 hover:text-blue-800" onclick="viewReport('report-3')" title="View Report">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                                <button class="text-green-600 hover:text-green-800" onclick="downloadReport('report-3')" title="Download PDF">
+                                    <i class="fas fa-download"></i>
+                                </button>
+                                <button class="text-purple-600 hover:text-purple-800" onclick="shareReport('report-3')" title="Share">
+                                    <i class="fas fa-share"></i>
+                                </button>
+                                <button class="text-red-600 hover:text-red-800" onclick="deleteReport('report-3')" title="Delete">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+
+                    <tr class="report-row" data-location="" data-robot="" data-date="2025-03-20">
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div>
+                                <div class="text-sm font-medium text-gray-900">Campus-Wide Cost Analysis</div>
+                                <div class="text-xs text-gray-500">Detailed Analysis</div>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm text-gray-900">All Locations</div>
+                            <div class="text-xs text-gray-500">Gainesville, FL</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm text-gray-900">All robots</div>
+                            <div class="text-xs text-gray-500">6 robots total</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">Q1 2025</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold bg-yellow-100 text-yellow-800 rounded-full">
+                                Cost Analysis
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Mar 20, 2025 9:30 AM</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold bg-yellow-100 text-yellow-800 rounded-full">
+                                <i class="fas fa-spinner fa-spin mr-1"></i>Processing
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <div class="flex space-x-2">
+                                <button class="text-gray-400 cursor-not-allowed" title="View Report" disabled>
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                                <button class="text-gray-400 cursor-not-allowed" title="Download PDF" disabled>
+                                    <i class="fas fa-download"></i>
+                                </button>
+                                <button class="text-purple-600 hover:text-purple-800" onclick="shareReport('report-4')" title="Share">
+                                    <i class="fas fa-share"></i>
+                                </button>
+                                <button class="text-red-600 hover:text-red-800" onclick="deleteReport('report-4')" title="Delete">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Empty State (hidden by default) -->
+        <div id="empty-state" class="hidden text-center py-12">
+            <i class="fas fa-file-alt text-gray-300 text-6xl mb-4"></i>
+            <h3 class="text-lg font-medium text-gray-900 mb-2">No Reports Found</h3>
+            <p class="text-gray-500 mb-4">No reports match your current filters. Try adjusting your search criteria.</p>
+            <button onclick="resetFilters()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg">
+                Reset Filters
+            </button>
+        </div>
+    </div>
+
+    <!-- Pagination -->
+    <div class="flex items-center justify-between mt-6">
+        <div class="text-sm text-gray-700">
+            Showing <span class="font-medium">1</span> to <span class="font-medium">4</span> of <span class="font-medium">12</span> results
+        </div>
+        <div class="flex space-x-1">
+            <button class="px-3 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50">Previous</button>
+            <button class="px-3 py-2 text-sm bg-blue-500 text-white rounded-md">1</button>
+            <button class="px-3 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50">2</button>
+            <button class="px-3 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50">3</button>
+            <button class="px-3 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50">Next</button>
+        </div>
+    </div>
+</div>
+
+<!-- Create Report Page (Original content) -->
+<!-- Create Report Page (Original content) -->
+<div id="create-report-page" class="hidden">
+    <div class="container mx-auto px-6 py-8">
+        <!-- Header -->
+        <div class="mb-8">
+            <h1 class="text-3xl font-bold text-gray-800">Create Custom Report</h1>
+            <p class="text-gray-600 mt-2">Configure your robot management report settings</p>
+        </div>
+
+        <!-- Progress Steps -->
+        <div class="mb-12">
+            <div class="flex items-center justify-between relative">
+                <div class="absolute top-5 left-0 w-full h-0.5 bg-gray-200"></div>
+                <div id="progress-line" class="absolute top-5 left-0 h-0.5 bg-blue-500 transition-all duration-500" style="width: 33.33%"></div>
+
+                <div class="flex flex-col items-center relative bg-gray-50 px-4">
+                    <div class="w-10 h-10 bg-blue-500 text-white rounded-full flex items-center justify-center font-semibold">1</div>
+                    <span class="text-sm font-medium text-gray-700 mt-2">Service Selection</span>
+                </div>
+                <div class="flex flex-col items-center relative bg-gray-50 px-4">
+                    <div id="step2-circle" class="w-10 h-10 bg-gray-300 text-gray-600 rounded-full flex items-center justify-center font-semibold">2</div>
+                    <span class="text-sm font-medium text-gray-500 mt-2">Hardware Selection</span>
+                </div>
+                <div class="flex flex-col items-center relative bg-gray-50 px-4">
+                    <div id="step3-circle" class="w-10 h-10 bg-gray-300 text-gray-600 rounded-full flex items-center justify-center font-semibold">3</div>
+                    <span class="text-sm font-medium text-gray-500 mt-2">Report Configuration</span>
+                </div>
+            </div>
+        </div>
+
+    <!-- Step 1: Service Selection -->
+    <div id="step1" class="bg-white rounded-lg shadow-lg p-8">
+        <h2 class="text-2xl font-semibold text-gray-800 mb-6">
+            <i class="fas fa-cogs text-blue-500 mr-3"></i>Step 1: Service Selection
+        </h2>
+
+        <!-- Monitoring Module -->
+        <div class="mb-6">
+            <h3 class="text-lg font-medium text-gray-700 mb-4">Available Modules</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <!-- Robot Management Service -->
+                <div class="border-2 border-blue-500 bg-blue-50 rounded-lg p-4 cursor-pointer" onclick="selectModule('robot-management')">
+                    <div class="flex items-center justify-between mb-3">
+                        <i class="fas fa-robot text-blue-500 text-2xl"></i>
+                        <i class="fas fa-check-circle text-blue-500"></i>
+                    </div>
+                    <h4 class="font-semibold text-gray-800">Robot Management</h4>
+                    <p class="text-sm text-gray-600 mt-1">Monitor and manage robotic cleaning operations</p>
+                </div>
+
+                <!-- Future Sensor Management -->
+                <div class="border-2 border-gray-200 bg-gray-50 rounded-lg p-4 opacity-50 cursor-not-allowed">
+                    <div class="flex items-center justify-between mb-3">
+                        <i class="fas fa-sensor text-gray-400 text-2xl"></i>
+                        <span class="text-xs bg-gray-300 text-gray-600 px-2 py-1 rounded">Coming Soon</span>
+                    </div>
+                    <h4 class="font-semibold text-gray-600">Sensor Management</h4>
+                    <p class="text-sm text-gray-500 mt-1">IoT sensor monitoring and analytics</p>
+                </div>
+
+                <!-- Future Module Placeholder -->
+                <div class="border-2 border-gray-200 bg-gray-50 rounded-lg p-4 opacity-50 cursor-not-allowed">
+                    <div class="flex items-center justify-between mb-3">
+                        <i class="fas fa-plus text-gray-400 text-2xl"></i>
+                        <span class="text-xs bg-gray-300 text-gray-600 px-2 py-1 rounded">Future</span>
+                    </div>
+                    <h4 class="font-semibold text-gray-600">Additional Services</h4>
+                    <p class="text-sm text-gray-500 mt-1">More monitoring capabilities</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Content Categories for Robot Management -->
+        <div id="robot-management-content" class="mt-8">
+            <h3 class="text-lg font-medium text-gray-700 mb-4">Report Content Categories</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <label class="flex items-start space-x-3 p-4 border-2 border-blue-200 bg-blue-50 rounded-lg cursor-pointer">
+                    <input type="checkbox" class="content-category mt-1" value="robot-status" checked>
+                    <div>
+                        <div class="font-semibold text-gray-800">Robot Status & Events</div>
+                        <div class="text-sm text-gray-600">Fleet status, error logs, maintenance alerts</div>
+                    </div>
+                </label>
+
+                <label class="flex items-start space-x-3 p-4 border-2 border-blue-200 bg-blue-50 rounded-lg cursor-pointer">
+                    <input type="checkbox" class="content-category mt-1" value="cleaning-tasks" checked>
+                    <div>
+                        <div class="font-semibold text-gray-800">Cleaning Tasks</div>
+                        <div class="text-sm text-gray-600">Task completion, coverage analysis, efficiency metrics</div>
+                    </div>
+                </label>
+
+                <label class="flex items-start space-x-3 p-4 border-2 border-blue-200 bg-blue-50 rounded-lg cursor-pointer">
+                    <input type="checkbox" class="content-category mt-1" value="charging-tasks" checked>
+                    <div>
+                        <div class="font-semibold text-gray-800">Charging Tasks</div>
+                        <div class="text-sm text-gray-600">Battery performance, charging cycles, power consumption</div>
+                    </div>
+                </label>
+
+                <label class="flex items-start space-x-3 p-4 border-2 border-blue-200 bg-blue-50 rounded-lg cursor-pointer">
+                    <input type="checkbox" class="content-category mt-1" value="performance" checked>
+                    <div>
+                        <div class="font-semibold text-gray-800">Performance Analytics</div>
+                        <div class="text-sm text-gray-600">KPIs, trends, efficiency comparisons</div>
+                    </div>
+                </label>
+
+                <label class="flex items-start space-x-3 p-4 border-2 border-blue-200 bg-blue-50 rounded-lg cursor-pointer">
+                    <input type="checkbox" class="content-category mt-1" value="cost" checked>
+                    <div>
+                        <div class="font-semibold text-gray-800">Cost Analysis</div>
+                        <div class="text-sm text-gray-600">Operating costs, ROI, budget performance</div>
+                    </div>
+                </label>
+            </div>
+        </div>
+
+        <div class="flex justify-end mt-8">
+            <button onclick="nextStep(2)" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-medium transition-colors">
+                Continue to Hardware Selection
+                <i class="fas fa-arrow-right ml-2"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Step 2: Hardware Selection -->
+    <div id="step2" class="bg-white rounded-lg shadow-lg p-8 hidden">
+        <h2 class="text-2xl font-semibold text-gray-800 mb-6">
+            <i class="fas fa-microchip text-blue-500 mr-3"></i>Step 2: Hardware Selection
+        </h2>
+
+        <!-- Selection Method Tabs -->
+        <div class="flex border-b mb-6">
+            <button onclick="switchTab('location')" class="tab-button active px-6 py-3 border-b-2 border-blue-500 text-blue-600 font-medium">
+                <i class="fas fa-map-marker-alt mr-2"></i>By Location
+            </button>
+            <button onclick="switchTab('robot')" class="tab-button px-6 py-3 border-b-2 border-transparent text-gray-500 font-medium hover:text-gray-700">
+                <i class="fas fa-robot mr-2"></i>By Robot
+            </button>
+            <button onclick="switchTab('type')" class="tab-button px-6 py-3 border-b-2 border-transparent text-gray-500 font-medium hover:text-gray-700">
+                <i class="fas fa-layer-group mr-2"></i>By Type
+            </button>
+        </div>
+
+        <!-- Location Selection Tab -->
+        <div id="location-tab" class="tab-content">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Country</label>
+                    <select id="country-select" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" onchange="updateStates()">
+                        <option value="">All Countries</option>
+                        <option value="US" selected>United States</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">State</label>
+                    <select id="state-select" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" onchange="updateCities()">
+                        <option value="">All States</option>
+                        <option value="FL" selected>Florida</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">City</label>
+                    <select id="city-select" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" onchange="updateBuildings()">
+                        <option value="">All Cities</option>
+                        <option value="Gainesville" selected>Gainesville</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Building</label>
+                    <select id="building-select" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" onchange="updateRobotsByLocation()">
+                        <option value="">All Buildings</option>
+                        <option value="marston">Marston Science Library</option>
+                        <option value="dental">Dental Science Building</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Robot Selection Tab -->
+        <div id="robot-tab" class="tab-content hidden">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Robot Name</label>
+                    <select id="robot-name-select" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">All Robots</option>
+                        <option value="UF-MSL-01">UF-MSL-01</option>
+                        <option value="UF-MSL-02">UF-MSL-02</option>
+                        <option value="UF-MSL-03">UF-MSL-03</option>
+                        <option value="UF-DSB-01">UF-DSB-01</option>
+                        <option value="UF-DSB-02">UF-DSB-02</option>
+                        <option value="UF-DSB-03">UF-DSB-03</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Serial Number</label>
+                    <select id="robot-sn-select" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">All Serial Numbers</option>
+                        <option value="CC1-2024-001">CC1-2024-001</option>
+                        <option value="CC1-2024-002">CC1-2024-002</option>
+                        <option value="CC1-2024-003">CC1-2024-003</option>
+                        <option value="CC1-2024-004">CC1-2024-004</option>
+                        <option value="CC1-2024-005">CC1-2024-005</option>
+                        <option value="CC1-2024-006">CC1-2024-006</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Robot Type Selection Tab -->
+        <div id="type-tab" class="tab-content hidden">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <label class="flex items-center space-x-3 p-4 border-2 border-gray-200 rounded-lg cursor-pointer hover:border-blue-300">
+                    <input type="checkbox" class="robot-type" value="PUDU-CC1" checked>
+                    <div>
+                        <div class="font-semibold text-gray-800">PUDU CC1</div>
+                        <div class="text-sm text-gray-600">Commercial cleaning robot</div>
+                    </div>
+                </label>
+
+                <div class="flex items-center space-x-3 p-4 border-2 border-gray-200 bg-gray-50 rounded-lg opacity-50">
+                    <input type="checkbox" disabled>
+                    <div>
+                        <div class="font-semibold text-gray-600">Future Model A</div>
+                        <div class="text-sm text-gray-500">Coming soon</div>
+                    </div>
+                </div>
+
+                <div class="flex items-center space-x-3 p-4 border-2 border-gray-200 bg-gray-50 rounded-lg opacity-50">
+                    <input type="checkbox" disabled>
+                    <div>
+                        <div class="font-semibold text-gray-600">Future Model B</div>
+                        <div class="text-sm text-gray-500">Coming soon</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Selected Robots Summary -->
+        <div class="mt-8 p-4 bg-gray-50 rounded-lg">
+            <h3 class="font-semibold text-gray-800 mb-2">
+                <i class="fas fa-list text-blue-500 mr-2"></i>Selected Hardware Summary
+            </h3>
+            <div id="selection-summary" class="text-sm text-gray-600">
+                Currently selected: All robots in Gainesville, FL
+            </div>
+        </div>
+
+        <div class="flex justify-between mt-8">
+            <button onclick="previousStep(1)" class="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-medium transition-colors">
+                <i class="fas fa-arrow-left mr-2"></i>Back
+            </button>
+            <button onclick="nextStep(3)" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-medium transition-colors">
+                Continue to Configuration
+                <i class="fas fa-arrow-right ml-2"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Step 3: Report Configuration -->
+    <div id="step3" class="bg-white rounded-lg shadow-lg p-8 hidden">
+        <h2 class="text-2xl font-semibold text-gray-800 mb-6">
+            <i class="fas fa-cog text-blue-500 mr-3"></i>Step 3: Report Configuration
+        </h2>
+
+        <!-- Data Scope -->
+        <div class="mb-8">
+            <h3 class="text-lg font-medium text-gray-700 mb-4">Data Scope</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Time Range</label>
+                    <select id="time-range" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                        <option value="last-7-days">Last 7 Days</option>
+                        <option value="last-30-days" selected>Last 30 Days</option>
+                        <option value="last-90-days">Last 90 Days</option>
+                        <option value="custom">Custom Range</option>
+                    </select>
+                </div>
+
+                <div id="custom-date-range" class="hidden">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Custom Date Range</label>
+                    <div class="flex space-x-2">
+                        <input type="date" class="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                        <span class="flex items-center text-gray-500">to</span>
+                        <input type="date" class="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Insight Depth -->
+        <div class="mb-8">
+            <h3 class="text-lg font-medium text-gray-700 mb-4">Report Detail Level</h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <label class="flex items-start space-x-3 p-4 border-2 border-gray-200 rounded-lg cursor-pointer">
+                    <input type="radio" name="detail-level" value="summary" class="mt-1">
+                    <div>
+                        <div class="font-semibold text-gray-800">Executive Summary</div>
+                        <div class="text-sm text-gray-600">Key metrics and high-level overview (2-3 pages)</div>
+                    </div>
+                </label>
+
+                <label class="flex items-start space-x-3 p-4 border-2 border-blue-200 bg-blue-50 rounded-lg cursor-pointer">
+                    <input type="radio" name="detail-level" value="detailed" checked class="mt-1">
+                    <div>
+                        <div class="font-semibold text-gray-800">Detailed Analysis</div>
+                        <div class="text-sm text-gray-600">Comprehensive metrics with trends (4-6 pages)</div>
+                    </div>
+                </label>
+
+                <label class="flex items-start space-x-3 p-4 border-2 border-gray-200 rounded-lg cursor-pointer">
+                    <input type="radio" name="detail-level" value="comprehensive" class="mt-1">
+                    <div>
+                        <div class="font-semibold text-gray-800">Comprehensive Report</div>
+                        <div class="text-sm text-gray-600">Full analysis with recommendations (8-12 pages)</div>
+                    </div>
+                </label>
+            </div>
+        </div>
+
+        <!-- Delivery Options -->
+        <div class="mb-8">
+            <h3 class="text-lg font-medium text-gray-700 mb-4">Delivery Method</h3>
+            <div class="space-y-4">
+                <label class="flex items-center space-x-3">
+                    <input type="radio" name="delivery" value="in-app" checked>
+                    <span class="font-medium">In-App Delivery</span>
+                    <span class="text-sm text-gray-600">View and download from dashboard</span>
+                </label>
+
+                <label class="flex items-center space-x-3">
+                    <input type="radio" name="delivery" value="email">
+                    <span class="font-medium">Email Delivery</span>
+                    <span class="text-sm text-gray-600">Send report via email</span>
+                </label>
+            </div>
+
+            <!-- Email Recipients (shown when email is selected) -->
+            <div id="email-options" class="mt-4 p-4 border-l-4 border-blue-500 bg-blue-50 rounded-r-lg hidden">
+                <h4 class="font-medium text-gray-800 mb-3">Email Recipients</h4>
+                <div class="space-y-3">
+                    <input type="email" placeholder="Enter email address" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                    <div class="flex flex-wrap gap-2" id="email-tags">
+                        <span class="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm flex items-center">
+                            facilities@ufl.edu
+                            <button class="ml-2 text-blue-600 hover:text-blue-800">×</button>
+                        </span>
+                    </div>
+                    <button class="text-blue-600 hover:text-blue-800 text-sm font-medium">+ Add another recipient</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Schedule Options -->
+        <div class="mb-8">
+            <h3 class="text-lg font-medium text-gray-700 mb-4">Report Schedule</h3>
+            <div class="space-y-4">
+                <label class="flex items-center space-x-3">
+                    <input type="radio" name="schedule" value="immediate" checked>
+                    <span class="font-medium">Generate Immediately</span>
+                    <span class="text-sm text-gray-600">Create report now with current data</span>
+                </label>
+
+                <label class="flex items-center space-x-3">
+                    <input type="radio" name="schedule" value="recurring">
+                    <span class="font-medium">Recurring Schedule</span>
+                    <span class="text-sm text-gray-600">Automatically generate reports on schedule</span>
+                </label>
+            </div>
+
+            <!-- Recurring Options (shown when recurring is selected) -->
+            <div id="recurring-options" class="mt-4 p-4 border-l-4 border-green-500 bg-green-50 rounded-r-lg hidden">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Frequency</label>
+                        <select class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                            <option value="daily">Daily</option>
+                            <option value="weekly" selected>Weekly</option>
+                            <option value="monthly">Monthly</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Start Date</label>
+                        <input type="date" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Report Preview -->
+        <div class="mb-8 p-6 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg">
+            <h3 class="font-semibold text-gray-800 mb-3">
+                <i class="fas fa-eye text-blue-500 mr-2"></i>Report Preview
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div>
+                    <strong>Service:</strong> Robot Management<br>
+                    <strong>Content:</strong> All categories selected<br>
+                    <strong>Hardware:</strong> All robots in Gainesville, FL
+                </div>
+                <div>
+                    <strong>Time Range:</strong> Last 30 Days<br>
+                    <strong>Detail Level:</strong> Detailed Analysis<br>
+                    <strong>Delivery:</strong> In-App
+                </div>
+            </div>
+        </div>
+
+        <div class="flex justify-between">
+            <button onclick="previousStep(2)" class="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-medium transition-colors">
+                <i class="fas fa-arrow-left mr-2"></i>Back
+            </button>
+            <button onclick="generateReport()" class="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg font-medium transition-colors">
+                <i class="fas fa-file-alt mr-2"></i>Generate Report
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Step navigation
+    function nextStep(step) {
+        document.getElementById(`step${step - 1}`).classList.add('hidden');
+        document.getElementById(`step${step}`).classList.remove('hidden');
+
+        // Update progress
+        const progressLine = document.getElementById('progress-line');
+        const stepCircle = document.getElementById(`step${step}-circle`);
+
+        if (step === 2) {
+            progressLine.style.width = '66.66%';
+            stepCircle.classList.remove('bg-gray-300', 'text-gray-600');
+            stepCircle.classList.add('bg-blue-500', 'text-white');
+            stepCircle.nextElementSibling.classList.remove('text-gray-500');
+            stepCircle.nextElementSibling.classList.add('text-gray-700');
+        } else if (step === 3) {
+            progressLine.style.width = '100%';
+            stepCircle.classList.remove('bg-gray-300', 'text-gray-600');
+            stepCircle.classList.add('bg-blue-500', 'text-white');
+            stepCircle.nextElementSibling.classList.remove('text-gray-500');
+            stepCircle.nextElementSibling.classList.add('text-gray-700');
+        }
+    }
+
+    function previousStep(step) {
+        document.getElementById(`step${step + 1}`).classList.add('hidden');
+        document.getElementById(`step${step}`).classList.remove('hidden');
+
+        // Update progress
+        const progressLine = document.getElementById('progress-line');
+        const nextStepCircle = document.getElementById(`step${step + 1}-circle`);
+
+        if (step === 1) {
+            progressLine.style.width = '33.33%';
+            nextStepCircle.classList.remove('bg-blue-500', 'text-white');
+            nextStepCircle.classList.add('bg-gray-300', 'text-gray-600');
+            nextStepCircle.nextElementSibling.classList.remove('text-gray-700');
+            nextStepCircle.nextElementSibling.classList.add('text-gray-500');
+        } else if (step === 2) {
+            progressLine.style.width = '66.66%';
+            nextStepCircle.classList.remove('bg-blue-500', 'text-white');
+            nextStepCircle.classList.add('bg-gray-300', 'text-gray-600');
+            nextStepCircle.nextElementSibling.classList.remove('text-gray-700');
+            nextStepCircle.nextElementSibling.classList.add('text-gray-500');
+        }
+    }
+
+    // Tab switching
+    function switchTab(tabName) {
+        // Hide all tab contents
+        document.querySelectorAll('.tab-content').forEach(tab => tab.classList.add('hidden'));
+        document.querySelectorAll('.tab-button').forEach(button => {
+            button.classList.remove('border-blue-500', 'text-blue-600', 'active');
+            button.classList.add('border-transparent', 'text-gray-500');
+        });
+
+        // Show selected tab
+        document.getElementById(tabName + '-tab').classList.remove('hidden');
+        event.target.classList.remove('border-transparent', 'text-gray-500');
+        event.target.classList.add('border-blue-500', 'text-blue-600', 'active');
+    }
+
+    // Show/hide email options
+    document.querySelectorAll('input[name="delivery"]').forEach(radio => {
+        radio.addEventListener('change', function() {
+            const emailOptions = document.getElementById('email-options');
+            if (this.value === 'email') {
+                emailOptions.classList.remove('hidden');
+            } else {
+                emailOptions.classList.add('hidden');
+            }
+        });
+    });
+
+    // Show/hide recurring options
+    document.querySelectorAll('input[name="schedule"]').forEach(radio => {
+        radio.addEventListener('change', function() {
+            const recurringOptions = document.getElementById('recurring-options');
+            if (this.value === 'recurring') {
+                recurringOptions.classList.remove('hidden');
+            } else {
+                recurringOptions.classList.add('hidden');
+            }
+        });
+    });
+
+    // Show/hide custom date range
+    document.getElementById('time-range').addEventListener('change', function() {
+        const customRange = document.getElementById('custom-date-range');
+        if (this.value === 'custom') {
+            customRange.classList.remove('hidden');
+            customRange.previousElementSibling.classList.add('md:col-span-1');
+        } else {
+            customRange.classList.add('hidden');
+            customRange.previousElementSibling.classList.remove('md:col-span-1');
+        }
+    });
+
+    // Module selection
+    function selectModule(moduleId) {
+        // Remove selection from all modules
+        document.querySelectorAll('.border-blue-500').forEach(el => {
+            if (el.classList.contains('bg-blue-50')) {
+                el.classList.remove('border-blue-500', 'bg-blue-50');
+                el.classList.add('border-gray-200', 'bg-white');
+                const checkIcon = el.querySelector('.fa-check-circle');
+                if (checkIcon) checkIcon.remove();
+            }
+        });
+
+        // Select clicked module
+        const selectedModule = event.currentTarget;
+        selectedModule.classList.remove('border-gray-200', 'bg-white');
+        selectedModule.classList.add('border-blue-500', 'bg-blue-50');
+
+        // Add check icon if not present
+        if (!selectedModule.querySelector('.fa-check-circle')) {
+            const iconContainer = selectedModule.querySelector('.flex.items-center.justify-between');
+            iconContainer.innerHTML = iconContainer.innerHTML.split('<i class="fas fa-check-circle')[0] + '<i class="fas fa-check-circle text-blue-500"></i>';
+        }
+
+        // Show content categories for selected module
+        if (moduleId === 'robot-management') {
+            document.getElementById('robot-management-content').style.display = 'block';
+        }
+    }
+
+    // Location dropdown interactions
+    function updateStates() {
+        const country = document.getElementById('country-select').value;
+        const stateSelect = document.getElementById('state-select');
+
+        // Reset and populate states based on country
+        stateSelect.innerHTML = '<option value="">All States</option>';
+        if (country === 'US') {
+            stateSelect.innerHTML += '<option value="FL" selected>Florida</option>';
+            stateSelect.innerHTML += '<option value="CA">California</option>';
+            stateSelect.innerHTML += '<option value="TX">Texas</option>';
+        }
+        updateCities();
+    }
+
+    function updateCities() {
+        const state = document.getElementById('state-select').value;
+        const citySelect = document.getElementById('city-select');
+
+        citySelect.innerHTML = '<option value="">All Cities</option>';
+        if (state === 'FL') {
+            citySelect.innerHTML += '<option value="Gainesville" selected>Gainesville</option>';
+            citySelect.innerHTML += '<option value="Miami">Miami</option>';
+            citySelect.innerHTML += '<option value="Tampa">Tampa</option>';
+        }
+        updateBuildings();
+    }
+
+    function updateBuildings() {
+        const city = document.getElementById('city-select').value;
+        const buildingSelect = document.getElementById('building-select');
+
+        buildingSelect.innerHTML = '<option value="">All Buildings</option>';
+        if (city === 'Gainesville') {
+            buildingSelect.innerHTML += '<option value="marston">Marston Science Library</option>';
+            buildingSelect.innerHTML += '<option value="dental">Dental Science Building</option>';
+            buildingSelect.innerHTML += '<option value="turlington">Turlington Hall</option>';
+            buildingSelect.innerHTML += '<option value="reitz">Reitz Union</option>';
+        }
+        updateRobotsByLocation();
+    }
+
+    function updateRobotsByLocation() {
+        updateSelectionSummary();
+    }
+
+    // Update selection summary
+    function updateSelectionSummary() {
+        const country = document.getElementById('country-select').value;
+        const state = document.getElementById('state-select').value;
+        const city = document.getElementById('city-select').value;
+        const building = document.getElementById('building-select').value;
+        const robotName = document.getElementById('robot-name-select').value;
+        const robotSN = document.getElementById('robot-sn-select').value;
+
+        let summary = 'Currently selected: ';
+
+        if (robotName || robotSN) {
+            summary += robotName ? `Robot ${robotName}` : `Robot SN ${robotSN}`;
+        } else if (building) {
+            const buildingNames = {
+                'marston': 'Marston Science Library',
+                'dental': 'Dental Science Building',
+                'turlington': 'Turlington Hall',
+                'reitz': 'Reitz Union'
+            };
+            summary += `All robots in ${buildingNames[building]}`;
+        } else if (city) {
+            summary += `All robots in ${city}`;
+        } else if (state) {
+            summary += `All robots in ${state}`;
+        } else if (country) {
+            summary += `All robots in ${country}`;
+        } else {
+            summary += 'All robots';
+        }
+
+        // Add robot type if selected
+        const selectedTypes = document.querySelectorAll('.robot-type:checked');
+        if (selectedTypes.length > 0 && selectedTypes.length < document.querySelectorAll('.robot-type').length) {
+            const types = Array.from(selectedTypes).map(cb => cb.value).join(', ');
+            summary += ` (Type: ${types})`;
+        }
+
+        document.getElementById('selection-summary').textContent = summary;
+    }
+
+    // Add event listeners for robot selection updates
+    document.getElementById('robot-name-select').addEventListener('change', updateSelectionSummary);
+    document.getElementById('robot-sn-select').addEventListener('change', updateSelectionSummary);
+    document.querySelectorAll('.robot-type').forEach(cb => {
+        cb.addEventListener('change', updateSelectionSummary);
+    });
+
+    // Content category selection updates
+    document.querySelectorAll('.content-category').forEach(checkbox => {
+        checkbox.addEventListener('change', function() {
+            const parent = this.closest('label');
+            if (this.checked) {
+                parent.classList.remove('border-gray-200', 'bg-white');
+                parent.classList.add('border-blue-200', 'bg-blue-50');
+            } else {
+                parent.classList.remove('border-blue-200', 'bg-blue-50');
+                parent.classList.add('border-gray-200', 'bg-white');
+            }
+        });
+    });
+
+    // Detail level selection updates
+    document.querySelectorAll('input[name="detail-level"]').forEach(radio => {
+        radio.addEventListener('change', function() {
+            document.querySelectorAll('input[name="detail-level"]').forEach(r => {
+                const parent = r.closest('label');
+                parent.classList.remove('border-blue-200', 'bg-blue-50');
+                parent.classList.add('border-gray-200');
+            });
+
+            const parent = this.closest('label');
+            parent.classList.remove('border-gray-200');
+            parent.classList.add('border-blue-200', 'bg-blue-50');
+        });
+    });
+
+    // Email tag management
+    function addEmailRecipient() {
+        const input = document.querySelector('#email-options input[type="email"]');
+        const email = input.value.trim();
+
+        if (email && isValidEmail(email)) {
+            const tagsContainer = document.getElementById('email-tags');
+            const tag = document.createElement('span');
+            tag.className = 'bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm flex items-center';
+            tag.innerHTML = `
+                ${email}
+                <button class="ml-2 text-blue-600 hover:text-blue-800" onclick="removeEmailTag(this)">×</button>
+            `;
+            tagsContainer.appendChild(tag);
+            input.value = '';
+        }
+    }
+
+    function removeEmailTag(button) {
+        button.parentElement.remove();
+    }
+
+    function isValidEmail(email) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return emailRegex.test(email);
+    }
+
+    // Add event listener for Enter key on email input
+    document.addEventListener('DOMContentLoaded', function() {
+        const emailInput = document.querySelector('#email-options input[type="email"]');
+        if (emailInput) {
+            emailInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    addEmailRecipient();
+                }
+            });
+        }
+
+        // Add click handler for "Add another recipient" button
+        document.querySelector('#email-options button').addEventListener('click', addEmailRecipient);
+    });
+
+    // Generate report function
+    function generateReport() {
+        // Collect all form data
+        const formData = {
+            service: 'robot-management',
+            contentCategories: Array.from(document.querySelectorAll('.content-category:checked')).map(cb => cb.value),
+            location: {
+                country: document.getElementById('country-select').value,
+                state: document.getElementById('state-select').value,
+                city: document.getElementById('city-select').value,
+                building: document.getElementById('building-select').value
+            },
+            robot: {
+                name: document.getElementById('robot-name-select').value,
+                serialNumber: document.getElementById('robot-sn-select').value
+            },
+            robotTypes: Array.from(document.querySelectorAll('.robot-type:checked')).map(cb => cb.value),
+            timeRange: document.getElementById('time-range').value,
+            detailLevel: document.querySelector('input[name="detail-level"]:checked').value,
+            delivery: document.querySelector('input[name="delivery"]:checked').value,
+            schedule: document.querySelector('input[name="schedule"]:checked').value,
+            emailRecipients: Array.from(document.querySelectorAll('#email-tags span')).map(tag => tag.textContent.trim().replace('×', ''))
+        };
+
+        // Show loading state
+        const button = event.target;
+        const originalText = button.innerHTML;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Generating Report...';
+        button.disabled = true;
+
+        // Simulate report generation
+        setTimeout(() => {
+            alert('Report generation initiated! You will receive notification when ready.');
+            button.innerHTML = originalText;
+            button.disabled = false;
+
+            // Here you would normally send formData to your backend
+            console.log('Report configuration:', formData);
+        }, 2000);
+    }
+
+    // Initialize default selections
+    document.addEventListener('DOMContentLoaded', function() {
+        updateSelectionSummary();
+    });
+</script>
+</body>
+</html>

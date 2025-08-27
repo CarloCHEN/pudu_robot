@@ -10,9 +10,11 @@ notification_needed:
   - "project"
 
 # List of databases that support coordinate transformations
+# for us-east-1, we only support foxx_irvine_office
+# for us-east-2, we only support university_of_florida
 transform_supported_databases:
   - "university_of_florida"
-  
+
 # Table configurations
 # Use "main" for main database
 # "project" for dynamically resolved project databases
@@ -35,7 +37,7 @@ tables:
   robot_work_location:
     - database: "project"
       table_name: "mnt_robots_work_location"
-      primary_keys: ["robot_sn"]
+      primary_keys: ["robot_sn", "update_time"]
       fields: null
       description: "Robot work location table in project database"
 

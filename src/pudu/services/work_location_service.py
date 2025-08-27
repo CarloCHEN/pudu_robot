@@ -1,4 +1,5 @@
 import logging
+import traceback
 import pandas as pd
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
@@ -99,6 +100,7 @@ class WorkLocationService:
     def _update_work_locations_with_archival(self, work_location_data: pd.DataFrame) -> bool:
         """
         NEW METHOD: Update work location data with coordinate transformation and archival management
+        OPTIMIZED: For idle robots (x, y, z all None), only update the most recent record's update_time
 
         Args:
             work_location_data (pd.DataFrame): DataFrame with columns:
@@ -117,11 +119,15 @@ class WorkLocationService:
             # Transform coordinates and prepare enhanced data
             enhanced_data = self._prepare_enhanced_work_location_data(work_location_data)
 
+            # OPTIMIZATION: Separate active and idle robots
+            active_robots_data = enhanced_data[enhanced_data['status'] != 'idle'].copy()
+            idle_robots_data = enhanced_data[enhanced_data['status'] == 'idle'].copy()
+
             # Get robots from the data
-            robots_in_data = enhanced_data['robot_sn'].unique().tolist()
+            all_robots = enhanced_data['robot_sn'].unique().tolist()
 
             # Get table configurations for these specific robots
-            table_configs = self.config.get_table_configs_for_robots('robot_work_location', robots_in_data)
+            table_configs = self.config.get_table_configs_for_robots('robot_work_location', all_robots)
 
             success_count = 0
             total_count = len(table_configs)
@@ -138,42 +144,112 @@ class WorkLocationService:
                         reuse_connection=True
                     )
 
-                    # Filter data for robots that belong to this database
+                    # Get robots that belong to this database
                     target_robots = table_config.get('robot_sns', [])
-                    if target_robots:
-                        filtered_data = enhanced_data[enhanced_data['robot_sn'].isin(target_robots)]
-                    else:
-                        filtered_data = enhanced_data
 
-                    if not filtered_data.empty:
-                        # APPEND new data (not update existing records)
-                        data_list = filtered_data.to_dict(orient='records')
+                    # Process active robots (normal batch insert)
+                    if not active_robots_data.empty:
+                        if target_robots:
+                            filtered_active_data = active_robots_data[active_robots_data['robot_sn'].isin(target_robots)]
+                        else:
+                            filtered_active_data = active_robots_data
 
-                        # Use INSERT ON DUPLICATE KEY UPDATE for historical data with (robot_sn, update_time) unique constraint
-                        table.batch_insert(data_list)
+                        if not filtered_active_data.empty:
+                            # Use INSERT ON DUPLICATE KEY UPDATE for active robots (new records)
+                            active_data_list = filtered_active_data.to_dict(orient='records')
+                            table.batch_insert(active_data_list)
+                            logger.debug(f"Inserted {len(filtered_active_data)} active robot records")
 
-                        # Run archival after inserting new data
-                        self._run_archival_for_table(table)
+                    # Process idle robots (update most recent record's update_time only)
+                    if not idle_robots_data.empty:
+                        if target_robots:
+                            filtered_idle_data = idle_robots_data[idle_robots_data['robot_sn'].isin(target_robots)]
+                        else:
+                            filtered_idle_data = idle_robots_data
 
-                        # MODIFIED: Log transformation stats for this database
-                        db_transformed = len(filtered_data[filtered_data['new_x'].notna()])
-                        db_total = len(filtered_data)
-                        logger.info(f"✅ Appended work locations to {table_config['database']}.{table_config['table_name']} for {db_total} robots ({db_transformed} with coordinates transformed)")
-                        success_count += 1
-                    else:
-                        success_count += 1  # No data needed for this database
-                        logger.info(f"ℹ️ No work location data for {table_config['database']}")
+                        if not filtered_idle_data.empty:
+                            self._update_idle_robots_efficiently(table, filtered_idle_data)
+
+                    # Run archival after processing new data
+                    self._run_archival_for_table(table)
+
+                    # Log stats for this database
+                    db_active = len(active_robots_data[active_robots_data['robot_sn'].isin(target_robots)]) if target_robots else len(active_robots_data)
+                    db_idle = len(idle_robots_data[idle_robots_data['robot_sn'].isin(target_robots)]) if target_robots else len(idle_robots_data)
+                    db_transformed = len(enhanced_data[(enhanced_data['robot_sn'].isin(target_robots) if target_robots else slice(None)) & enhanced_data['new_x'].notna()])
+
+                    logger.info(f"✅ Updated work locations in {table_config['database']}.{table_config['table_name']}: "
+                               f"{db_active} active robots (inserted), {db_idle} idle robots (time updated), "
+                               f"{db_transformed} with coordinates transformed")
+                    success_count += 1
 
                     table.close()
 
                 except Exception as e:
-                    logger.error(f"❌ Failed to update work locations in {table_config['database']}.{table_config['table_name']}: {e}")
+                    tb = traceback.extract_tb(e.__traceback__)
+                    last_frame = tb[-1]
+                    logger.error(f"❌ Failed to update work locations in {table_config['database']}.{table_config['table_name']}")
+                    logger.error(f"   Error: {type(e).__name__}: {e}")
+                    logger.error(f"   Line {last_frame.lineno}: {last_frame.line}")
 
             return success_count > 0
 
         except Exception as e:
             logger.error(f"Error in _update_work_locations_with_archival: {e}")
             return False
+
+    def _update_idle_robots_efficiently(self, table: RDSTable, idle_robots_data: pd.DataFrame):
+        """
+        OPTIMIZATION: For idle robots, only update the most recent record's update_time
+        instead of inserting new records.
+
+        Note: Table uses (robot_sn, update_time) as composite primary key, no id column.
+
+        Args:
+            table: Database table instance
+            idle_robots_data: DataFrame containing only idle robots data
+        """
+        try:
+            for _, robot_row in idle_robots_data.iterrows():
+                robot_sn = robot_row['robot_sn']
+                new_update_time = robot_row['update_time']
+
+                try:
+                    # Find the most recent record for this robot
+                    query = f"""
+                        SELECT update_time FROM {table.table_name}
+                        WHERE robot_sn = '{robot_sn}'
+                        ORDER BY update_time DESC
+                        LIMIT 1
+                    """
+
+                    result = table.query_data(query)
+
+                    if result:
+                        # Get the most recent update_time
+                        most_recent_time = result[0][0] if isinstance(result[0], tuple) else result[0].get('update_time')
+
+                        # Update the most recent record by using the composite key
+                        table.update_field_by_filters(
+                            'update_time',
+                            str(new_update_time),
+                            {
+                                'robot_sn': robot_sn,
+                                'update_time': most_recent_time
+                            }
+                        )
+                        logger.debug(f"Updated idle robot {robot_sn} most recent record time from {most_recent_time} to {new_update_time}")
+                    else:
+                        # No existing record - insert as usual (first time seeing this robot)
+                        robot_data = robot_row.to_dict()
+                        table.insert_data(robot_data)
+                        logger.debug(f"Inserted first record for idle robot {robot_sn}")
+
+                except Exception as e:
+                    logger.warning(f"Error updating idle robot {robot_sn}: {e}")
+
+        except Exception as e:
+            logger.error(f"Error in _update_idle_robots_efficiently: {e}")
 
     def _prepare_enhanced_work_location_data(self, work_location_data: pd.DataFrame) -> pd.DataFrame:
         """
@@ -183,7 +259,7 @@ class WorkLocationService:
         - robot_sn, map_name, status, update_time
         - x, y, z (current/converted coordinates)
         - new_x, new_y, new_z (floor plan coordinates)
-        - original_x, original_y, original_z (original robot coordinates)
+        - original_x, original_y, original_z (robot map coordinates)
         """
         try:
             # Transform coordinates before saving to database
@@ -194,16 +270,14 @@ class WorkLocationService:
             enhanced_data = transformed_data.copy()
 
             # Map original coordinates to original_* columns
-            enhanced_data['original_x'] = enhanced_data['x']
-            enhanced_data['original_y'] = enhanced_data['y']
-            enhanced_data['original_z'] = enhanced_data['z']
+            enhanced_data['original_z'] = enhanced_data['z'] if enhanced_data['new_x'] is not None and enhanced_data['new_y'] is not None else None
 
             # For new_z, keep original z value (no z transformation implemented)
-            enhanced_data['new_z'] = enhanced_data['z']
+            enhanced_data['new_z'] = enhanced_data['z'] if enhanced_data['new_x'] is not None and enhanced_data['new_y'] is not None else None
 
             # x, y could be original or converted
-            enhanced_data['x'] = enhanced_data['original_x']
-            enhanced_data['y'] = enhanced_data['original_y']
+            enhanced_data['x'] = enhanced_data['new_x']
+            enhanced_data['y'] = enhanced_data['new_y']
 
             # Ensure None values stay as None (not converted to 0) for idle robots
             idle_mask = enhanced_data['status'] == 'idle'
@@ -459,86 +533,6 @@ class WorkLocationService:
 
         except Exception as e:
             logger.error(f"Error deleting archived data for robot {robot_sn}: {e}")
-
-    def _update_work_locations(self, work_location_data: pd.DataFrame) -> bool:
-        """
-        DEPRECATED: Update work location data with dynamic database resolution and coordinate transformation
-        This method is kept for reference but replaced by _update_work_locations_with_archival
-
-        Args:
-            work_location_data (pd.DataFrame): DataFrame with columns:
-                - robot_sn (str): Robot serial number
-                - map_name (str): Name of the map robot is on (None if idle)
-                - x (float): X coordinate (None if idle)
-                - y (float): Y coordinate (None if idle)
-                - z (float): Z coordinate (None if idle)
-                - status (str): 'normal' if in task, 'idle' if not in task
-                - update_time (str): Timestamp of update
-
-        Returns:
-            bool: True if all updates successful, False otherwise
-        """
-        try:
-            # Transform coordinates before saving to database
-            logger.info("🔧 Applying coordinate transformations...")
-            transformed_data = self.transform_service.transform_robot_coordinates_batch(work_location_data)
-
-            # Log transformation results
-            transformed_count = len(transformed_data[transformed_data['new_x'].notna()])
-            total_count = len(transformed_data)
-            logger.info(f"Coordinate transformation: {transformed_count}/{total_count} robots transformed")
-
-            # Get robots from the data
-            robots_in_data = transformed_data['robot_sn'].unique().tolist()
-
-            # Get table configurations for these specific robots
-            table_configs = self.config.get_table_configs_for_robots('robot_work_location', robots_in_data)
-
-            success_count = 0
-            total_count = len(table_configs)
-
-            for table_config in table_configs:
-                try:
-                    # Initialize table
-                    table = RDSTable(
-                        connection_config="credentials.yaml",
-                        database_name=table_config['database'],
-                        table_name=table_config['table_name'],
-                        fields=table_config.get('fields'),
-                        primary_keys=table_config['primary_keys'],
-                        reuse_connection=True
-                    )
-
-                    # Filter data for robots that belong to this database
-                    target_robots = table_config.get('robot_sns', [])
-                    if target_robots:
-                        filtered_data = transformed_data[transformed_data['robot_sn'].isin(target_robots)]
-                    else:
-                        filtered_data = transformed_data
-
-                    if not filtered_data.empty:
-                        data_list = filtered_data.to_dict(orient='records')
-                        table.batch_insert(data_list)
-                        success_count += 1
-
-                        # Log transformation stats for this database
-                        db_transformed = len(filtered_data[filtered_data['new_x'].notna()])
-                        db_total = len(filtered_data)
-                        logger.info(f"✅ Updated work locations in {table_config['database']}.{table_config['table_name']} for {db_total} robots ({db_transformed} with coordinates transformed)")
-                    else:
-                        success_count += 1  # No data needed for this database
-                        logger.info(f"ℹ️ No work location data for {table_config['database']}")
-
-                    table.close()
-
-                except Exception as e:
-                    logger.error(f"❌ Failed to update work locations in {table_config['database']}.{table_config['table_name']}: {e}")
-
-            return success_count > 0
-
-        except Exception as e:
-            logger.error(f"Error in _update_work_locations: {e}")
-            return False
 
     def _update_map_floor_mappings(self, mapping_data: pd.DataFrame, work_location_data: pd.DataFrame) -> bool:
         """
