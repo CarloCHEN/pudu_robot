@@ -148,10 +148,12 @@ def get_robot_status(sn):
             current_time = pd.Timestamp.now()
             estimated_start_time = current_time - pd.Timedelta(seconds=clean_time) if clean_time > 0 else current_time
             # Calculate estimated end_time based on remaining time
-            estimated_end_time = current_time + pd.Timedelta(seconds=result_data.get('remaining_time', 0)) if result_data.get('remaining_time', 0) > 0 else current_time
-            # Convert timestamp to format: 2025-08-15 10:00:00
-            estimated_start_time = estimated_start_time.strftime('%Y-%m-%d %H:%M:%S')
-            estimated_end_time = estimated_end_time.strftime('%Y-%m-%d %H:%M:%S')
+            remaining_time = result_data.get('remaining_time', 0)
+            estimated_end_time = current_time + pd.Timedelta(seconds=remaining_time) if remaining_time > 0 else current_time
+
+            # Convert timestamp to format: 2025-08-15 10:00:00 by flooring to seconds (pd.Timestamp)
+            estimated_start_time = estimated_start_time.floor('s')
+            estimated_end_time = estimated_end_time.floor('s')
 
             # Calculate consumption
             battery_capacity = 1228.8 / 1000  # kWh

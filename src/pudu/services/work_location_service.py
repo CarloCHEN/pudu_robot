@@ -215,10 +215,10 @@ class WorkLocationService:
                 new_update_time = robot_row['update_time']
 
                 try:
-                    # Find the most recent record for this robot
+                    # Find the most recent idle record for this robot
                     query = f"""
                         SELECT update_time FROM {table.table_name}
-                        WHERE robot_sn = '{robot_sn}'
+                        WHERE robot_sn = '{robot_sn}' AND status = 'idle'
                         ORDER BY update_time DESC
                         LIMIT 1
                     """
@@ -664,7 +664,7 @@ class WorkLocationService:
                     (work_location_data['status'] == 'normal')
                 ]['robot_sn'].tolist()
 
-                floor_id = self._get_floor_id_dynamic(building_id, floor_number, robots_using_map)
+                floor_id = self._get_floor_id_dynamic(building_id, floor_number, robots_using_map, map_name)
                 logger.info(f"Floor id for {map_name} is: {floor_id}")
                 if floor_id:
                     resolved_mappings.append({
@@ -765,7 +765,7 @@ class WorkLocationService:
             if robot_sn in building_context:
                 return building_context[robot_sn]
 
-    def _get_floor_id_dynamic(self, building_id: str, floor_number: int, robots_using_map: List[str]) -> Optional[int]:
+    def _get_floor_id_dynamic(self, building_id: str, floor_number: int, robots_using_map: List[str], map_name: str) -> Optional[int]:
         """
         Get floor_id from building_id and floor_number using dynamic database lookup
 
@@ -773,6 +773,7 @@ class WorkLocationService:
             building_id (str): Building identifier (e.g., 'B001')
             floor_number (int): Floor number from robot task info (e.g., 1, 2, 3)
             robots_using_map (List[str]): List of robot SNs using this map
+            map_name (str): Name of the map
 
         Returns:
             Optional[int]: floor_id if found, None if no matching floor found
@@ -792,7 +793,7 @@ class WorkLocationService:
                     reuse_connection=True
                 )
 
-                query = f"SELECT floor_id FROM {table.table_name} WHERE building_id = '{building_id}' AND floor_number = {floor_number}"
+                query = f"SELECT floor_id FROM {table.table_name} WHERE building_id = '{building_id}' AND floor_number = {floor_number} AND robot_map_name = '{map_name}'"
                 result = table.query_data(query)
 
                 if result:

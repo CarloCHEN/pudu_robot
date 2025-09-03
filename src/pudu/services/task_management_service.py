@@ -31,7 +31,7 @@ class TaskManagementService:
             Dict[str, Dict]: Changes detected from upsert operations only (cleanup doesn't generate notifications)
         """
         all_changes = {}
-
+        
         # 1. Process robots with ongoing tasks (upsert) - track changes for notifications
         if ongoing_tasks_data:
             upsert_changes = TaskManagementService._upsert_ongoing_tasks(table, ongoing_tasks_data)
@@ -229,7 +229,7 @@ class TaskManagementService:
 
                         # Insert new task
                         new_id = TaskManagementService._insert_new_ongoing_task_with_id(table, ongoing_task)
-                        logger.info(f"🆕 Inserted new ongoing task for robot {robot_sn}: {ongoing_task['task_name']}")
+                        logger.info(f"🆕 Inserted new ongoing task for robot {robot_sn}: {ongoing_task['task_name']} with id: {new_id}")
 
                         # Create change record for new task
                         unique_id = f"{robot_sn}_{ongoing_task['task_id']}_{ongoing_task['start_time']}"
@@ -249,7 +249,7 @@ class TaskManagementService:
                 else:
                     # No existing ongoing task - insert new one
                     new_id = TaskManagementService._insert_new_ongoing_task_with_id(table, ongoing_task)
-                    logger.info(f"🆕 Inserted new ongoing task for robot (no existing task) {robot_sn}: {ongoing_task['task_name']}")
+                    logger.info(f"🆕 Inserted new ongoing task for robot (no existing task) {robot_sn}: {ongoing_task['task_name']} with id: {new_id}")
 
                     # Create change record for new task
                     unique_id = f"{robot_sn}_{ongoing_task['task_id']}_{ongoing_task['start_time']}"
@@ -295,6 +295,8 @@ class TaskManagementService:
             ids = table.batch_insert_with_ids([ongoing_task])
             if ids:
                 return ids[0][1]  # Return the database ID
+            else:
+                logger.error(f"❌ Inserted new ongoing task but no ID returned: {ongoing_task}; ids: {ids}")
             return None
 
         except Exception as e:

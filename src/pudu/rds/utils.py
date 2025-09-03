@@ -164,6 +164,7 @@ def batch_insert_with_ids(cursor, table_name: str, data_list: list, primary_keys
         raise ValueError(f"Could not detect primary key column for table '{table_name}'")
 
     # Step 2: Perform batch insert using existing function
+    # primary_keys or [] - when primary_keys is None, it will be treated as []; if not None, it will be treated as the provided primary_keys
     batch_insert(cursor, table_name, data_list, primary_keys or [])
 
     # Step 3: Query back the primary keys
@@ -183,8 +184,6 @@ def _query_ids_by_unique_keys(cursor, table_name: str, data_list: list, unique_k
     Query primary keys for records using their unique key constraints.
     """
     results = []
-
-    # Build batch query to get all primary keys at once
     where_conditions = []
 
     def escape_value(value):
@@ -195,6 +194,30 @@ def _query_ids_by_unique_keys(cursor, table_name: str, data_list: list, unique_k
         else:
             return f"'{value}'"
 
+    def normalize_for_comparison(value, field_name=None):
+        """Normalize values for tuple comparison - convert timestamps to strings for time fields only"""
+
+        # Define time-related field names that need normalization
+        TIME_FIELDS = {'start_time', 'end_time', 'create_time', 'update_time', 'task_time', 'upload_time'}
+
+        # Only process time fields
+        if field_name and field_name not in TIME_FIELDS:
+            return value
+
+        if hasattr(value, 'strftime'):  # datetime/timestamp object
+            return value.strftime('%Y-%m-%d %H:%M:%S')
+        elif isinstance(value, str) and field_name in TIME_FIELDS:
+            # Only try to parse strings for known time fields
+            try:
+                import pandas as pd
+                dt = pd.to_datetime(value)
+                return dt.strftime('%Y-%m-%d %H:%M:%S')
+            except:
+                return value
+
+        return value
+
+    # Build WHERE conditions (same as before)
     for data in data_list:
         record_conditions = []
         for key in unique_keys:
@@ -216,18 +239,26 @@ def _query_ids_by_unique_keys(cursor, table_name: str, data_list: list, unique_k
         cursor.execute(query)
         db_results = cursor.fetchall()
 
-        # Create mapping from unique key values to primary key
+        # Create mapping with NORMALIZED values
         pk_map = {}
         for row in db_results:
             pk_value = row[0]
             unique_values = row[1:]
-            unique_tuple = tuple(unique_values)
-            pk_map[unique_tuple] = pk_value
+            # NORMALIZE database values for comparison
+            normalized_tuple = tuple(
+                    normalize_for_comparison(val, unique_keys[i])
+                    for i, val in enumerate(unique_values)
+                )
+            pk_map[normalized_tuple] = pk_value
 
-        # Match each original data record to its primary key
+        # Match with NORMALIZED data values
         for data in data_list:
-            unique_tuple = tuple(data.get(key) for key in unique_keys)
-            pk_value = pk_map.get(unique_tuple)
+            # NORMALIZE data values for comparison
+            normalized_tuple = tuple(
+                normalize_for_comparison(data.get(key), key)
+                for key in unique_keys
+            )
+            pk_value = pk_map.get(normalized_tuple)
             results.append((data, pk_value))
 
     return results

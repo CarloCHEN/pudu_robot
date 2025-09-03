@@ -61,6 +61,9 @@ def should_skip_notification(data_type: str, change_info: Dict) -> bool:
         if change_type == 'update':
             if 'status' not in changed_fields:
                 return True
+        # if database_key is None, skip the notification
+        # if change_info.get('database_key', None) is None:
+        #     return True
         return False
 
     elif data_type == 'robot_charging':
@@ -437,7 +440,7 @@ def generate_status_change_content(robot_sn: str, changed_fields: list, old_valu
             return "Battery Warning", f"Robot {robot_name} battery level at {new_battery}%"
         else:
             return "Battery Update", f"Robot {robot_name} battery at {new_battery}%"
-        
+
     elif 'status' in changed_fields:
         new_status = new_values.get('status', 'Unknown')
 
