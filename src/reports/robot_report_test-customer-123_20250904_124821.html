@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Robot Management Performance Report</title>
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+            
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #7f8c8d;
+            font-size: 1.2em;
+            margin-bottom: 30px;
+        }
+
+        h2 {
+            color: #34495e;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+            margin-top: 40px;
+        }
+
+        h3 {
+            color: #2980b9;
+            margin-top: 30px;
+        }
+
+        .highlight-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .metric-card {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            transition: transform 0.3s ease;
+        }
+
+        .metric-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .metric-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .metric-label {
+            color: #7f8c8d;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 400px;
+            margin: 30px 0;
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .chart-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin: 30px 0;
+        }
+
+        .chart-small {
+            position: relative;
+            height: 300px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: 600;
+        }
+
+        tr:hover {
+            background: #f8f9fa;
+        }
+
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        .status-excellent { background: #28a745; }
+        .status-good { background: #17a2b8; }
+        .status-warning { background: #ffc107; }
+        .status-error { background: #dc3545; }
+
+        .footer {
+            margin-top: 50px;
+            padding-top: 20px;
+            border-top: 2px solid #e9ecef;
+            text-align: center;
+            color: #7f8c8d;
+        }
+
+        .summary-section {
+            margin-bottom: 30px;
+        }
+
+        .data-section {
+            margin-bottom: 40px;
+        }
+
+        @media (max-width: 768px) {
+            .chart-row {
+                grid-template-columns: 1fr;
+            }
+
+            .container {
+                padding: 15px;
+            }
+        }
+    </style>
+        </head>
+        <body>
+            <div class="container">
+                
+        <h1>Robot Management Performance Report</h1>
+        <p class="subtitle">Generated on September 04, 2025 at 12:48 PM</p>
+        <p class="subtitle">Report Period: 2025-08-05 00:00:00 to 2025-09-04 23:59:59</p>
+        
+                
+        <section id="executive-summary">
+            <h2>Executive Summary</h2>
+            <div class="highlight-box">
+                <p>This report provides detailed analysis of robot management system performance for the specified period.</p>
+            </div>
+
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-value">1</div>
+                    <div class="metric-label">Total Robots</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">79</div>
+                    <div class="metric-label">Cleaning Tasks</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">0</div>
+                    <div class="metric-label">Charging Sessions</div>
+                </div>
+            </div>
+        </section>
+        
+                
+        <section id="robot-status" class="data-section">
+            <h2>Robot Status & Management</h2>
+            <p>Analysis of 1 robots</p>
+        
+                <h3>Status Distribution</h3>
+                <div class="chart-row">
+                    <div class="chart-small">
+                        <canvas id="robotStatusChart"></canvas>
+                    </div>
+                </div>
+                </section>
+        <section id="cleaning-tasks" class="data-section">
+            <h2>Cleaning Tasks Performance</h2>
+            <p>Analysis of 79 cleaning tasks</p>
+        
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-value">67.1%</div>
+                    <div class="metric-label">Task Completion Rate</div>
+                </div>
+            </div>
+            
+                <h3>Task Status Analysis</h3>
+                <div class="chart-row">
+                    <div class="chart-small">
+                        <canvas id="taskStatusChart"></canvas>
+                    </div>
+                </div>
+                </section>
+        <section id="performance-analysis" class="data-section">
+            <h2>Performance Analysis</h2>
+            <p>Performance analysis based on available data</p>
+        
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-value">77</div>
+                    <div class="metric-label">Error Events</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">261</div>
+                    <div class="metric-label">Warning Events</div>
+                </div>
+            </div>
+            </section>
+                
+        <footer class="footer">
+            <p><strong>Robot Management Report</strong><br>
+            Generated: 2025-09-04 12:48:21<br>
+            Report Period: 2025-08-05 00:00:00 to 2025-09-04 23:59:59</p>
+        </footer>
+        
+            </div>
+            
+    <script>
+        // Chart.js configurations and data
+        
+        // Robot Status Chart
+        const robotStatusCtx = document.getElementById('robotStatusChart');
+        if (robotStatusCtx) {
+            new Chart(robotStatusCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ["Online"],
+                    datasets: [{
+                        data: [1],
+                        backgroundColor: ['#28a745', '#17a2b8', '#ffc107', '#dc3545'],
+                        borderWidth: 2,
+                        borderColor: '#fff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Robot Status Distribution',
+                            font: { size: 16, weight: 'bold' }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Task Status Chart
+        const taskStatusCtx = document.getElementById('taskStatusChart');
+        if (taskStatusCtx) {
+            new Chart(taskStatusCtx, {
+                type: 'bar',
+                data: {
+                    labels: ["Task Ended", "Task Cancelled", "Task Interrupted"],
+                    datasets: [{
+                        label: 'Tasks',
+                        data: [53, 23, 3],
+                        backgroundColor: ['#3498db', '#e74c3c', '#f39c12'],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Task Status Distribution',
+                            font: { size: 16, weight: 'bold' }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+        
+        </script>
+        </body>
+        </html>
+        
