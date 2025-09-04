@@ -8,15 +8,19 @@ from datetime import datetime
 from pudu.rds.rdsTable import RDSTable
 from pudu.configs.database_config_loader import DynamicDatabaseConfig
 
+# Import new calculators
+from ..calculators.metrics_calculator import PerformanceMetricsCalculator
+
 logger = logging.getLogger(__name__)
 
 class DatabaseDataService:
-    """Service for querying historical data from databases for report generation"""
+    """Enhanced service for querying and processing historical data from databases for report generation"""
 
     def __init__(self, config: DynamicDatabaseConfig):
-        """Initialize with database configuration"""
+        """Initialize with database configuration and calculators"""
         self.config = config
         self.connection_config = "credentials.yaml"
+        self.metrics_calculator = PerformanceMetricsCalculator()
 
     def fetch_robot_status_data(self, target_robots: List[str]) -> pd.DataFrame:
         """
@@ -298,6 +302,100 @@ class DatabaseDataService:
             logger.error(f"Error in fetch_events_data: {e}")
             return pd.DataFrame()
 
+    def fetch_map_coverage_data(self, target_robots: List[str], start_date: str, end_date: str) -> pd.DataFrame:
+        """
+        Fetch map coverage data for efficiency calculations
+
+        Args:
+            target_robots: List of robot serial numbers
+            start_date: Start date for data range
+            end_date: End date for data range
+
+        Returns:
+            DataFrame with map coverage information
+        """
+        logger.info(f"Fetching map coverage data for {len(target_robots)} robots")
+
+        try:
+            # This would query map-specific coverage data if available
+            # For now, we'll extract from tasks data
+            tasks_data = self.fetch_cleaning_tasks_data(target_robots, start_date, end_date)
+
+            if not tasks_data.empty and 'map_name' in tasks_data.columns:
+                # Calculate coverage by map
+                map_coverage = tasks_data.groupby('map_name').agg({
+                    'actual_area': 'sum',
+                    'plan_area': 'sum',
+                    'efficiency': 'mean'
+                }).reset_index()
+
+                # Calculate coverage percentage
+                map_coverage['coverage_percentage'] = (
+                    map_coverage['actual_area'] / map_coverage['plan_area'] * 100
+                ).round(1)
+
+                return map_coverage
+            else:
+                return pd.DataFrame()
+
+        except Exception as e:
+            logger.error(f"Error fetching map coverage data: {e}")
+            return pd.DataFrame()
+
+    def fetch_operational_hours_data(self, target_robots: List[str], start_date: str, end_date: str) -> pd.DataFrame:
+        """
+        Fetch robot operational hours for availability calculations
+
+        Args:
+            target_robots: List of robot serial numbers
+            start_date: Start date for data range
+            end_date: End date for data range
+
+        Returns:
+            DataFrame with operational hours by robot
+        """
+        logger.info(f"Fetching operational hours for {len(target_robots)} robots")
+
+        try:
+            # Calculate from tasks data
+            tasks_data = self.fetch_cleaning_tasks_data(target_robots, start_date, end_date)
+
+            if not tasks_data.empty:
+                # Group by robot and sum operational hours
+                # Note: task table only has robot_sn, not robot_name
+                robot_hours = tasks_data.groupby('robot_sn').agg({
+                    'duration': lambda x: self._sum_durations(x)
+                }).reset_index()
+
+                robot_hours.columns = ['robot_sn', 'operational_hours']
+
+                # Optionally get robot names from robot status table if needed
+                try:
+                    robot_status_data = self.fetch_robot_status_data(target_robots)
+                    if not robot_status_data.empty and 'robot_name' in robot_status_data.columns:
+                        # Merge to get robot names
+                        robot_hours = robot_hours.merge(
+                            robot_status_data[['robot_sn', 'robot_name']].drop_duplicates(),
+                            on='robot_sn',
+                            how='left'
+                        )
+                        # Fill missing robot names with robot_sn
+                        robot_hours['robot_name'] = robot_hours['robot_name'].fillna(robot_hours['robot_sn'])
+                    else:
+                        # If no robot names available, use robot_sn as name
+                        robot_hours['robot_name'] = robot_hours['robot_sn']
+                except Exception as e:
+                    logger.warning(f"Could not fetch robot names: {e}")
+                    robot_hours['robot_name'] = robot_hours['robot_sn']
+
+                return robot_hours
+            else:
+                return pd.DataFrame()
+
+        except Exception as e:
+            logger.error(f"Error fetching operational hours: {e}")
+            return pd.DataFrame()
+
     def fetch_all_report_data(self, target_robots: List[str], start_date: str, end_date: str,
                              content_categories: List[str]) -> Dict[str, pd.DataFrame]:
         """
@@ -333,11 +431,91 @@ class DatabaseDataService:
                 logger.info("Fetching events data...")
                 report_data['events'] = self.fetch_events_data(target_robots, start_date, end_date)
 
+            # Always fetch map coverage and operational hours for comprehensive metrics
+            logger.info("Fetching map coverage data...")
+            report_data['map_coverage'] = self.fetch_map_coverage_data(target_robots, start_date, end_date)
+
+            logger.info("Fetching operational hours data...")
+            report_data['operational_hours'] = self.fetch_operational_hours_data(target_robots, start_date, end_date)
+
             logger.info(f"Data fetching completed. Categories: {list(report_data.keys())}")
             return report_data
 
         except Exception as e:
             logger.error(f"Error fetching all report data: {e}")
+            return {}
+
+    def calculate_comprehensive_metrics(self, report_data: Dict[str, pd.DataFrame],
+                                      start_date: str, end_date: str) -> Dict[str, Any]:
+        """
+        Calculate comprehensive metrics using the calculator
+
+        Args:
+            report_data: Raw data from database queries
+            start_date: Start date for calculations
+            end_date: End date for calculations
+
+        Returns:
+            Dict with all calculated metrics for the template
+        """
+        logger.info("Calculating comprehensive metrics for report template")
+
+        try:
+            # Extract DataFrames
+            robot_data = report_data.get('robot_status', pd.DataFrame())
+            tasks_data = report_data.get('cleaning_tasks', pd.DataFrame())
+            charging_data = report_data.get('charging_tasks', pd.DataFrame())
+            events_data = report_data.get('events', pd.DataFrame())
+            map_coverage_data = report_data.get('map_coverage', pd.DataFrame())
+
+            # Calculate all metrics using the calculator
+            metrics = {}
+
+            # Fleet performance metrics
+            metrics['fleet_performance'] = self.metrics_calculator.calculate_fleet_availability(
+                robot_data, tasks_data, charging_data, start_date, end_date
+            )
+
+            # Task performance metrics
+            metrics['task_performance'] = self.metrics_calculator.calculate_task_performance_metrics(tasks_data)
+
+            # Charging performance metrics
+            metrics['charging_performance'] = self.metrics_calculator.calculate_charging_performance_metrics(charging_data)
+
+            # Resource utilization metrics
+            metrics['resource_utilization'] = self.metrics_calculator.calculate_resource_utilization_metrics(
+                tasks_data, charging_data
+            )
+
+            # Event analysis metrics
+            metrics['event_analysis'] = self.metrics_calculator.calculate_event_analysis_metrics(events_data)
+
+            # Facility performance metrics
+            metrics['facility_performance'] = self.metrics_calculator.calculate_facility_performance_metrics(
+                tasks_data, robot_data
+            )
+
+            # Trend data for charts
+            metrics['trend_data'] = self.metrics_calculator.calculate_trend_data(
+                tasks_data, charging_data, start_date, end_date
+            )
+
+            # Cost analysis metrics (with placeholders)
+            metrics['cost_analysis'] = self.metrics_calculator.calculate_cost_analysis_metrics(
+                tasks_data, metrics['resource_utilization']
+            )
+
+            # Add map coverage if available
+            if not map_coverage_data.empty:
+                metrics['map_coverage'] = map_coverage_data.to_dict('records')
+            else:
+                metrics['map_coverage'] = []
+
+            logger.info("Comprehensive metrics calculation completed")
+            return metrics
+
+        except Exception as e:
+            logger.error(f"Error calculating comprehensive metrics: {e}")
             return {}
 
     def get_robot_count_summary(self, target_robots: List[str]) -> Dict[str, Any]:
@@ -371,3 +549,38 @@ class DatabaseDataService:
         except Exception as e:
             logger.error(f"Error getting robot count summary: {e}")
             return {'total_robots': len(target_robots), 'databases_involved': 0}
+
+    def _sum_durations(self, duration_series) -> float:
+        """
+        Helper method to sum duration values that may be in various formats
+
+        Args:
+            duration_series: Pandas series with duration values
+
+        Returns:
+            Total duration in hours
+        """
+        total_hours = 0
+
+        for duration in duration_series:
+            if pd.notna(duration):
+                try:
+                    if isinstance(duration, str):
+                        # Parse duration like "120min" or "2h 30min"
+                        hours = 0
+                        minutes = 0
+                        if 'h' in duration:
+                            hours = int(duration.split('h')[0])
+                        if 'min' in duration:
+                            min_part = duration.split('min')[0]
+                            if 'h' in min_part:
+                                minutes = int(min_part.split('h')[1].strip())
+                            else:
+                                minutes = int(min_part)
+                        total_hours += hours + minutes/60
+                    else:
+                        total_hours += float(duration)
+                except:
+                    continue
+
+        return total_hours
