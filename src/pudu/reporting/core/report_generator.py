@@ -280,69 +280,123 @@ class ReportGenerator:
             return []
 
     def _generate_comprehensive_report_content(self, comprehensive_metrics: Dict[str, Any],
-                                             report_config: ReportConfig, start_date: str,
-                                             end_date: str, target_robots: List[str]) -> Dict[str, Any]:
-        """
-        Generate structured report content from comprehensive metrics
+                                                 report_config: ReportConfig, start_date: str,
+                                                 end_date: str, target_robots: List[str]) -> Dict[str, Any]:
+            """
+            Generate structured report content from comprehensive metrics
 
-        Args:
-            comprehensive_metrics: All calculated metrics from database service
-            report_config: Report configuration
-            start_date: Report start date
-            end_date: Report end date
-            target_robots: List of target robot serial numbers
+            Args:
+                comprehensive_metrics: All calculated metrics from database service
+                report_config: Report configuration
+                start_date: Report start date
+                end_date: Report end date
+                target_robots: List of target robot serial numbers
 
-        Returns:
-            Structured content dictionary for template
-        """
-        logger.info(f"Generating comprehensive report content with detail level: {report_config.detail_level.value}")
+            Returns:
+                Structured content dictionary for template
+            """
+            logger.info(f"Generating comprehensive report content with detail level: {report_config.detail_level.value}")
 
-        # Build comprehensive content structure matching the template
-        content = {
-            'title': self._generate_report_title(report_config),
-            'period': f"{start_date.split(' ')[0]} to {end_date.split(' ')[0]}",
-            'generation_time': datetime.now(),
-            'detail_level': report_config.detail_level,
-            'content_categories': report_config.content_categories,
-            'customer_id': report_config.customer_id,
+            # Build comprehensive content structure matching the enhanced template
+            content = {
+                'title': self._generate_report_title(report_config),
+                'period': f"{start_date.split(' ')[0]} to {end_date.split(' ')[0]}",
+                'generation_time': datetime.now(),
+                'detail_level': report_config.detail_level,
+                'content_categories': report_config.content_categories,
+                'customer_id': report_config.customer_id,
 
-            # Executive Summary Data
-            'executive_summary': self._build_executive_summary(comprehensive_metrics),
+                # Executive Summary Data - using real calculated metrics
+                'executive_summary': self._build_enhanced_executive_summary(comprehensive_metrics),
 
-            # Fleet Management Data
-            'fleet_management': comprehensive_metrics.get('fleet_performance', {}),
+                # Fleet Management Data - with individual robot performance
+                'fleet_management': comprehensive_metrics.get('fleet_performance', {}),
+                'individual_robots': comprehensive_metrics.get('individual_robots', []),
 
-            # Task Performance Data
-            'task_performance': comprehensive_metrics.get('task_performance', {}),
+                # Task Performance Data - enhanced with real metrics
+                'task_performance': comprehensive_metrics.get('task_performance', {}),
 
-            # Charging Performance Data
-            'charging_performance': comprehensive_metrics.get('charging_performance', {}),
+                # Charging Performance Data
+                'charging_performance': comprehensive_metrics.get('charging_performance', {}),
 
-            # Resource Utilization Data
-            'resource_utilization': comprehensive_metrics.get('resource_utilization', {}),
+                # Resource Utilization Data
+                'resource_utilization': comprehensive_metrics.get('resource_utilization', {}),
 
-            # Event Analysis Data
-            'event_analysis': comprehensive_metrics.get('event_analysis', {}),
+                # Event Analysis Data
+                'event_analysis': comprehensive_metrics.get('event_analysis', {}),
 
-            # Facility Performance Data
-            'facility_performance': comprehensive_metrics.get('facility_performance', {}),
+                # Facility Performance Data - enhanced with location mapping
+                'facility_performance': comprehensive_metrics.get('facility_performance', {}),
 
-            # Cost Analysis Data
-            'cost_analysis': comprehensive_metrics.get('cost_analysis', {}),
+                # Cost Analysis Data - all N/A as requested
+                'cost_analysis': comprehensive_metrics.get('cost_analysis', {}),
 
-            # Chart Data
-            'chart_data': comprehensive_metrics.get('trend_data', {}),
+                # Trend Data - calculated from real database records
+                'trend_data': comprehensive_metrics.get('trend_data', {}),
 
-            # Map Coverage Data
-            'map_coverage': comprehensive_metrics.get('map_coverage', []),
+                # Map Coverage Data - real map analysis
+                'map_coverage': comprehensive_metrics.get('map_coverage', []),
 
-            # Metadata
-            'robots_included': len(target_robots),
-            'target_robots': target_robots[:10],  # Include first 10 for display
-            'total_target_robots': len(target_robots)
-        }
+                # Metadata
+                'robots_included': len(target_robots),
+                'target_robots': target_robots[:10],  # Include first 10 for display
+                'total_target_robots': len(target_robots)
+            }
 
-        return content
+            return content
+
+    def _build_enhanced_executive_summary(self, comprehensive_metrics: Dict[str, Any]) -> Dict[str, Any]:
+        """Build enhanced executive summary from comprehensive metrics with real data"""
+        try:
+            fleet_metrics = comprehensive_metrics.get('fleet_performance', {})
+            task_metrics = comprehensive_metrics.get('task_performance', {})
+            charging_metrics = comprehensive_metrics.get('charging_performance', {})
+            cost_metrics = comprehensive_metrics.get('cost_analysis', {})
+            resource_metrics = comprehensive_metrics.get('resource_utilization', {})
+
+            return {
+                # Core performance metrics from real data
+                'fleet_availability_rate': fleet_metrics.get('fleet_availability_rate', 0.0),
+                'monthly_cost_savings': cost_metrics.get('monthly_cost_savings', 'N/A'),  # N/A as requested
+                'energy_saved_kwh': resource_metrics.get('total_energy_consumption_kwh', 0.0),
+                'coverage_efficiency': task_metrics.get('coverage_efficiency', 0.0),
+                'task_completion_rate': task_metrics.get('completion_rate', 0.0),
+                'total_area_cleaned': resource_metrics.get('total_area_cleaned_sqft', 0.0),
+
+                # Additional summary metrics
+                'total_robots': fleet_metrics.get('total_robots', 0),
+                'total_tasks': task_metrics.get('total_tasks', 0),
+                'total_charging_sessions': charging_metrics.get('total_sessions', 0),
+                'annual_projected_savings': cost_metrics.get('annual_projected_savings', 'N/A'),  # N/A as requested
+
+                # Operational efficiency
+                'completed_tasks': task_metrics.get('completed_tasks', 0),
+                'cancelled_tasks': task_metrics.get('cancelled_tasks', 0),
+                'operational_hours': fleet_metrics.get('total_operational_hours', 0.0),
+
+                # Resource efficiency
+                'water_consumption': resource_metrics.get('total_water_consumption_floz', 0.0),
+                'energy_efficiency': resource_metrics.get('area_per_kwh', 0),
+
+                # Quality metrics
+                'duration_variance_tasks': task_metrics.get('duration_variance_tasks', 0),
+                'avg_duration_ratio': task_metrics.get('avg_duration_ratio', 100.0),
+                'charging_success_rate': charging_metrics.get('charging_success_rate', 0.0)
+            }
+
+        except Exception as e:
+            logger.error(f"Error building enhanced executive summary: {e}")
+            return {
+                'fleet_availability_rate': 0.0,
+                'monthly_cost_savings': 'N/A',
+                'energy_saved_kwh': 0.0,
+                'coverage_efficiency': 0.0,
+                'task_completion_rate': 0.0,
+                'total_area_cleaned': 0.0,
+                'total_robots': 0,
+                'total_tasks': 0,
+                'total_charging_sessions': 0
+            }
 
     def _build_executive_summary(self, comprehensive_metrics: Dict[str, Any]) -> Dict[str, Any]:
         """Build executive summary from comprehensive metrics"""

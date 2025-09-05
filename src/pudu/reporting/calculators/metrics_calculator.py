@@ -7,16 +7,16 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 class PerformanceMetricsCalculator:
-    """Centralized calculator for all report metrics matching the comprehensive template"""
+    """Enhanced calculator for all report metrics with real data processing"""
 
     def __init__(self):
         """Initialize the metrics calculator"""
         pass
 
     def calculate_fleet_availability(self, robot_data: pd.DataFrame, tasks_data: pd.DataFrame,
-                                   charging_data: pd.DataFrame, start_date: str, end_date: str) -> Dict[str, Any]:
+                                     start_date: str, end_date: str) -> Dict[str, Any]:
         """
-        Calculate fleet availability and operational metrics
+        Calculate fleet availability and operational metrics using real data
 
         Returns:
             Dict with availability percentages and operational hours
@@ -30,26 +30,12 @@ class PerformanceMetricsCalculator:
             # Calculate actual operational hours from tasks
             total_operational_hours = 0
             if not tasks_data.empty and 'duration' in tasks_data.columns:
-                # Parse duration and sum up
                 durations = []
                 for duration in tasks_data['duration']:
                     if pd.notna(duration):
-                        if isinstance(duration, str):
-                            # Parse duration like "120min" or "2h 30min"
-                            hours = 0
-                            minutes = 0
-                            if 'h' in duration:
-                                hours = int(duration.split('h')[0])
-                            if 'min' in duration:
-                                min_part = duration.split('min')[0]
-                                if 'h' in min_part:
-                                    minutes = int(min_part.split('h')[1].strip())
-                                else:
-                                    minutes = int(min_part)
-                            durations.append(hours + minutes/60)
-                        else:
-                            durations.append(float(duration))
-
+                        parsed_duration = self._parse_duration_to_hours(duration)
+                        if parsed_duration > 0:
+                            durations.append(parsed_duration)
                 total_operational_hours = sum(durations)
 
             # Calculate fleet availability
@@ -59,25 +45,38 @@ class PerformanceMetricsCalculator:
             fleet_availability = (total_operational_hours / max_possible_hours * 100) if max_possible_hours > 0 else 0
             fleet_availability = min(fleet_availability, 100)  # Cap at 100%
 
+            # Calculate average task duration in minutes
+            avg_task_duration = 0
+            if not tasks_data.empty and 'duration' in tasks_data.columns:
+                duration_minutes = []
+                for duration in tasks_data['duration']:
+                    if pd.notna(duration):
+                        minutes = self._parse_duration_to_minutes(duration)
+                        if minutes > 0:
+                            duration_minutes.append(minutes)
+                avg_task_duration = np.mean(duration_minutes) if duration_minutes else 0
+
             return {
                 'fleet_availability_rate': round(fleet_availability, 1),
                 'total_operational_hours': round(total_operational_hours, 1),
                 'total_robots': num_robots,
-                'average_robot_utilization': round(fleet_availability, 1)
+                'average_robot_utilization': round(fleet_availability, 1),
+                'avg_task_duration_minutes': round(avg_task_duration, 1)
             }
 
         except Exception as e:
             logger.error(f"Error calculating fleet availability: {e}")
             return {
-                'fleet_availability_rate': 95.0,  # Placeholder
-                'total_operational_hours': 568.0,
-                'total_robots': 6,
-                'average_robot_utilization': 95.0
+                'fleet_availability_rate': 0.0,
+                'total_operational_hours': 0.0,
+                'total_robots': 0,
+                'average_robot_utilization': 0.0,
+                'avg_task_duration_minutes': 0.0
             }
 
     def calculate_task_performance_metrics(self, tasks_data: pd.DataFrame) -> Dict[str, Any]:
         """
-        Calculate comprehensive task performance metrics
+        Calculate comprehensive task performance metrics from real data
 
         Returns:
             Dict with task completion rates, efficiency metrics, and area coverage
@@ -88,16 +87,22 @@ class PerformanceMetricsCalculator:
 
             total_tasks = len(tasks_data)
 
-            # Task completion analysis
+            # Task completion analysis based on actual status values
             completed_tasks = 0
             cancelled_tasks = 0
             interrupted_tasks = 0
 
             if 'status' in tasks_data.columns:
                 status_counts = tasks_data['status'].value_counts()
-                completed_tasks = status_counts.get('Task Ended', 0)
-                cancelled_tasks = status_counts.get('Task Cancelled', 0)
-                interrupted_tasks = status_counts.get('Task Interrupted', 0)
+                # Handle various status formats
+                for status, count in status_counts.items():
+                    status_lower = str(status).lower()
+                    if 'end' in status_lower or 'complet' in status_lower or 'finish' in status_lower:
+                        completed_tasks += count
+                    elif 'cancel' in status_lower:
+                        cancelled_tasks += count
+                    elif 'interrupt' in status_lower or 'abort' in status_lower:
+                        interrupted_tasks += count
 
             completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
 
@@ -106,49 +111,47 @@ class PerformanceMetricsCalculator:
             total_planned_area = 0
             coverage_efficiency = 0
 
-            if 'actual_area' in tasks_data.columns and 'plan_area' in tasks_data.columns:
-                total_area_cleaned = tasks_data['actual_area'].sum()
-                total_planned_area = tasks_data['plan_area'].sum()
-                coverage_efficiency = (total_area_cleaned / total_planned_area * 100) if total_planned_area > 0 else 0
+            if 'actual_area' in tasks_data.columns:
+                total_area_cleaned = tasks_data['actual_area'].fillna(0).sum()
 
-            # Task mode distribution
+            if 'plan_area' in tasks_data.columns:
+                total_planned_area = tasks_data['plan_area'].fillna(0).sum()
+
+            if total_planned_area > 0:
+                coverage_efficiency = (total_area_cleaned / total_planned_area * 100)
+
+            # Task mode distribution from actual data
             task_modes = {}
             if 'mode' in tasks_data.columns:
-                task_modes = tasks_data['mode'].value_counts().to_dict()
+                mode_counts = tasks_data['mode'].value_counts()
+                task_modes = {str(k): int(v) for k, v in mode_counts.items() if pd.notna(k)}
 
             # Duration variance analysis
             duration_variance_tasks = 0
             avg_duration_ratio = 100.0
 
-            if 'duration' in tasks_data.columns and 'start_time' in tasks_data.columns and 'end_time' in tasks_data.columns:
-                # Calculate tasks with significant duration variance
+            if all(col in tasks_data.columns for col in ['duration', 'start_time', 'end_time']):
                 variance_count = 0
                 duration_ratios = []
 
                 for idx, row in tasks_data.iterrows():
                     try:
-                        if pd.notna(row['start_time']) and pd.notna(row['end_time']) and pd.notna(row['duration']):
-                            # Parse actual time difference
+                        if all(pd.notna(row[col]) for col in ['start_time', 'end_time', 'duration']):
+                            # Calculate actual duration from timestamps
                             start_time = pd.to_datetime(row['start_time'])
                             end_time = pd.to_datetime(row['end_time'])
-                            actual_duration = (end_time - start_time).total_seconds() / 60  # minutes
+                            actual_duration_minutes = (end_time - start_time).total_seconds() / 60
 
                             # Parse planned duration
-                            planned_duration = 0
-                            if isinstance(row['duration'], str):
-                                # Parse duration like "120min"
-                                if 'min' in str(row['duration']):
-                                    planned_duration = float(str(row['duration']).replace('min', ''))
-                            else:
-                                planned_duration = float(row['duration'])
+                            planned_duration_minutes = self._parse_duration_to_minutes(row['duration'])
 
-                            if planned_duration > 0:
-                                variance = abs(actual_duration - planned_duration) / planned_duration
+                            if planned_duration_minutes > 0 and actual_duration_minutes > 0:
+                                variance = abs(actual_duration_minutes - planned_duration_minutes) / planned_duration_minutes
                                 if variance > 0.2:  # 20% variance threshold
                                     variance_count += 1
 
-                                duration_ratios.append(actual_duration / planned_duration * 100)
-                    except:
+                                duration_ratios.append(actual_duration_minutes / planned_duration_minutes * 100)
+                    except Exception:
                         continue
 
                 duration_variance_tasks = variance_count
@@ -172,12 +175,48 @@ class PerformanceMetricsCalculator:
             logger.error(f"Error calculating task performance metrics: {e}")
             return self._get_placeholder_task_metrics()
 
+    def _sum_durations(self, duration_series) -> float:
+        """
+        Helper method to sum duration values - UPDATED for your format
+        """
+        total_hours = 0
+
+        for duration in duration_series:
+            if pd.notna(duration):
+                try:
+                    if isinstance(duration, str):
+                        # Handle your format: "0h 04min", "1h 59min", "9h 07min"
+                        duration_str = str(duration).strip()
+                        hours = 0
+                        minutes = 0
+
+                        if 'h' in duration_str and 'min' in duration_str:
+                            # Split on 'h' first: "1h 59min"
+                            h_parts = duration_str.split('h')
+                            hours = int(h_parts[0].strip())
+
+                            # Get minutes part: " 59min"
+                            min_part = h_parts[1].strip()
+                            if min_part.endswith('min'):
+                                minutes = int(min_part.replace('min', '').strip())
+                        elif 'h' in duration_str:
+                            # Only hours: "2h"
+                            hours = int(duration_str.replace('h', '').strip())
+                        elif 'min' in duration_str:
+                            # Only minutes: "30min"
+                            minutes = int(duration_str.replace('min', '').strip())
+
+                        total_hours += hours + minutes/60
+                    else:
+                        total_hours += float(duration)
+                except:
+                    continue
+
+        return total_hours
+
     def calculate_charging_performance_metrics(self, charging_data: pd.DataFrame) -> Dict[str, Any]:
         """
         Calculate charging session performance metrics
-
-        Returns:
-            Dict with charging duration, power gain, and success rate metrics
         """
         try:
             if charging_data.empty:
@@ -185,45 +224,52 @@ class PerformanceMetricsCalculator:
 
             total_sessions = len(charging_data)
 
-            # Parse charging durations
+            # Parse charging durations with your format
             durations = []
             power_gains = []
             successful_sessions = 0
 
             for idx, row in charging_data.iterrows():
-                # Parse duration
+                # Parse duration - your format: "0h 04min", "1h 59min"
                 if pd.notna(row.get('duration')):
                     try:
-                        duration_str = str(row['duration'])
+                        duration_str = str(row['duration']).strip()
+                        hours = 0
+                        minutes = 0
+
                         if 'h' in duration_str and 'min' in duration_str:
-                            # Parse "0h 05min"
-                            parts = duration_str.split('h')
-                            hours = int(parts[0])
-                            minutes = int(parts[1].replace('min', '').strip())
-                            durations.append(hours * 60 + minutes)
+                            h_parts = duration_str.split('h')
+                            hours = int(h_parts[0].strip())
+                            min_part = h_parts[1].strip()
+                            if min_part.endswith('min'):
+                                minutes = int(min_part.replace('min', '').strip())
                         elif 'min' in duration_str:
                             minutes = int(duration_str.replace('min', '').strip())
-                            durations.append(minutes)
+
+                        duration_minutes = hours * 60 + minutes
+                        if duration_minutes > 0:
+                            durations.append(duration_minutes)
                     except:
                         pass
 
-                # Parse power gain
+                # Parse power gain - your format: "+1%", "+59%", "+0%"
                 if pd.notna(row.get('power_gain')):
                     try:
                         power_gain_str = str(row['power_gain'])
-                        gain_value = float(power_gain_str.replace('+', '').replace('%', ''))
+                        gain_value = float(power_gain_str.replace('+', '').replace('%', '').strip())
                         power_gains.append(gain_value)
                     except:
                         pass
 
-                # Count successful sessions
-                if pd.notna(row.get('status')) and 'success' in str(row['status']).lower():
-                    successful_sessions += 1
+                # Count successful sessions - your status: "Done"
+                if pd.notna(row.get('status')):
+                    if str(row['status']).lower() == 'done':
+                        successful_sessions += 1
 
             # Calculate averages
-            avg_duration = np.mean(durations) if durations else 5.8
-            avg_power_gain = np.mean(power_gains) if power_gains else 2.3
-            success_rate = (successful_sessions / total_sessions * 100) if total_sessions > 0 else 99.8
+            avg_duration = np.mean(durations) if durations else 0
+            avg_power_gain = np.mean(power_gains) if power_gains else 0
+            success_rate = (successful_sessions / total_sessions * 100) if total_sessions > 0 else 0
 
             return {
                 'total_sessions': total_sessions,
@@ -237,10 +283,10 @@ class PerformanceMetricsCalculator:
             logger.error(f"Error calculating charging metrics: {e}")
             return self._get_placeholder_charging_metrics()
 
-    def calculate_resource_utilization_metrics(self, tasks_data: pd.DataFrame,
-                                             charging_data: pd.DataFrame) -> Dict[str, Any]:
+
+    def calculate_resource_utilization_metrics(self, tasks_data: pd.DataFrame) -> Dict[str, Any]:
         """
-        Calculate resource utilization and efficiency metrics
+        Calculate resource utilization and efficiency metrics from real data
 
         Returns:
             Dict with energy efficiency, water usage, and operational efficiency
@@ -252,18 +298,21 @@ class PerformanceMetricsCalculator:
 
             if not tasks_data.empty:
                 if 'battery_usage' in tasks_data.columns:
-                    total_energy_consumption = tasks_data['battery_usage'].sum()
+                    total_energy_consumption = tasks_data['battery_usage'].fillna(0).sum()
+                elif 'energy_consumption' in tasks_data.columns:
+                    total_energy_consumption = tasks_data['energy_consumption'].fillna(0).sum()
+
                 if 'actual_area' in tasks_data.columns:
-                    total_area_cleaned = tasks_data['actual_area'].sum()
+                    total_area_cleaned = tasks_data['actual_area'].fillna(0).sum()
 
             # Water usage calculations
             total_water_consumption = 0
             if not tasks_data.empty and 'water_consumption' in tasks_data.columns:
-                total_water_consumption = tasks_data['water_consumption'].sum()
+                total_water_consumption = tasks_data['water_consumption'].fillna(0).sum()
 
             # Calculate efficiency ratios
-            area_per_kwh = total_area_cleaned / total_energy_consumption if total_energy_consumption > 0 else 2741
-            area_per_gallon = total_area_cleaned / (total_water_consumption / 128) if total_water_consumption > 0 else 211340  # Convert fl oz to gallons
+            area_per_kwh = total_area_cleaned / total_energy_consumption if total_energy_consumption > 0 else 0
+            area_per_gallon = total_area_cleaned / (total_water_consumption / 128) if total_water_consumption > 0 else 0  # Convert fl oz to gallons
 
             return {
                 'total_energy_consumption_kwh': round(total_energy_consumption, 1),
@@ -276,48 +325,35 @@ class PerformanceMetricsCalculator:
         except Exception as e:
             logger.error(f"Error calculating resource utilization: {e}")
             return {
-                'total_energy_consumption_kwh': 309.9,
-                'total_water_consumption_floz': 4003,
-                'area_per_kwh': 2741,
-                'area_per_gallon': 211340,
-                'total_area_cleaned_sqft': 847200
+                'total_energy_consumption_kwh': 0.0,
+                'total_water_consumption_floz': 0.0,
+                'area_per_kwh': 0,
+                'area_per_gallon': 0,
+                'total_area_cleaned_sqft': 0.0
             }
 
     def calculate_cost_analysis_metrics(self, tasks_data: pd.DataFrame,
                                       resource_metrics: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Calculate cost analysis metrics (using placeholders for missing cost data)
+        Calculate cost analysis metrics - returns N/A placeholders as requested
 
         Returns:
-            Dict with cost efficiency, savings, and ROI metrics
+            Dict with N/A placeholders for cost metrics
         """
-        # NOTE: This uses placeholder values since actual cost data is not available
-        # In a real implementation, this would require cost configuration
-
-        total_area = resource_metrics.get('total_area_cleaned_sqft', 847200)
-
-        # Placeholder cost calculations
-        cost_per_sqft = 0.168  # Placeholder
-        monthly_operational_cost = total_area * cost_per_sqft
-        traditional_cleaning_cost = monthly_operational_cost * 1.87  # 87% more expensive
-        monthly_savings = traditional_cleaning_cost - monthly_operational_cost
-        annual_savings = monthly_savings * 12
-        cost_efficiency_improvement = (monthly_savings / traditional_cleaning_cost * 100)
-
         return {
-            'monthly_operational_cost': round(monthly_operational_cost, 0),
-            'traditional_cleaning_cost': round(traditional_cleaning_cost, 0),
-            'monthly_cost_savings': round(monthly_savings, 0),
-            'annual_projected_savings': round(annual_savings, 0),
-            'cost_efficiency_improvement': round(cost_efficiency_improvement, 1),
-            'cost_per_sqft': cost_per_sqft,
-            'roi_improvement': round(cost_efficiency_improvement * 0.4, 1),  # Derived metric
-            'note': 'Cost metrics use placeholder values - requires cost configuration for accurate calculations'
+            'monthly_operational_cost': 'N/A',
+            'traditional_cleaning_cost': 'N/A',
+            'monthly_cost_savings': 'N/A',
+            'annual_projected_savings': 'N/A',
+            'cost_efficiency_improvement': 'N/A',
+            'cost_per_sqft': 'N/A',
+            'roi_improvement': 'N/A',
+            'note': 'Cost metrics require configuration - data not available. Need baseline cost data, operational expenses, and traditional cleaning cost benchmarks to calculate accurate financial metrics.'
         }
 
     def calculate_event_analysis_metrics(self, events_data: pd.DataFrame) -> Dict[str, Any]:
         """
-        Calculate event and error analysis metrics
+        Calculate event and error analysis metrics from real data
 
         Returns:
             Dict with event counts, types, and distribution
@@ -331,18 +367,31 @@ class PerformanceMetricsCalculator:
             # Event level distribution
             event_levels = {}
             if 'event_level' in events_data.columns:
-                event_levels = events_data['event_level'].value_counts().to_dict()
+                level_counts = events_data['event_level'].value_counts()
+                event_levels = {str(k).lower(): int(v) for k, v in level_counts.items() if pd.notna(k)}
 
             # Event type distribution
             event_types = {}
             if 'event_type' in events_data.columns:
-                event_types = events_data['event_type'].value_counts().to_dict()
+                type_counts = events_data['event_type'].value_counts()
+                event_types = {str(k): int(v) for k, v in type_counts.items() if pd.notna(k)}
 
-            # Count by severity
-            critical_events = event_levels.get('critical', 0)
-            error_events = event_levels.get('error', 0)
-            warning_events = event_levels.get('warning', 0)
-            info_events = event_levels.get('info', 0)
+            # Count by severity (normalize level names)
+            critical_events = 0
+            error_events = 0
+            warning_events = 0
+            info_events = 0
+
+            for level, count in event_levels.items():
+                level_lower = str(level).lower()
+                if 'critical' in level_lower or 'fatal' in level_lower:
+                    critical_events += count
+                elif 'error' in level_lower:
+                    error_events += count
+                elif 'warning' in level_lower or 'warn' in level_lower:
+                    warning_events += count
+                elif 'info' in level_lower or 'notice' in level_lower or 'debug' in level_lower:
+                    info_events += count
 
             return {
                 'total_events': total_events,
@@ -361,7 +410,7 @@ class PerformanceMetricsCalculator:
     def calculate_facility_performance_metrics(self, tasks_data: pd.DataFrame,
                                              robot_data: pd.DataFrame) -> Dict[str, Any]:
         """
-        Calculate facility-specific performance metrics
+        Calculate facility-specific performance metrics - basic version
 
         Returns:
             Dict with performance by location/facility
@@ -372,36 +421,50 @@ class PerformanceMetricsCalculator:
             # Group by location if available
             if not robot_data.empty and 'location_id' in robot_data.columns:
                 # Create mapping of robots to locations
-                robot_location_map = robot_data.set_index('robot_sn')['location_id'].to_dict()
+                robot_location_map = {}
+                for _, robot in robot_data.iterrows():
+                    robot_sn = robot.get('robot_sn')
+                    location_id = robot.get('location_id')
+                    if robot_sn and location_id:
+                        robot_location_map[robot_sn] = location_id
 
                 # Group tasks by facility
                 if not tasks_data.empty and 'robot_sn' in tasks_data.columns:
-                    for facility in robot_location_map.values():
-                        facility_robots = [sn for sn, loc in robot_location_map.items() if loc == facility]
-                        facility_tasks = tasks_data[tasks_data['robot_sn'].isin(facility_robots)]
+                    location_groups = {}
+                    for _, task in tasks_data.iterrows():
+                        robot_sn = task.get('robot_sn')
+                        location_id = robot_location_map.get(robot_sn)
+                        if location_id:
+                            if location_id not in location_groups:
+                                location_groups[location_id] = []
+                            location_groups[location_id].append(task)
+
+                    for location_id, task_list in location_groups.items():
+                        facility_tasks = pd.DataFrame(task_list)
 
                         if not facility_tasks.empty:
-                            facilities[facility] = {
-                                'total_tasks': len(facility_tasks),
-                                'area_cleaned': facility_tasks['actual_area'].sum() if 'actual_area' in facility_tasks.columns else 0,
-                                'completion_rate': len(facility_tasks[facility_tasks['status'] == 'Task Ended']) / len(facility_tasks) * 100 if 'status' in facility_tasks.columns else 0
+                            total_tasks = len(facility_tasks)
+                            completed_tasks = len(facility_tasks[facility_tasks['status'].str.contains('end|complet', case=False, na=False)]) if 'status' in facility_tasks.columns else 0
+                            area_cleaned = facility_tasks['actual_area'].fillna(0).sum() if 'actual_area' in facility_tasks.columns else 0
+                            completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+
+                            facilities[f"Location_{location_id}"] = {
+                                'total_tasks': total_tasks,
+                                'area_cleaned': round(area_cleaned, 0),
+                                'completion_rate': round(completion_rate, 1)
                             }
 
-            # Use placeholder data if no facility data available
-            if not facilities:
-                facilities = {
-                    'Marston Science Library': {
-                        'total_tasks': 2847,
-                        'area_cleaned': 412500,
-                        'completion_rate': 97.2,
-                        'map_coverage': 97.2
-                    },
-                    'Dental Science Building': {
-                        'total_tasks': 3154,
-                        'area_cleaned': 434700,
-                        'completion_rate': 95.4,
-                        'map_coverage': 97.2
-                    }
+            # Fallback: if no location data, create single facility
+            if not facilities and not tasks_data.empty:
+                total_tasks = len(tasks_data)
+                completed_tasks = len(tasks_data[tasks_data['status'].str.contains('end|complet', case=False, na=False)]) if 'status' in tasks_data.columns else 0
+                area_cleaned = tasks_data['actual_area'].fillna(0).sum() if 'actual_area' in tasks_data.columns else 0
+                completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+
+                facilities['All_Locations'] = {
+                    'total_tasks': total_tasks,
+                    'area_cleaned': round(area_cleaned, 0),
+                    'completion_rate': round(completion_rate, 1)
                 }
 
             return {'facilities': facilities}
@@ -413,27 +476,95 @@ class PerformanceMetricsCalculator:
     def calculate_trend_data(self, tasks_data: pd.DataFrame, charging_data: pd.DataFrame,
                            start_date: str, end_date: str) -> Dict[str, Any]:
         """
-        Calculate weekly trend data for charts
+        Calculate weekly trend data for charts from real data
 
         Returns:
             Dict with weekly aggregated data for trend visualization
         """
         try:
-            # Create 4 weeks of data for the charts
+            # Parse date range
+            start_dt = datetime.strptime(start_date.split(' ')[0], '%Y-%m-%d')
+            end_dt = datetime.strptime(end_date.split(' ')[0], '%Y-%m-%d')
+
+            total_days = (end_dt - start_dt).days
+            days_per_week = max(1, total_days // 4)  # Divide into 4 weeks
+
             weeks = ['Week 1', 'Week 2', 'Week 3', 'Week 4']
+            task_completion_trend = []
+            charging_sessions_trend = []
+            charging_duration_trend = []
+            energy_consumption_trend = []
+            water_usage_trend = []
 
-            # Task completion trends (placeholder calculation)
-            task_completion_trend = [96.5, 97.1, 96.8, 97.2]
-            charging_sessions_trend = [268, 275, 271, 278]
-            charging_duration_trend = [5.2, 5.8, 6.1, 6.2]
+            for week in range(4):
+                week_start = start_dt + timedelta(days=week * days_per_week)
+                week_end = start_dt + timedelta(days=(week + 1) * days_per_week)
 
-            # Energy and resource trends
-            energy_consumption_trend = [75.2, 78.1, 76.8, 79.8]
-            water_usage_trend = [980, 1020, 995, 1025]
+                # Task metrics for this week
+                if not tasks_data.empty and 'start_time' in tasks_data.columns:
+                    try:
+                        tasks_data['start_time_dt'] = pd.to_datetime(tasks_data['start_time'], errors='coerce')
+                        week_tasks = tasks_data[
+                            (tasks_data['start_time_dt'] >= week_start) &
+                            (tasks_data['start_time_dt'] < week_end)
+                        ]
 
-            # Cost and ROI trends
-            cost_savings_trend = [2850, 3100, 3200, 3250]
-            roi_improvement_trend = [16.2, 17.8, 18.5, 19.1]
+                        if not week_tasks.empty:
+                            # Completion rate
+                            completed = len(week_tasks[week_tasks['status'].str.contains('end|complet', case=False, na=False)]) if 'status' in week_tasks.columns else 0
+                            total = len(week_tasks)
+                            completion_rate = (completed / total * 100) if total > 0 else 0
+                            task_completion_trend.append(round(completion_rate, 1))
+
+                            # Energy consumption
+                            energy = week_tasks['battery_usage'].fillna(0).sum() if 'battery_usage' in week_tasks.columns else 0
+                            energy_consumption_trend.append(round(energy, 1))
+
+                            # Water usage
+                            water = week_tasks['water_consumption'].fillna(0).sum() if 'water_consumption' in week_tasks.columns else 0
+                            water_usage_trend.append(round(water, 0))
+                        else:
+                            task_completion_trend.append(0)
+                            energy_consumption_trend.append(0)
+                            water_usage_trend.append(0)
+                    except Exception:
+                        task_completion_trend.append(0)
+                        energy_consumption_trend.append(0)
+                        water_usage_trend.append(0)
+                else:
+                    task_completion_trend.append(0)
+                    energy_consumption_trend.append(0)
+                    water_usage_trend.append(0)
+
+                # Charging metrics for this week
+                if not charging_data.empty and 'start_time' in charging_data.columns:
+                    try:
+                        charging_data['start_time_dt'] = pd.to_datetime(charging_data['start_time'], errors='coerce')
+                        week_charging = charging_data[
+                            (charging_data['start_time_dt'] >= week_start) &
+                            (charging_data['start_time_dt'] < week_end)
+                        ]
+
+                        charging_sessions_trend.append(len(week_charging))
+
+                        # Average duration
+                        if not week_charging.empty and 'duration' in week_charging.columns:
+                            durations = []
+                            for duration in week_charging['duration']:
+                                duration_minutes = self._parse_duration_to_minutes(duration)
+                                if duration_minutes > 0:
+                                    durations.append(duration_minutes)
+
+                            avg_duration = np.mean(durations) if durations else 0
+                            charging_duration_trend.append(round(avg_duration, 1))
+                        else:
+                            charging_duration_trend.append(0)
+                    except Exception:
+                        charging_sessions_trend.append(0)
+                        charging_duration_trend.append(0)
+                else:
+                    charging_sessions_trend.append(0)
+                    charging_duration_trend.append(0)
 
             return {
                 'weeks': weeks,
@@ -442,70 +573,415 @@ class PerformanceMetricsCalculator:
                 'charging_duration_trend': charging_duration_trend,
                 'energy_consumption_trend': energy_consumption_trend,
                 'water_usage_trend': water_usage_trend,
-                'cost_savings_trend': cost_savings_trend,
-                'roi_improvement_trend': roi_improvement_trend
+                'cost_savings_trend': [0, 0, 0, 0],  # N/A as requested
+                'roi_improvement_trend': [0, 0, 0, 0]  # N/A as requested
             }
 
         except Exception as e:
             logger.error(f"Error calculating trend data: {e}")
             return self._get_placeholder_trend_data()
 
+    def calculate_individual_robot_performance(self, tasks_data: pd.DataFrame,
+                                             charging_data: pd.DataFrame,
+                                             robot_status: pd.DataFrame) -> List[Dict[str, Any]]:
+        """
+        Calculate detailed performance metrics for individual robots
+
+        Args:
+            tasks_data: Task performance data
+            charging_data: Charging session data
+            robot_status: Robot status and location data
+
+        Returns:
+            List of individual robot performance dictionaries
+        """
+        logger.info("Calculating detailed individual robot performance")
+
+        try:
+            robot_metrics = []
+
+            if robot_status.empty:
+                logger.warning("No robot status data available for individual metrics")
+                return []
+
+            for _, robot in robot_status.iterrows():
+                robot_sn = robot.get('robot_sn')
+                if not robot_sn:
+                    continue
+
+                # Filter data for this specific robot
+                robot_tasks = tasks_data[tasks_data['robot_sn'] == robot_sn] if not tasks_data.empty else pd.DataFrame()
+                robot_charging = charging_data[charging_data['robot_sn'] == robot_sn] if not charging_data.empty else pd.DataFrame()
+
+                # Calculate task metrics
+                total_tasks = len(robot_tasks)
+                completed_tasks = 0
+                if not robot_tasks.empty and 'status' in robot_tasks.columns:
+                    completed_tasks = len(robot_tasks[robot_tasks['status'].str.contains('end|complet', case=False, na=False)])
+
+                # Calculate operational hours from actual task durations
+                operational_hours = 0
+                if not robot_tasks.empty and 'duration' in robot_tasks.columns:
+                    for duration in robot_tasks['duration']:
+                        operational_hours += self._parse_duration_to_hours(duration)
+
+                # Calculate area cleaned
+                area_cleaned = 0
+                if not robot_tasks.empty and 'actual_area' in robot_tasks.columns:
+                    area_cleaned = robot_tasks['actual_area'].fillna(0).sum()
+
+                # Determine operational status
+                current_status = robot.get('status', 'Unknown')
+                battery_level = robot.get('battery_level', 0)
+
+                # Calculate completion rate
+                completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+
+                # Determine status class for display
+                status_class = self._determine_robot_status_class(current_status, completion_rate, battery_level)
+
+                # Get location information
+                location_name = self._get_robot_location_name(robot)
+
+                # Calculate efficiency metrics
+                avg_efficiency = 0
+                if not robot_tasks.empty and 'efficiency' in robot_tasks.columns:
+                    avg_efficiency = robot_tasks['efficiency'].fillna(0).mean()
+
+                robot_metrics.append({
+                    'robot_id': robot_sn,
+                    'robot_name': robot.get('robot_name', f'Robot {robot_sn}'),
+                    'location': location_name,
+                    'tasks_completed': completed_tasks,
+                    'total_tasks': total_tasks,
+                    'completion_rate': round(completion_rate, 1),
+                    'operational_hours': round(operational_hours, 1),
+                    'area_cleaned': round(area_cleaned, 0),
+                    'avg_efficiency': round(avg_efficiency, 1),
+                    'charging_sessions': len(robot_charging),
+                    'battery_level': battery_level,
+                    'status': current_status,
+                    'status_class': status_class,
+                    'water_level': robot.get('water_level', 0),
+                    'sewage_level': robot.get('sewage_level', 0)
+                })
+
+            # Sort by operational hours descending
+            robot_metrics.sort(key=lambda x: x['operational_hours'], reverse=True)
+
+            logger.info(f"Calculated detailed metrics for {len(robot_metrics)} robots")
+            return robot_metrics
+
+        except Exception as e:
+            logger.error(f"Error calculating individual robot performance: {e}")
+            return []
+
+    def calculate_facility_breakdown_metrics(self, tasks_data: pd.DataFrame,
+                                           robot_locations: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
+        """
+        Calculate comprehensive facility-specific breakdown metrics
+
+        Args:
+            tasks_data: Task performance data
+            robot_locations: Robot location mapping data
+
+        Returns:
+            Dict with detailed facility metrics
+        """
+        logger.info("Calculating comprehensive facility breakdown metrics")
+
+        try:
+            if robot_locations.empty or tasks_data.empty:
+                logger.warning("Insufficient data for facility breakdown")
+                return {}
+
+            facility_metrics = {}
+
+            # Group by building/facility
+            for building_name in robot_locations['building_name'].dropna().unique():
+                facility_robots = robot_locations[robot_locations['building_name'] == building_name]['robot_sn'].tolist()
+                facility_tasks = tasks_data[tasks_data['robot_sn'].isin(facility_robots)]
+
+                if facility_tasks.empty:
+                    continue
+
+                # Basic task metrics
+                total_tasks = len(facility_tasks)
+                completed_tasks = len(facility_tasks[facility_tasks['status'].str.contains('end|complet', case=False, na=False)]) if 'status' in facility_tasks.columns else 0
+                cancelled_tasks = len(facility_tasks[facility_tasks['status'].str.contains('cancel', case=False, na=False)]) if 'status' in facility_tasks.columns else 0
+
+                # Area calculations
+                actual_area = facility_tasks['actual_area'].fillna(0).sum() if 'actual_area' in facility_tasks.columns else 0
+                planned_area = facility_tasks['plan_area'].fillna(0).sum() if 'plan_area' in facility_tasks.columns else 0
+
+                # Coverage and efficiency calculations
+                coverage_efficiency = (actual_area / planned_area * 100) if planned_area > 0 else 0
+                completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+
+                # Operating hours calculation
+                operating_hours = 0
+                if 'duration' in facility_tasks.columns:
+                    for duration in facility_tasks['duration']:
+                        operating_hours += self._parse_duration_to_hours(duration)
+
+                # Resource consumption
+                energy_consumption = facility_tasks['battery_usage'].fillna(0).sum() if 'battery_usage' in facility_tasks.columns else 0
+                water_consumption = facility_tasks['water_consumption'].fillna(0).sum() if 'water_consumption' in facility_tasks.columns else 0
+
+                # Power efficiency
+                power_efficiency = actual_area / energy_consumption if energy_consumption > 0 else 0
+
+                # Task mode analysis
+                primary_mode = "Mixed"
+                if 'mode' in facility_tasks.columns:
+                    mode_counts = facility_tasks['mode'].value_counts()
+                    if not mode_counts.empty:
+                        primary_mode = mode_counts.index[0]
+
+                # Average task duration
+                avg_duration = 0
+                if 'duration' in facility_tasks.columns:
+                    durations = []
+                    for duration in facility_tasks['duration']:
+                        duration_mins = self._parse_duration_to_minutes(duration)
+                        if duration_mins > 0:
+                            durations.append(duration_mins)
+                    avg_duration = np.mean(durations) if durations else 0
+
+                # Build comprehensive facility metrics
+                facility_metrics[building_name] = {
+                    'total_tasks': total_tasks,
+                    'completed_tasks': completed_tasks,
+                    'cancelled_tasks': cancelled_tasks,
+                    'completion_rate': round(completion_rate, 1),
+                    'area_cleaned': round(actual_area, 0),
+                    'planned_area': round(planned_area, 0),
+                    'coverage_efficiency': round(coverage_efficiency, 1),
+                    'operating_hours': round(operating_hours, 1),
+                    'energy_consumption': round(energy_consumption, 1),
+                    'water_consumption': round(water_consumption, 1),
+                    'power_efficiency': round(power_efficiency, 0),
+                    'robot_count': len(facility_robots),
+                    'primary_mode': primary_mode,
+                    'avg_task_duration': round(avg_duration, 1),
+                    'cancellation_rate': round((cancelled_tasks / total_tasks * 100), 1) if total_tasks > 0 else 0
+                }
+
+            logger.info(f"Calculated breakdown metrics for {len(facility_metrics)} facilities")
+            return facility_metrics
+
+        except Exception as e:
+            logger.error(f"Error calculating facility breakdown: {e}")
+            return {}
+
+    def calculate_detailed_map_coverage(self, tasks_data: pd.DataFrame) -> List[Dict[str, Any]]:
+        """
+        Calculate detailed map coverage analysis with efficiency metrics
+
+        Args:
+            tasks_data: Task performance data with map information
+
+        Returns:
+            List of detailed map coverage dictionaries
+        """
+        logger.info("Calculating detailed map coverage analysis")
+
+        try:
+            if tasks_data.empty or 'map_name' not in tasks_data.columns:
+                logger.warning("No map data available for coverage analysis")
+                return []
+
+            map_metrics = []
+
+            for map_name in tasks_data['map_name'].dropna().unique():
+                map_tasks = tasks_data[tasks_data['map_name'] == map_name]
+
+                # Coverage calculations
+                total_actual_area = map_tasks['actual_area'].fillna(0).sum() if 'actual_area' in map_tasks.columns else 0
+                total_planned_area = map_tasks['plan_area'].fillna(0).sum() if 'plan_area' in map_tasks.columns else 0
+                coverage_percentage = (total_actual_area / total_planned_area * 100) if total_planned_area > 0 else 0
+
+                # Task completion analysis
+                total_tasks = len(map_tasks)
+                completed_tasks = len(map_tasks[map_tasks['status'].str.contains('end|complet', case=False, na=False)]) if 'status' in map_tasks.columns else 0
+                completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+
+                # Efficiency metrics
+                avg_efficiency = map_tasks['efficiency'].fillna(0).mean() if 'efficiency' in map_tasks.columns else 0
+
+                # Operating time for this map
+                total_operating_time = 0
+                if 'duration' in map_tasks.columns:
+                    for duration in map_tasks['duration']:
+                        total_operating_time += self._parse_duration_to_hours(duration)
+
+                # Determine coverage status
+                coverage_status = "Excellent" if coverage_percentage >= 95 else \
+                                "Good" if coverage_percentage >= 85 else \
+                                "Needs Improvement" if coverage_percentage >= 70 else "Poor"
+
+                map_metrics.append({
+                    'map_name': map_name,
+                    'coverage_percentage': round(coverage_percentage, 1),
+                    'actual_area': round(total_actual_area, 0),
+                    'planned_area': round(total_planned_area, 0),
+                    'completed_tasks': completed_tasks,
+                    'total_tasks': total_tasks,
+                    'completion_rate': round(completion_rate, 1),
+                    'avg_efficiency': round(avg_efficiency, 1),
+                    'operating_hours': round(total_operating_time, 1),
+                    'coverage_status': coverage_status
+                })
+
+            # Sort by coverage percentage descending
+            map_metrics.sort(key=lambda x: x['coverage_percentage'], reverse=True)
+
+            logger.info(f"Calculated detailed coverage for {len(map_metrics)} maps")
+            return map_metrics
+
+        except Exception as e:
+            logger.error(f"Error calculating detailed map coverage: {e}")
+            return []
+
+    def _parse_duration_to_hours(self, duration) -> float:
+        """Parse duration string to hours"""
+        if pd.isna(duration):
+            return 0
+
+        try:
+            duration_str = str(duration).strip()
+            hours = 0
+            minutes = 0
+
+            if 'h' in duration_str and 'min' in duration_str:
+                # Format: "2h 30min"
+                parts = duration_str.split('h')
+                hours = float(parts[0])
+                if len(parts) > 1:
+                    min_part = parts[1].replace('min', '').strip()
+                    if min_part:
+                        minutes = float(min_part)
+            elif 'h' in duration_str:
+                # Format: "2h"
+                hours = float(duration_str.replace('h', '').strip())
+            elif 'min' in duration_str:
+                # Format: "120min"
+                minutes = float(duration_str.replace('min', '').strip())
+            else:
+                # Assume it's a number in minutes
+                try:
+                    minutes = float(duration_str)
+                except ValueError:
+                    return 0
+
+            return hours + (minutes / 60)
+        except (ValueError, AttributeError):
+            return 0
+
+    def _parse_duration_to_minutes(self, duration) -> float:
+        """Parse duration string to minutes"""
+        return self._parse_duration_to_hours(duration) * 60
+
+    def _determine_robot_status_class(self, status: str, completion_rate: float, battery_level: float) -> str:
+        """Determine CSS status class based on robot metrics"""
+        try:
+            status_lower = str(status).lower() if status else ""
+
+            # Critical status check
+            if any(word in status_lower for word in ['error', 'fault', 'fail', 'offline']):
+                return 'status-error'
+
+            # Warning status check
+            if any(word in status_lower for word in ['warning', 'maintenance', 'low']):
+                return 'status-warning'
+
+            # Good/operational status
+            if any(word in status_lower for word in ['operational', 'online', 'active', 'working']):
+                # Further categorize based on performance
+                if completion_rate >= 90 and battery_level >= 50:
+                    return 'status-excellent'
+                elif completion_rate >= 70:
+                    return 'status-good'
+                else:
+                    return 'status-warning'
+
+            # Default based on performance only
+            if completion_rate >= 90:
+                return 'status-excellent'
+            elif completion_rate >= 70:
+                return 'status-good'
+            elif completion_rate >= 50:
+                return 'status-warning'
+            else:
+                return 'status-error'
+
+        except Exception:
+            return 'status-error'
+
+    def _get_robot_location_name(self, robot: pd.Series) -> str:
+        """Extract location name from robot data"""
+        try:
+            # Try multiple location fields
+            location_fields = ['building_name', 'location_id', 'city']
+
+            for field in location_fields:
+                if field in robot and pd.notna(robot[field]):
+                    location = str(robot[field]).strip()
+                    if location and location.lower() != 'unknown':
+                        return location
+
+            return 'Unknown Location'
+
+        except Exception:
+            return 'Unknown Location'
+
     def _get_placeholder_task_metrics(self) -> Dict[str, Any]:
         """Return placeholder task metrics when data is unavailable"""
         return {
-            'total_tasks': 6001,
-            'completed_tasks': 5776,
-            'cancelled_tasks': 195,
-            'interrupted_tasks': 30,
-            'completion_rate': 96.3,
-            'total_area_cleaned': 847200,
-            'coverage_efficiency': 98.7,
-            'task_modes': {'Scrubbing': 3154, 'Sweeping': 2847},
-            'duration_variance_tasks': 225,
-            'avg_duration_ratio': 102.1,
-            'incomplete_task_rate': 3.7
+            'total_tasks': 0,
+            'completed_tasks': 0,
+            'cancelled_tasks': 0,
+            'interrupted_tasks': 0,
+            'completion_rate': 0.0,
+            'total_area_cleaned': 0.0,
+            'coverage_efficiency': 0.0,
+            'task_modes': {},
+            'duration_variance_tasks': 0,
+            'avg_duration_ratio': 100.0,
+            'incomplete_task_rate': 0.0
         }
 
     def _get_placeholder_charging_metrics(self) -> Dict[str, Any]:
         """Return placeholder charging metrics when data is unavailable"""
         return {
-            'total_sessions': 1092,
-            'avg_charging_duration_minutes': 5.8,
-            'avg_power_gain_percent': 2.3,
-            'charging_success_rate': 99.8,
-            'total_charging_time': 6333.6
+            'total_sessions': 0,
+            'avg_charging_duration_minutes': 0.0,
+            'avg_power_gain_percent': 0.0,
+            'charging_success_rate': 0.0,
+            'total_charging_time': 0.0
         }
 
     def _get_placeholder_event_metrics(self) -> Dict[str, Any]:
         """Return placeholder event metrics when data is unavailable"""
         return {
-            'total_events': 178,
+            'total_events': 0,
             'critical_events': 0,
-            'error_events': 8,
-            'warning_events': 23,
-            'info_events': 147,
-            'event_types': {
-                'Brush Error': 7,
-                'Lost Localization': 2,
-                'Drop Detection': 15,
-                'Odom Slip': 8
-            },
-            'event_levels': {
-                'error': 8,
-                'warning': 23,
-                'info': 147
-            }
+            'error_events': 0,
+            'warning_events': 0,
+            'info_events': 0,
+            'event_types': {},
+            'event_levels': {}
         }
 
     def _get_placeholder_trend_data(self) -> Dict[str, Any]:
         """Return placeholder trend data when calculation fails"""
         return {
             'weeks': ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
-            'task_completion_trend': [96.5, 97.1, 96.8, 97.2],
-            'charging_sessions_trend': [268, 275, 271, 278],
-            'charging_duration_trend': [5.2, 5.8, 6.1, 6.2],
-            'energy_consumption_trend': [75.2, 78.1, 76.8, 79.8],
-            'water_usage_trend': [980, 1020, 995, 1025],
-            'cost_savings_trend': [2850, 3100, 3200, 3250],
-            'roi_improvement_trend': [16.2, 17.8, 18.5, 19.1]
+            'task_completion_trend': [0, 0, 0, 0],
+            'charging_sessions_trend': [0, 0, 0, 0],
+            'charging_duration_trend': [0, 0, 0, 0],
+            'energy_consumption_trend': [0, 0, 0, 0],
+            'water_usage_trend': [0, 0, 0, 0],
+            'cost_savings_trend': [0, 0, 0, 0],
+            'roi_improvement_trend': [0, 0, 0, 0]
         }

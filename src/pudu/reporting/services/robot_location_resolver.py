@@ -103,11 +103,11 @@ class RobotLocationResolver:
                     where_conditions = []
 
                     if location_criteria.get('country'):
-                        where_conditions.append(f"country = '{location_criteria['country']}'")
+                        where_conditions.append(f"country = '{location_criteria['country'].upper()}'")
                     if location_criteria.get('state'):
-                        where_conditions.append(f"state = '{location_criteria['state']}'")
+                        where_conditions.append(f"state = '{location_criteria['state'].upper()}'")
                     if location_criteria.get('city'):
-                        where_conditions.append(f"city = '{location_criteria['city']}'")
+                        where_conditions.append(f"city = '{location_criteria['city'].upper()}'")
                     if location_criteria.get('building'):
                         # Building can match by building_name or building_computer_name
                         building_val = location_criteria['building']
