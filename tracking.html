@@ -1,0 +1,1353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tracking</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f8fafc;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .header {
+            background: #1e293b;
+            color: white;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .filters-section {
+            background: white;
+            padding: 1rem 2rem;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .filter-group {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .filter-group label {
+            font-weight: 500;
+            color: #475569;
+            font-size: 0.9rem;
+        }
+
+        .filter-select, .filter-input {
+            padding: 0.5rem;
+            border: 1px solid #d1d5db;
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            min-width: 120px;
+        }
+
+        .time-range-picker {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem;
+            border: 1px solid #d1d5db;
+            border-radius: 0.375rem;
+            background: white;
+        }
+
+        .main-container {
+            display: flex;
+            height: calc(100vh - 140px);
+        }
+
+        .left-panel {
+            width: 320px;
+            background: white;
+            border-right: 1px solid #e2e8f0;
+            overflow-y: auto;
+        }
+
+        .panel-header {
+            padding: 1rem;
+            border-bottom: 1px solid #e2e8f0;
+            background: #f8fafc;
+            font-weight: 600;
+            color: #374151;
+        }
+
+        .robot-card {
+            padding: 1rem;
+            border-bottom: 1px solid #f1f5f9;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .robot-card:hover {
+            background: #f8fafc;
+        }
+
+        .robot-card.active {
+            background: #dbeafe;
+            border-left: 4px solid #3b82f6;
+        }
+
+        .robot-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 0.5rem;
+        }
+
+        .robot-info > div:first-child {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .robot-name {
+            font-weight: 600;
+            color: #1f2937;
+        }
+
+        .robot-sn {
+            font-size: 0.75rem;
+            color: #6b7280;
+        }
+
+        .robot-status {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            font-size: 0.75rem;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .status-online {
+            background: #10b981;
+        }
+
+        .status-offline {
+            background: #ef4444;
+        }
+
+        .robot-details {
+            font-size: 0.8rem;
+            color: #6b7280;
+            margin-top: 0.5rem;
+        }
+
+        .robot-color-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 0 0 1px #e2e8f0;
+        }
+
+        .center-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .map-controls {
+            background: white;
+            padding: 1rem;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .map-selector {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+
+        .map-tab {
+            padding: 0.5rem 1rem;
+            border: 1px solid #d1d5db;
+            border-radius: 0.375rem;
+            background: white;
+            cursor: pointer;
+            font-size: 0.875rem;
+            position: relative;
+        }
+
+        .map-tab.active {
+            background: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+
+        .trace-filters {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .filter-toggle {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+        }
+
+        .toggle-switch {
+            width: 40px;
+            height: 20px;
+            background: #d1d5db;
+            border-radius: 10px;
+            position: relative;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .toggle-switch.active {
+            background: #3b82f6;
+        }
+
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 16px;
+            height: 16px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.2s;
+        }
+
+        .toggle-switch.active::after {
+            transform: translateX(20px);
+        }
+
+        .sampling-control {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-left: 1rem;
+            padding-left: 1rem;
+            border-left: 1px solid #e2e8f0;
+        }
+
+        .sampling-control label {
+            font-size: 0.875rem;
+            color: #374151;
+            font-weight: 500;
+        }
+
+        .sampling-select {
+            padding: 0.375rem 0.75rem;
+            border: 1px solid #d1d5db;
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            background: white;
+            cursor: pointer;
+        }
+
+        .sampling-select:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 1px #3b82f6;
+        }
+
+        .map-view {
+            flex: 1;
+            background: #f1f5f9;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .map-canvas {
+            width: 100%;
+            height: 100%;
+            background:
+                radial-gradient(circle at 1px 1px, #cbd5e1 1px, transparent 0);
+            background-size: 20px 20px;
+            position: relative;
+            cursor: grab;
+        }
+
+        .map-canvas:active {
+            cursor: grabbing;
+        }
+
+        .trace-dot {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: 2px solid white;
+            cursor: pointer;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            transition: all 0.2s;
+        }
+
+        .trace-dot:hover {
+            transform: translate(-50%, -50%) scale(1.3);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        }
+
+        .trace-dot.sampled-out {
+            display: none !important;
+        }
+
+        /* Temporal aging classes for trace dots */
+        .trace-dot.age-newest {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1.2);
+            box-shadow: 0 0 12px rgba(0,0,0,0.4);
+            border: 3px solid white;
+            z-index: 100;
+        }
+
+        .trace-dot.age-recent {
+            opacity: 0.9;
+            transform: translate(-50%, -50%) scale(1.1);
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        }
+
+        .trace-dot.age-medium {
+            opacity: 0.7;
+            transform: translate(-50%, -50%) scale(1);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .trace-dot.age-old {
+            opacity: 0.5;
+            transform: translate(-50%, -50%) scale(0.9);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+        }
+
+        .trace-dot.age-oldest {
+            opacity: 0.3;
+            transform: translate(-50%, -50%) scale(0.8);
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+
+        .trace-line {
+            position: absolute;
+            height: 2px;
+            transform-origin: left center;
+            transition: opacity 0.2s;
+        }
+
+        .trace-line.sampled-out {
+            display: none !important;
+        }
+
+        /* Temporal aging classes for trace lines */
+        .trace-line.age-newest {
+            opacity: 1;
+            height: 3px;
+        }
+
+        .trace-line.age-recent {
+            opacity: 0.8;
+            height: 2px;
+        }
+
+        .trace-line.age-medium {
+            opacity: 0.6;
+            height: 2px;
+        }
+
+        .trace-line.age-old {
+            opacity: 0.4;
+            height: 1px;
+        }
+
+        .trace-line.age-oldest {
+            opacity: 0.2;
+            height: 1px;
+        }
+
+        .robot-current-position {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border: 3px solid white;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.3);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.3);
+            }
+            50% {
+                box-shadow: 0 0 0 8px rgba(16, 185, 129, 0.1);
+            }
+        }
+
+        .events-popup {
+            position: fixed;
+            background: white;
+            border-radius: 0.5rem;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+            width: 400px;
+            max-height: 500px;
+            overflow-y: auto;
+            z-index: 1002;
+            display: none;
+            border: 1px solid #e2e8f0;
+        }
+
+        .events-popup.visible {
+            display: block;
+            animation: popupFadeIn 0.2s ease-out;
+        }
+
+        @keyframes popupFadeIn {
+            from {
+                opacity: 0;
+                transform: scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        .events-popup-header {
+            padding: 1rem;
+            border-bottom: 1px solid #e2e8f0;
+            background: #f8fafc;
+            border-radius: 0.5rem 0.5rem 0 0;
+        }
+
+        .events-popup-title {
+            font-weight: 600;
+            color: #1f2937;
+            margin-bottom: 0.5rem;
+        }
+
+        .events-popup-subtitle {
+            font-size: 0.875rem;
+            color: #6b7280;
+        }
+
+        .events-popup-content {
+            padding: 1rem;
+        }
+
+        .task-info-section {
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .section-title {
+            font-weight: 600;
+            color: #1f2937;
+            margin-bottom: 0.75rem;
+            font-size: 0.9rem;
+        }
+
+        .events-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .event-item {
+            display: flex;
+            gap: 0.75rem;
+            padding: 0.75rem;
+            background: #f8fafc;
+            border-radius: 0.375rem;
+            border-left: 4px solid;
+        }
+
+        .event-item.error {
+            border-left-color: #ef4444;
+        }
+
+        .event-item.warning {
+            border-left-color: #f59e0b;
+        }
+
+        .event-item.info {
+            border-left-color: #3b82f6;
+        }
+
+        .event-icon {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            margin-top: 0.125rem;
+        }
+
+        .event-icon.error {
+            background: #ef4444;
+        }
+
+        .event-icon.warning {
+            background: #f59e0b;
+        }
+
+        .event-icon.info {
+            background: #3b82f6;
+        }
+
+        .event-details {
+            flex: 1;
+        }
+
+        .event-type {
+            font-weight: 500;
+            color: #1f2937;
+            font-size: 0.875rem;
+        }
+
+        .event-description {
+            color: #6b7280;
+            font-size: 0.8rem;
+            margin: 0.25rem 0;
+        }
+
+        .event-timestamp {
+            color: #9ca3af;
+            font-size: 0.75rem;
+        }
+
+        .popup-close-btn {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background: none;
+            border: none;
+            font-size: 1.25rem;
+            cursor: pointer;
+            color: #6b7280;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 0.25rem;
+        }
+
+        .popup-close-btn:hover {
+            background: #f3f4f6;
+        }
+
+        .detail-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+            font-size: 0.875rem;
+        }
+
+        .detail-label {
+            color: #6b7280;
+        }
+
+        .detail-value {
+            font-weight: 500;
+            color: #1f2937;
+        }
+
+        .tooltip {
+            position: absolute;
+            background: #1f2937;
+            color: white;
+            padding: 0.5rem;
+            border-radius: 0.375rem;
+            font-size: 0.8rem;
+            pointer-events: none;
+            z-index: 1001;
+            display: none;
+        }
+
+        .zoom-controls {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .zoom-btn {
+            width: 40px;
+            height: 40px;
+            background: white;
+            border: 1px solid #d1d5db;
+            border-radius: 0.375rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-weight: 600;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .zoom-btn:hover {
+            background: #f8fafc;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Tracking</h1>
+        <div class="time-range-picker">
+            <input type="date" id="startDate" value="2024-12-01">
+            <span>to</span>
+            <input type="date" id="endDate" value="2024-12-31">
+        </div>
+    </div>
+
+    <div class="filters-section">
+        <div class="filter-group">
+            <label>Country:</label>
+            <select class="filter-select" id="countryFilter">
+                <option value="">All Countries</option>
+                <option value="us">United States</option>
+                <option value="ca">Canada</option>
+                <option value="uk">United Kingdom</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>State:</label>
+            <select class="filter-select" id="stateFilter">
+                <option value="">All States</option>
+                <option value="ca">California</option>
+                <option value="ny">New York</option>
+                <option value="tx">Texas</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>City:</label>
+            <select class="filter-select" id="cityFilter">
+                <option value="">All Cities</option>
+                <option value="sf">San Francisco</option>
+                <option value="la">Los Angeles</option>
+                <option value="nyc">New York City</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>Building:</label>
+            <select class="filter-select" id="buildingFilter">
+                <option value="">All Buildings</option>
+                <option value="hq">Headquarters</option>
+                <option value="warehouse">Warehouse A</option>
+                <option value="factory">Factory B</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>Floor:</label>
+            <select class="filter-select" id="floorFilter">
+                <option value="">All Floors</option>
+                <option value="1">Floor 1</option>
+                <option value="2">Floor 2</option>
+                <option value="3">Floor 3</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>Robot Name:</label>
+            <input type="text" class="filter-input" id="robotNameFilter" placeholder="Enter robot name">
+        </div>
+        <div class="filter-group">
+            <label>Serial Number:</label>
+            <input type="text" class="filter-input" id="serialNumberFilter" placeholder="Enter SN">
+        </div>
+    </div>
+
+    <div class="main-container">
+        <div class="left-panel">
+            <div class="panel-header">
+                Robots (12 found)
+            </div>
+            <div class="robot-list" id="robotList">
+                <div class="robot-card active" data-robot-id="rb001" data-color="#3b82f6">
+                    <div class="robot-info">
+                        <div>
+                            <div class="robot-color-indicator" style="background: #3b82f6;"></div>
+                            <div>
+                                <div class="robot-name">CleanBot Alpha</div>
+                                <div class="robot-sn">SN: RB-001-2024</div>
+                            </div>
+                        </div>
+                        <div class="robot-status">
+                            <div class="status-dot status-online"></div>
+                            Online
+                        </div>
+                    </div>
+                    <div class="robot-details">
+                        Last Task: Floor Cleaning<br>
+                        Location: Building HQ, Floor 2<br>
+                        Battery: 85%
+                    </div>
+                </div>
+
+                <div class="robot-card" data-robot-id="rb002" data-color="#10b981">
+                    <div class="robot-info">
+                        <div>
+                            <div class="robot-color-indicator" style="background: #10b981;"></div>
+                            <div>
+                                <div class="robot-name">VacBot Beta</div>
+                                <div class="robot-sn">SN: RB-002-2024</div>
+                            </div>
+                        </div>
+                        <div class="robot-status">
+                            <div class="status-dot status-online"></div>
+                            Online
+                        </div>
+                    </div>
+                    <div class="robot-details">
+                        Last Task: Carpet Cleaning<br>
+                        Location: Building HQ, Floor 1<br>
+                        Battery: 72%
+                    </div>
+                </div>
+
+                <div class="robot-card" data-robot-id="rb003" data-color="#f59e0b">
+                    <div class="robot-info">
+                        <div>
+                            <div class="robot-color-indicator" style="background: #f59e0b;"></div>
+                            <div>
+                                <div class="robot-name">MopBot Gamma</div>
+                                <div class="robot-sn">SN: RB-003-2024</div>
+                            </div>
+                        </div>
+                        <div class="robot-status">
+                            <div class="status-dot status-offline"></div>
+                            Offline
+                        </div>
+                    </div>
+                    <div class="robot-details">
+                        Last Task: Wet Mopping<br>
+                        Location: Warehouse A, Floor 1<br>
+                        Battery: 15% (Charging)
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="center-panel">
+            <div class="map-controls">
+                <div class="map-selector">
+                    <div class="map-tab active" data-map="map1">Map 1</div>
+                    <div class="map-tab" data-map="map2">Map 2</div>
+                    <div class="map-tab" data-map="map3">Map 3</div>
+                </div>
+
+                <div class="trace-filters">
+                    <div class="sampling-control">
+                        <label for="samplingSelect">Sampling:</label>
+                        <select id="samplingSelect" class="sampling-select">
+                            <option value="all">All Points</option>
+                            <option value="5">Every 5 min</option>
+                            <option value="10">Every 10 min</option>
+                            <option value="30">Every 30 min</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="map-view">
+                <div class="map-canvas" id="mapCanvas">
+                    <!-- Robot 1 (Blue) trace with temporal aging -->
+                    <div class="trace-line age-oldest" style="left: 100px; top: 200px; width: 141px; background: #3b82f6; transform: rotate(45deg);" data-robot-id="rb001" data-timestamp="1702646200000"></div>
+                    <div class="trace-dot age-oldest" style="left: 100px; top: 200px; background: #3b82f6;" data-robot-id="rb001" data-task-id="task001" data-timestamp="1702646200000"></div>
+                    <div class="trace-dot age-old" style="left: 200px; top: 150px; background: #3b82f6;" data-robot-id="rb001" data-task-id="task002" data-timestamp="1702646500000"></div>
+                    <div class="trace-dot age-medium" style="left: 300px; top: 180px; background: #3b82f6;" data-robot-id="rb001" data-task-id="task003" data-timestamp="1702646800000"></div>
+
+                    <div class="trace-line age-old" style="left: 200px; top: 150px; width: 111px; background: #3b82f6; transform: rotate(15deg);" data-robot-id="rb001" data-timestamp="1702646500000"></div>
+                    <div class="trace-line age-medium" style="left: 300px; top: 180px; width: 200px; background: #3b82f6; transform: rotate(5deg);" data-robot-id="rb001" data-timestamp="1702646800000"></div>
+
+                    <div class="trace-dot age-recent" style="left: 500px; top: 200px; background: #3b82f6;" data-robot-id="rb001" data-task-id="task004" data-timestamp="1702647900000"></div>
+                    <div class="trace-dot age-newest" style="left: 600px; top: 300px; background: #3b82f6;" data-robot-id="rb001" data-task-id="task005" data-timestamp="1702649100000"></div>
+
+                    <div class="trace-line age-recent" style="left: 500px; top: 200px; width: 141px; background: #3b82f6; transform: rotate(45deg);" data-robot-id="rb001" data-timestamp="1702647900000"></div>
+
+                    <!-- Robot 2 (Green) trace with temporal aging -->
+                    <div class="trace-dot age-old" style="left: 150px; top: 300px; background: #10b981;" data-robot-id="rb002" data-task-id="task101" data-timestamp="1702628400000"></div>
+                    <div class="trace-dot age-medium" style="left: 250px; top: 280px; background: #10b981;" data-robot-id="rb002" data-task-id="task102" data-timestamp="1702628700000"></div>
+                    <div class="trace-dot age-newest" style="left: 350px; top: 320px; background: #10b981;" data-robot-id="rb002" data-task-id="task103" data-timestamp="1702629000000"></div>
+
+                    <div class="trace-line age-old" style="left: 150px; top: 300px; width: 102px; background: #10b981; transform: rotate(-11deg);" data-robot-id="rb002" data-timestamp="1702628400000"></div>
+                    <div class="trace-line age-medium" style="left: 250px; top: 280px; width: 111px; background: #10b981; transform: rotate(20deg);" data-robot-id="rb002" data-timestamp="1702628700000"></div>
+
+                    <!-- Current robot positions (these represent live positions) -->
+                    <div class="robot-current-position" style="left: 600px; top: 300px; background: #3b82f6;"></div>
+                    <div class="robot-current-position" style="left: 350px; top: 320px; background: #10b981;"></div>
+                </div>
+
+                <div class="zoom-controls">
+                    <div class="zoom-btn" id="zoomIn">+</div>
+                    <div class="zoom-btn" id="zoomOut">−</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Events Popup -->
+    <div class="events-popup" id="eventsPopup">
+        <button class="popup-close-btn" id="closeEventsPopup">&times;</button>
+        <div class="events-popup-header">
+            <div class="events-popup-title" id="popupTitle">CleanBot Alpha</div>
+            <div class="events-popup-subtitle" id="popupSubtitle">Timestamp - 14:30:00</div>
+        </div>
+        <div class="events-popup-content">
+            <div class="task-info-section">
+                <div class="section-title">Task</div>
+                <div class="detail-item">
+                    <span class="detail-label">Task Name:</span>
+                    <span class="detail-value" id="taskName">Floor Cleaning - Zone A</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Start Time:</span>
+                    <span class="detail-value" id="taskStartTime">14:30:00</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">End Time:</span>
+                    <span class="detail-value" id="taskEndTime">15:45:22</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Duration:</span>
+                    <span class="detail-value" id="taskDuration">1h 15m 22s</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Area Covered:</span>
+                    <span class="detail-value" id="taskArea">234.5 m²</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Coverage:</span>
+                    <span class="detail-value" id="taskCoverage">98.7%</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Status:</span>
+                    <span class="detail-value" id="taskStatus">Completed</span>
+                </div>
+            </div>
+
+            <div class="events-section">
+                <div class="section-title">Events</div>
+                <div class="events-list" id="eventsList">
+                    <div class="event-item error">
+                        <div class="event-icon error"></div>
+                        <div class="event-details">
+                            <div class="event-type">Critical Error</div>
+                            <div class="event-description">Low battery warning - returning to charging station</div>
+                            <div class="event-timestamp">14:45:33</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tooltip -->
+    <div class="tooltip" id="tooltip"></div>
+
+    <script>
+        // Task data with multiple events per task
+        const taskData = {
+            'task001': {
+                name: 'Floor Cleaning - Zone A',
+                startTime: '14:30:00',
+                endTime: '15:45:22',
+                duration: '1h 15m 22s',
+                area: '234.5 m²',
+                coverage: '98.7%',
+                status: 'Completed',
+                events: [
+                    { type: 'error', title: 'Critical Error', description: 'Low battery warning - returning to charging station', timestamp: '14:45:33' },
+                    { type: 'warning', title: 'Warning', description: 'Obstacle detected - adjusting path', timestamp: '15:12:18' },
+                    { type: 'info', title: 'Information', description: 'Task completed successfully', timestamp: '15:45:22' }
+                ]
+            },
+            'task003': {
+                name: 'Deep Clean - Office Area',
+                startTime: '16:15:00',
+                endTime: '17:30:45',
+                duration: '1h 15m 45s',
+                area: '312.8 m²',
+                coverage: '95.3%',
+                status: 'Completed',
+                events: [
+                    { type: 'warning', title: 'Warning', description: 'Cleaning solution low', timestamp: '16:45:22' },
+                    { type: 'info', title: 'Information', description: 'Cleaning solution refilled', timestamp: '16:50:10' },
+                    { type: 'error', title: 'Error', description: 'Brush motor overheating', timestamp: '17:15:33' }
+                ]
+            },
+            'task004': {
+                name: 'Sanitization - Conference Room',
+                startTime: '18:00:00',
+                endTime: '18:25:15',
+                duration: '25m 15s',
+                area: '85.3 m²',
+                coverage: '100%',
+                status: 'Completed',
+                events: [
+                    { type: 'info', title: 'Information', description: 'UV sanitization mode activated', timestamp: '18:00:00' },
+                    { type: 'info', title: 'Information', description: 'Sanitization cycle completed', timestamp: '18:25:15' }
+                ]
+            },
+            'task005': {
+                name: 'Return to Base',
+                startTime: '18:30:00',
+                endTime: '18:35:45',
+                duration: '5m 45s',
+                area: '0 m²',
+                coverage: 'N/A',
+                status: 'Completed',
+                events: [
+                    { type: 'info', title: 'Information', description: 'Returning to charging station', timestamp: '18:30:00' },
+                    { type: 'info', title: 'Information', description: 'Docked successfully', timestamp: '18:35:45' }
+                ]
+            },
+            'task101': {
+                name: 'Carpet Cleaning - Room 1',
+                startTime: '09:30:00',
+                endTime: '10:45:15',
+                duration: '1h 15m 15s',
+                area: '156.7 m²',
+                coverage: '99.2%',
+                status: 'Completed',
+                events: [
+                    { type: 'info', title: 'Information', description: 'Carpet cleaning started', timestamp: '09:30:00' },
+                    { type: 'info', title: 'Information', description: 'High efficiency mode activated', timestamp: '09:35:22' },
+                    { type: 'warning', title: 'Warning', description: 'High traffic area detected', timestamp: '10:15:45' }
+                ]
+            },
+            'task102': {
+                name: 'Spot Cleaning - Lobby',
+                startTime: '11:00:00',
+                endTime: '11:20:30',
+                duration: '20m 30s',
+                area: '67.4 m²',
+                coverage: '100%',
+                status: 'Completed',
+                events: [
+                    { type: 'warning', title: 'Warning', description: 'Stain detected - increasing suction', timestamp: '11:05:12' },
+                    { type: 'info', title: 'Information', description: 'Deep cleaning cycle activated', timestamp: '11:05:15' }
+                ]
+            },
+            'task103': {
+                name: 'Maintenance Check',
+                startTime: '11:30:00',
+                endTime: '11:45:00',
+                duration: '15m 0s',
+                area: '23.1 m²',
+                coverage: '100%',
+                status: 'Completed',
+                events: [
+                    { type: 'info', title: 'Information', description: 'Self-diagnostic started', timestamp: '11:30:00' },
+                    { type: 'warning', title: 'Warning', description: 'Filter replacement needed soon', timestamp: '11:35:22' },
+                    { type: 'info', title: 'Information', description: 'All systems nominal', timestamp: '11:45:00' }
+                ]
+            }
+        };
+
+        // Initialize UI components
+        const robotCards = document.querySelectorAll('.robot-card');
+        const mapTabs = document.querySelectorAll('.map-tab');
+        const toggles = document.querySelectorAll('.toggle-switch');
+        const traceDots = document.querySelectorAll('.trace-dot');
+        const traceLines = document.querySelectorAll('.trace-line');
+        const eventsPopup = document.getElementById('eventsPopup');
+        const closeEventsPopupBtn = document.getElementById('closeEventsPopup');
+        const tooltip = document.getElementById('tooltip');
+        const mapCanvas = document.getElementById('mapCanvas');
+        const samplingSelect = document.getElementById('samplingSelect');
+
+        // Initialize temporal aging on page load
+        initializeTemporalAging();
+
+        // Robot card selection
+        robotCards.forEach(card => {
+            card.addEventListener('click', () => {
+                robotCards.forEach(c => c.classList.remove('active'));
+                card.classList.add('active');
+                updateMapForRobot(card.dataset.robotId);
+            });
+        });
+
+        // Map tab switching
+        mapTabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                mapTabs.forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                switchToMap(tab.dataset.map);
+            });
+        });
+
+        // Toggle switches
+        toggles.forEach(toggle => {
+            toggle.addEventListener('click', () => {
+                toggle.classList.toggle('active');
+                updateTraceVisibility();
+            });
+        });
+
+        // Trace dot interactions
+        traceDots.forEach(dot => {
+            dot.addEventListener('click', (e) => {
+                const robotId = dot.dataset.robotId;
+                const taskId = dot.dataset.taskId;
+                showTaskAndEvents(robotId, taskId, e);
+            });
+
+            dot.addEventListener('mouseenter', (e) => {
+                const taskId = dot.dataset.taskId;
+                const task = taskData[taskId];
+                if (task) {
+                    showTooltip(e, task.name);
+                }
+            });
+
+            dot.addEventListener('mouseleave', () => {
+                hideTooltip();
+            });
+        });
+
+        // Close events popup
+        closeEventsPopupBtn.addEventListener('click', () => {
+            eventsPopup.classList.remove('visible');
+        });
+
+        // Sampling frequency control
+        samplingSelect.addEventListener('change', () => {
+            const samplingInterval = samplingSelect.value;
+            applySampling(samplingInterval);
+        });
+
+        // Map panning
+        let isPanning = false;
+        let startX, startY, currentX = 0, currentY = 0;
+
+        mapCanvas.addEventListener('mousedown', (e) => {
+            isPanning = true;
+            startX = e.clientX - currentX;
+            startY = e.clientY - currentY;
+        });
+
+        mapCanvas.addEventListener('mousemove', (e) => {
+            if (isPanning) {
+                currentX = e.clientX - startX;
+                currentY = e.clientY - startY;
+                mapCanvas.style.transform = `translate(${currentX}px, ${currentY}px)`;
+            }
+        });
+
+        mapCanvas.addEventListener('mouseup', () => {
+            isPanning = false;
+        });
+
+        // Zoom controls
+        let zoomLevel = 1;
+        document.getElementById('zoomIn').addEventListener('click', () => {
+            zoomLevel = Math.min(zoomLevel * 1.2, 3);
+            updateZoom();
+        });
+
+        document.getElementById('zoomOut').addEventListener('click', () => {
+            zoomLevel = Math.max(zoomLevel / 1.2, 0.5);
+            updateZoom();
+        });
+
+        // Temporal aging functions
+        function initializeTemporalAging() {
+            // Get all trace elements with timestamps
+            const allTraceElements = [...traceDots, ...traceLines];
+            const timestampedElements = allTraceElements.filter(el => el.dataset.timestamp);
+
+            if (timestampedElements.length === 0) return;
+
+            // Sort by timestamp
+            timestampedElements.sort((a, b) =>
+                parseInt(a.dataset.timestamp) - parseInt(b.dataset.timestamp)
+            );
+
+            // Calculate age categories
+            const totalElements = timestampedElements.length;
+
+            timestampedElements.forEach((element, index) => {
+                // Remove any existing age classes
+                element.classList.remove('age-oldest', 'age-old', 'age-medium', 'age-recent', 'age-newest');
+
+                // Calculate age category based on position in sorted array
+                const ageRatio = index / (totalElements - 1);
+
+                if (index === totalElements - 1) {
+                    // Latest element gets special treatment
+                    element.classList.add('age-newest');
+                } else if (ageRatio > 0.8) {
+                    element.classList.add('age-recent');
+                } else if (ageRatio > 0.6) {
+                    element.classList.add('age-medium');
+                } else if (ageRatio > 0.3) {
+                    element.classList.add('age-old');
+                } else {
+                    element.classList.add('age-oldest');
+                }
+            });
+        }
+
+        // Utility functions
+        function updateMapForRobot(robotId) {
+            console.log(`Updating map for robot: ${robotId}`);
+            // Re-apply temporal aging when switching robots
+            initializeTemporalAging();
+        }
+
+        function switchToMap(mapId) {
+            console.log(`Switching to map: ${mapId}`);
+            // Re-apply temporal aging when switching maps
+            initializeTemporalAging();
+        }
+
+        function updateTraceVisibility() {
+            const showTasks = document.getElementById('tasksToggle')?.classList.contains('active') ?? true;
+            const showEvents = document.getElementById('eventsToggle')?.classList.contains('active') ?? true;
+
+            document.querySelectorAll('.trace-dot, .trace-line').forEach(element => {
+                if (!element.classList.contains('sampled-out')) {
+                    element.style.display = showTasks ? 'block' : 'none';
+                }
+            });
+        }
+
+        function showTaskAndEvents(robotId, taskId, event) {
+            const task = taskData[taskId];
+            if (!task) {
+                console.log('Task not found:', taskId);
+                return;
+            }
+
+            // Get robot info
+            const robotCard = document.querySelector(`[data-robot-id="${robotId}"]`);
+            const robotName = robotCard.querySelector('.robot-name').textContent;
+
+            // Update popup content with new format: Robot Name / Timestamp - Time
+            document.getElementById('popupTitle').textContent = robotName;
+            document.getElementById('popupSubtitle').textContent = `Timestamp - ${task.startTime}`;
+
+            document.getElementById('taskName').textContent = task.name;
+            document.getElementById('taskStartTime').textContent = task.startTime;
+            document.getElementById('taskEndTime').textContent = task.endTime;
+            document.getElementById('taskDuration').textContent = task.duration;
+            document.getElementById('taskArea').textContent = task.area;
+            document.getElementById('taskCoverage').textContent = task.coverage;
+            document.getElementById('taskStatus').textContent = task.status;
+
+            // Update events list
+            const eventsList = document.getElementById('eventsList');
+            eventsList.innerHTML = '';
+
+            task.events.forEach(eventItem => {
+                const eventDiv = document.createElement('div');
+                eventDiv.className = `event-item ${eventItem.type}`;
+                eventDiv.innerHTML = `
+                    <div class="event-icon ${eventItem.type}"></div>
+                    <div class="event-details">
+                        <div class="event-type">${eventItem.title}</div>
+                        <div class="event-description">${eventItem.description}</div>
+                        <div class="event-timestamp">${eventItem.timestamp}</div>
+                    </div>
+                `;
+                eventsList.appendChild(eventDiv);
+            });
+
+            // Position popup (fixed positioning relative to viewport)
+            const rect = event.target.getBoundingClientRect();
+            const popup = eventsPopup;
+
+            // Calculate position to keep popup in viewport
+            let left = rect.left + 20;
+            let top = rect.top - 100;
+
+            // Adjust if popup would go off-screen
+            if (left + 400 > window.innerWidth) {
+                left = rect.left - 420;
+            }
+            if (top < 20) {
+                top = rect.top + 20;
+            }
+            if (top + 500 > window.innerHeight) {
+                top = window.innerHeight - 520;
+            }
+
+            popup.style.left = Math.max(20, left) + 'px';
+            popup.style.top = Math.max(20, top) + 'px';
+            popup.classList.add('visible');
+
+            console.log('Popup should be visible now');
+        }
+
+        function applySampling(interval) {
+            const allDots = document.querySelectorAll('.trace-dot');
+            const allLines = document.querySelectorAll('.trace-line');
+
+            // Remove previous sampling classes
+            allDots.forEach(dot => {
+                dot.classList.remove('sampled-out');
+                dot.style.display = 'block';
+            });
+            allLines.forEach(line => {
+                line.classList.remove('sampled-out');
+                line.style.display = 'block';
+            });
+
+            if (interval === 'all') {
+                // Show all dots and lines, then re-apply temporal aging
+                updateTraceVisibility();
+                initializeTemporalAging();
+                return;
+            }
+
+            const intervalMinutes = parseInt(interval);
+            const groupedDots = {};
+
+            // Group dots by robot
+            allDots.forEach((dot) => {
+                const robotId = dot.dataset.robotId;
+                const timestamp = parseInt(dot.dataset.timestamp);
+                if (!groupedDots[robotId]) {
+                    groupedDots[robotId] = [];
+                }
+                groupedDots[robotId].push({
+                    element: dot,
+                    timestamp: timestamp,
+                    taskId: dot.dataset.taskId
+                });
+            });
+
+            // Apply sampling for each robot separately
+            Object.keys(groupedDots).forEach(robotId => {
+                const robotDots = groupedDots[robotId].sort((a, b) => a.timestamp - b.timestamp);
+                let lastShownTime = null;
+
+                robotDots.forEach((dotData, index) => {
+                    const dotTime = dotData.timestamp;
+
+                    if (lastShownTime === null) {
+                        // Always show first dot
+                        lastShownTime = dotTime;
+                    } else {
+                        const timeDiffMinutes = (dotTime - lastShownTime) / (1000 * 60);
+
+                        if (timeDiffMinutes < intervalMinutes) {
+                            // Hide this dot (too close to last shown)
+                            dotData.element.classList.add('sampled-out');
+                            dotData.element.style.display = 'none';
+                        } else {
+                            // Show this dot and update last shown time
+                            lastShownTime = dotTime;
+                        }
+                    }
+                });
+            });
+
+            // Hide lines connected to hidden dots
+            allLines.forEach((line, index) => {
+                const robotId = line.dataset.robotId;
+                const robotDots = Array.from(allDots).filter(dot => dot.dataset.robotId === robotId);
+                const lineIndex = Array.from(allLines).filter(l => l.dataset.robotId === robotId).indexOf(line);
+
+                if (lineIndex >= 0 && lineIndex < robotDots.length - 1) {
+                    const currentDot = robotDots[lineIndex];
+                    const nextDot = robotDots[lineIndex + 1];
+
+                    if (currentDot.classList.contains('sampled-out') || nextDot.classList.contains('sampled-out')) {
+                        line.classList.add('sampled-out');
+                        line.style.display = 'none';
+                    }
+                }
+            });
+
+            updateTraceVisibility();
+            // Re-apply temporal aging after sampling
+            initializeTemporalAging();
+        }
+
+        function showTooltip(e, text) {
+            tooltip.textContent = text;
+            tooltip.style.display = 'block';
+            tooltip.style.left = e.pageX + 10 + 'px';
+            tooltip.style.top = e.pageY - 30 + 'px';
+        }
+
+        function hideTooltip() {
+            tooltip.style.display = 'none';
+        }
+
+        function updateZoom() {
+            mapCanvas.style.transform = `translate(${currentX}px, ${currentY}px) scale(${zoomLevel})`;
+        }
+
+        // Filter functionality
+        const filters = {
+            country: document.getElementById('countryFilter'),
+            state: document.getElementById('stateFilter'),
+            city: document.getElementById('cityFilter'),
+            building: document.getElementById('buildingFilter'),
+            floor: document.getElementById('floorFilter'),
+            robotName: document.getElementById('robotNameFilter'),
+            serialNumber: document.getElementById('serialNumberFilter')
+        };
+
+        Object.values(filters).forEach(filter => {
+            filter.addEventListener('change', applyFilters);
+            filter.addEventListener('input', applyFilters);
+        });
+
+        function applyFilters() {
+            console.log('Applying filters...');
+        }
+
+        // Date range validation
+        const startDate = document.getElementById('startDate');
+        const endDate = document.getElementById('endDate');
+
+        function validateDateRange() {
+            const start = new Date(startDate.value);
+            const end = new Date(endDate.value);
+            const diffTime = Math.abs(end - start);
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+            if (diffDays > 31) {
+                alert('Date range cannot exceed 1 month (31 days)');
+                return false;
+            }
+            return true;
+        }
+
+        startDate.addEventListener('change', validateDateRange);
+        endDate.addEventListener('change', validateDateRange);
+    </script>
+</body>
+</html>
