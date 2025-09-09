@@ -982,20 +982,21 @@ class App:
 
             logger.info("=" * 50)
 
-            # 6. Robot work location data WITH COORDINATE TRANSFORMATIONS
-            from pudu.services.work_location_service import WorkLocationService
+            # 6. Robot work location data WITH COORDINATE TRANSFORMATIONS - moved to a separate lambda
+            # from pudu.services.work_location_service import WorkLocationService
 
-            logger.info("=" * 50)
-            logger.info("🗺️ PROCESSING WORK LOCATION DATA WITH ARCHIVAL")
-            logger.info("=" * 50)
+            # logger.info("=" * 50)
+            # logger.info("🗺️ PROCESSING WORK LOCATION DATA WITH ARCHIVAL")
+            # logger.info("=" * 50)
 
-            work_location_service = WorkLocationService(self.config, self.s3_config)
-            work_location_success = work_location_service.run_work_location_updates()
+            # work_location_service = WorkLocationService(self.config, self.s3_config)
+            # work_location_success = work_location_service.run_work_location_updates()
 
-            if work_location_success:
-                logger.info("✅ Work location updates with archival completed successfully")
-            else:
-                logger.warning("⚠️ Work location updates completed with some failures")
+            # if work_location_success:
+            #     logger.info("✅ Work location updates with archival completed successfully")
+            # else:
+            #     logger.warning("⚠️ Work location updates completed with some failures")
+
             # Calculate execution time and print summary
             pipeline_end = datetime.now()
             execution_time = (pipeline_end - pipeline_start).total_seconds()
@@ -1012,10 +1013,10 @@ class App:
             logger.info(f"❌ Total failed inserts: {pipeline_stats['total_failed_inserts']}")
             logger.info(f"📧 Total successful notifications: {pipeline_stats['total_successful_notifications']}")
             logger.info(f"📧 Total failed notifications: {pipeline_stats['total_failed_notifications']}")
-            logger.info(f"🗺️ Work location updates success: {work_location_success}")
+            # logger.info(f"🗺️ Work location updates success: {work_location_success}")
             logger.info(f"🔗 Active database connections: {pool_status['active_connections']}")
 
-            success = pipeline_stats['total_failed_inserts'] == 0 and work_location_success == True
+            success = pipeline_stats['total_failed_inserts'] == 0 # and work_location_success == True
             if success:
                 logger.info("✅ Parallel API Lambda service completed successfully")
             else:

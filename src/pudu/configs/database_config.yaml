@@ -18,6 +18,8 @@ s3_config:
   region: "us-east-2"
   buckets:
     university_of_florida: "pudu-robot-transforms-university-of-florida-889717-us-east-2"
+    nexus_iq_office: "pudu-robot-transforms-nexus-iq-office-144926-us-east-2"
+    foxx_irvine_office: "pudu-robot-transforms-foxx-irvine-office-144924-us-east-2"
 
 tables:
   # Main Database Tables (ry-vue)

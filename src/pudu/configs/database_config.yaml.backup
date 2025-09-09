@@ -12,11 +12,13 @@ notification_needed:
 region: "us-east-1"
 
 transform_supported_databases:
-  - "foxx_irvine_office"
+  - "university_of_florida"
 
 s3_config:
   region: "us-east-1"
   buckets:
+    university_of_florida: "pudu-robot-transforms-university-of-florida-145714-us-east-1"
+    nexus_iq_office: "pudu-robot-transforms-nexus-iq-office-145704-us-east-1"
     foxx_irvine_office: "pudu-robot-transforms-foxx-irvine-office-845829-us-east-1"
 
 tables:

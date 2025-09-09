@@ -7,7 +7,7 @@ set -e
 
 # Configuration
 FUNCTION_NAME="pudu-robot-pipeline"
-REGION=${1:-us-east-2}
+REGION=${1:-us-east-2} # this means us-east-2 by default - can be us-east-1 if us-east-1 is passed as an argument
 ROLE_NAME="pudu-robot-lambda-role"
 PYTHON_VERSION="3.9"
 

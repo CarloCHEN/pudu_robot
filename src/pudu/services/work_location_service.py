@@ -35,10 +35,10 @@ class WorkLocationService:
         self.transform_service = TransformService(self.config, self.s3_config)
 
         # NEW: Archival configuration for historical data management
-        self.MAX_RETENTION_HOURS = 24      # 24 hours max
-        self.MAX_RETENTION_COUNT = 1000    # 1000 records max
-        self.ARCHIVE_BATCH_SIZE = 100      # Archive 100 records at a time
-        self.MIN_ARCHIVE_THRESHOLD = 50    # Only archive if we have at least 50 excess records
+        self.MAX_RETENTION_HOURS = 24 * 31     # 31 days max
+        # self.MAX_RETENTION_COUNT = 1000    # 1000 records max
+        self.ARCHIVE_BATCH_SIZE = 500      # Archive 500 records at a time
+        self.MIN_ARCHIVE_THRESHOLD = 100    # Only archive if we have at least 100 excess records
 
     def update_robot_work_locations_and_mappings(self) -> bool:
         """
@@ -408,17 +408,17 @@ class WorkLocationService:
             archive_info = None
 
             # Condition 1: Count limit exceeded
-            if total_count > self.MAX_RETENTION_COUNT:
-                excess_count = total_count - self.MAX_RETENTION_COUNT
-                archive_info = {
-                    'excess_count': excess_count,
-                    'cutoff_method': 'count',
-                    'reason': f'Count limit exceeded: {total_count} > {self.MAX_RETENTION_COUNT}',
-                    'archive_count': min(excess_count, self.ARCHIVE_BATCH_SIZE) # archive at most ARCHIVE_BATCH_SIZE records
-                }
+            # if total_count > self.MAX_RETENTION_COUNT:
+            #     excess_count = total_count - self.MAX_RETENTION_COUNT
+            #     archive_info = {
+            #         'excess_count': excess_count,
+            #         'cutoff_method': 'count',
+            #         'reason': f'Count limit exceeded: {total_count} > {self.MAX_RETENTION_COUNT}',
+            #         'archive_count': min(excess_count, self.ARCHIVE_BATCH_SIZE) # archive at most ARCHIVE_BATCH_SIZE records
+            #     }
 
             # Condition 2: Time limit exceeded
-            elif oldest_time < time_cutoff:
+            if oldest_time < time_cutoff:
                 # Count how many records are older than 24 hours
                 old_count_query = f"""
                     SELECT COUNT(*)

@@ -1,41 +1,21 @@
 #!/bin/bash
 
-# Container-based deployment script for Pudu Robot Pipeline Lambda with Support Ticket notifications
+# Container-based deployment script for Pudu Robot Work Location Lambda
 # Run this from the pudu_robot root directory
 
 set -e
 
 # Configuration
-FUNCTION_NAME="pudu-robot-pipeline"
-REGION=${1:-us-east-2} # this means us-east-2 by default - can be us-east-1 if us-east-1 is passed as an argument
-ROLE_NAME="pudu-robot-lambda-role"
+FUNCTION_NAME="pudu-robot-work-location"
+REGION=${1:-us-east-2}
+ROLE_NAME="pudu-robot-work-location-lambda-role"
 PYTHON_VERSION="3.9"
 
 # Docker/ECR Configuration
-ECR_REPO_NAME="pudu-robot-pipeline"
+ECR_REPO_NAME="pudu-robot-work-location"
 IMAGE_TAG="latest"
 
-# Icon Configuration
-ICONS_CONFIG_PATH="icons.yaml"
-
-# Notification API Configuration
-NOTIFICATION_API_HOST="alb-streamnexus-demo-775802511.us-east-1.elb.amazonaws.com"
-NOTIFICATION_API_ENDPOINT="/notification-api/robot/notification/send"
-
-# SNS Configuration - CHANGE THIS EMAIL TO YOUR ACTUAL EMAIL
-NOTIFICATION_EMAIL="jiaxu.chen@foxxusa.com"  # ⚠️ CHANGE THIS TO YOUR EMAIL
-
-# SNS Topic Name (only one topic needed)
-SUPPORT_TOPIC_NAME="pudu-robot-support-tickets"
-
-echo "🚀 Deploying Pudu Robot Pipeline Lambda with Container Images..."
-
-# Validate email configuration
-if [[ "$NOTIFICATION_EMAIL" == "your-email@example.com" ]]; then
-    echo "❌ Please update the email address in the configuration section before deploying!"
-    echo "   NOTIFICATION_EMAIL: $NOTIFICATION_EMAIL"
-    exit 1
-fi
+echo "🚀 Deploying Pudu Robot Work Location Lambda with Container Images..."
 
 # Check if we're in the right directory
 if [ ! -d "src/pudu" ]; then
@@ -69,7 +49,7 @@ echo "📦 ECR URI: $ECR_URI"
 echo "🐳 Building Docker image..."
 
 # Create updated requirements.txt for container
-cat > requirements_container.txt << EOF
+cat > requirements_work_location.txt << EOF
 # Core AWS dependencies
 boto3>=1.34.0
 botocore>=1.34.0
@@ -101,9 +81,8 @@ opencv-python>=4.8.0
 pyarrow>=12.0.0,<18.0.0
 EOF
 
-# Create Dockerfile if it doesn't exist
-if [ ! -f "Dockerfile" ]; then
-    cat > Dockerfile << 'EOF'
+# Create Dockerfile for work location service
+cat > Dockerfile.work_location << 'EOF'
 # Use AWS Lambda Python runtime as base
 FROM public.ecr.aws/lambda/python:3.9
 
@@ -120,14 +99,13 @@ RUN yum update -y && \
     && yum clean all
 
 # Copy requirements and install Python dependencies
-COPY requirements_container.txt ${LAMBDA_TASK_ROOT}/requirements.txt
+COPY requirements_work_location.txt ${LAMBDA_TASK_ROOT}/requirements.txt
 RUN pip install -r requirements.txt
 
 # Copy source code
 COPY src/pudu/ ${LAMBDA_TASK_ROOT}/pudu/
-COPY lambda/robot_lambda_function.py ${LAMBDA_TASK_ROOT}/lambda_function.py
+COPY lambda/work_location_lambda_function.py ${LAMBDA_TASK_ROOT}/lambda_function.py
 COPY src/pudu/configs/database_config.yaml ${LAMBDA_TASK_ROOT}/
-COPY src/pudu/notifications/icons.yaml ${LAMBDA_TASK_ROOT}/
 
 # Copy credential files
 COPY credentials.yaml ${LAMBDA_TASK_ROOT}/
@@ -137,12 +115,10 @@ COPY src/pudu/rds/credentials.yaml ${LAMBDA_TASK_ROOT}/pudu/rds/
 # Set the CMD to your handler
 CMD ["lambda_function.lambda_handler"]
 EOF
-    echo "✅ Created Dockerfile"
-fi
 
 # Build the Docker image
 echo "🏗️ Building Docker image for AWS Lambda (linux/amd64)..."
-docker build --platform linux/amd64 -t $ECR_REPO_NAME:$IMAGE_TAG .
+docker build --platform linux/amd64 -f Dockerfile.work_location -t $ECR_REPO_NAME:$IMAGE_TAG .
 
 # Step 4: Login to ECR and push image
 echo "🔐 Logging into ECR..."
@@ -168,41 +144,7 @@ fi
 
 echo "✅ Image pushed successfully"
 
-# Step 5: Create SNS Topic for Support Tickets
-echo "📧 Setting up SNS topic for support ticket notifications..."
-
-# Create topic (returns existing ARN if already exists)
-SUPPORT_TOPIC_ARN=$(aws sns create-topic --name "$SUPPORT_TOPIC_NAME" --query 'TopicArn' --output text --region $REGION)
-
-# Set topic attributes for better email formatting
-aws sns set-topic-attributes \
-    --topic-arn "$SUPPORT_TOPIC_ARN" \
-    --attribute-name DisplayName \
-    --attribute-value "Pudu Robot Support Tickets" \
-    --region $REGION >/dev/null
-
-echo "📧 Support Topic ARN: $SUPPORT_TOPIC_ARN"
-
-# Check if email is already subscribed
-existing_subscription=$(aws sns list-subscriptions-by-topic \
-    --topic-arn "$SUPPORT_TOPIC_ARN" \
-    --query "Subscriptions[?Endpoint=='$NOTIFICATION_EMAIL' && Protocol=='email'].SubscriptionArn" \
-    --output text \
-    --region $REGION)
-
-if [ -z "$existing_subscription" ] || [ "$existing_subscription" = "None" ]; then
-    echo "📧 Subscribing $NOTIFICATION_EMAIL to support ticket notifications..."
-    aws sns subscribe \
-        --topic-arn "$SUPPORT_TOPIC_ARN" \
-        --protocol email \
-        --notification-endpoint "$NOTIFICATION_EMAIL" \
-        --region $REGION >/dev/null
-    echo "✅ Email subscription created (confirmation required)"
-else
-    echo "✅ Email already subscribed: $existing_subscription"
-fi
-
-# Step 6: Create IAM role with permissions
+# Step 5: Create IAM role with permissions
 echo "🔐 Setting up IAM role with permissions..."
 if ! aws iam get-role --role-name $ROLE_NAME --region $REGION >/dev/null 2>&1; then
     echo "Creating IAM role..."
@@ -235,34 +177,6 @@ if ! aws iam get-role --role-name $ROLE_NAME --region $REGION >/dev/null 2>&1; t
     echo "⏳ Waiting for role to propagate..."
     sleep 15
 fi
-
-# Create SNS policy for the Lambda role
-echo "📧 Setting up SNS permissions..."
-SNS_POLICY_DOC=$(cat <<EOF
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
-            "Action": [
-                "sns:Publish",
-                "sns:GetTopicAttributes"
-            ],
-            "Resource": [
-                "${SUPPORT_TOPIC_ARN}"
-            ]
-        }
-    ]
-}
-EOF
-)
-
-# Create and attach SNS policy
-aws iam put-role-policy \
-    --role-name $ROLE_NAME \
-    --policy-name "SupportTicketSNSPolicy" \
-    --policy-document "$SNS_POLICY_DOC" \
-    --region $REGION >/dev/null
 
 ROLE_ARN=$(aws iam get-role --role-name $ROLE_NAME --query 'Role.Arn' --output text --region $REGION)
 
@@ -299,67 +213,7 @@ aws iam put-role-policy \
 
 echo "✅ Secrets Manager permissions configured for multiple regions"
 
-# Function to safely create or update IAM policy statements
-create_or_update_policy() {
-    local policy_name="$1"
-    local policy_document="$2"
-
-    echo "🔍 Checking existing policy: $policy_name"
-
-    # Check if policy already exists
-    if aws iam get-role-policy \
-        --role-name "$ROLE_NAME" \
-        --policy-name "$policy_name" \
-        --region $REGION >/dev/null 2>&1; then
-
-        echo "🔄 Policy exists, updating: $policy_name"
-        # Policy exists, we'll update it (this replaces, but we'll make it comprehensive)
-    else
-        echo "📝 Creating new policy: $policy_name"
-    fi
-
-    # Return the policy document as-is
-    echo "$policy_document"
-}
-
-# Function to add additional permissions safely
-add_additional_permissions() {
-    local service="$1"
-    local actions="$2"
-    local resources="$3"
-    local policy_name="${service}AdditionalPolicy"
-
-    echo "➕ Adding additional $service permissions..."
-
-    ADDITIONAL_POLICY_DOC=$(cat <<EOF
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
-            "Action": $actions,
-            "Resource": $resources
-        }
-    ]
-}
-EOF
-)
-
-    aws iam put-role-policy \
-        --role-name $ROLE_NAME \
-        --policy-name "$policy_name" \
-        --policy-document "$ADDITIONAL_POLICY_DOC" \
-        --region $REGION >/dev/null
-
-    echo "✅ Additional $service permissions added"
-}
-
-# Example: Add additional permissions if needed
-# Uncomment and modify as needed:
-# add_additional_permissions "S3" '["s3:GetObject", "s3:PutObject"]' '["arn:aws:s3:::my-bucket/*"]'
-# add_additional_permissions "DynamoDB" '["dynamodb:GetItem", "dynamodb:PutItem"]' '["arn:aws:dynamodb:'$REGION':'$ACCOUNT_ID':table/my-table"]'
-
-# S3 permissions
+# S3 permissions for archival
 echo "🔧 Setting up S3 permissions..."
 S3_POLICY_DOC=$(cat <<EOF
 {
@@ -394,22 +248,14 @@ EOF
 
 aws iam put-role-policy \
     --role-name $ROLE_NAME \
-    --policy-name "S3TransformBucketsPolicy" \
+    --policy-name "S3ArchivalPolicy" \
     --policy-document "$S3_POLICY_DOC" \
     --region $REGION >/dev/null
 
-echo "✅ S3 permissions configured for transform buckets"
+echo "✅ S3 permissions configured for archival"
 
-# Example: Add additional permissions if needed
-# Uncomment and modify as needed:
-# add_additional_permissions "S3" '["s3:GetObject", "s3:PutObject"]' '["arn:aws:s3:::my-bucket/*"]'
-# add_additional_permissions "DynamoDB" '["dynamodb:GetItem", "dynamodb:PutItem"]' '["arn:aws:dynamodb:'$REGION':'$ACCOUNT_ID':table/my-table"]'
-
-# Step 7: Deploy Lambda function with container image
+# Step 6: Deploy Lambda function with container image
 echo "🔧 Deploying Lambda function with container image..."
-
-# Prepare environment variables
-ENV_VARS="Variables={SUPPORT_TICKET_SNS_TOPIC_ARN=${SUPPORT_TOPIC_ARN},NOTIFICATION_API_HOST=${NOTIFICATION_API_HOST},NOTIFICATION_API_ENDPOINT=${NOTIFICATION_API_ENDPOINT},ICONS_CONFIG_PATH=${ICONS_CONFIG_PATH}}"
 
 if aws lambda get-function --function-name $FUNCTION_NAME --region $REGION >/dev/null 2>&1; then
     echo "Checking existing function package type..."
@@ -421,7 +267,7 @@ if aws lambda get-function --function-name $FUNCTION_NAME --region $REGION >/dev
 
         # Remove EventBridge target first
         aws events remove-targets \
-            --rule pudu-robot-5min-schedule \
+            --rule pudu-robot-work-location-1min-schedule \
             --ids "1" \
             --region $REGION >/dev/null 2>&1 || true
 
@@ -439,10 +285,9 @@ if aws lambda get-function --function-name $FUNCTION_NAME --region $REGION >/dev
             --role $ROLE_ARN \
             --code ImageUri=$ECR_URI \
             --package-type Image \
-            --timeout 900 \
-            --memory-size 2048 \
-            --environment "$ENV_VARS" \
-            --description "Pudu Robot Data Pipeline with Support Ticket Monitoring (Container)" \
+            --timeout 300 \
+            --memory-size 1024 \
+            --description "Pudu Robot Work Location Service with 30-day Archival (Container)" \
             --region $REGION || {
             echo "❌ Lambda creation failed"
             echo "Role ARN: $ROLE_ARN"
@@ -463,9 +308,8 @@ if aws lambda get-function --function-name $FUNCTION_NAME --region $REGION >/dev
         echo "Updating function configuration..."
         aws lambda update-function-configuration \
             --function-name $FUNCTION_NAME \
-            --timeout 900 \
-            --memory-size 2048 \
-            --environment "$ENV_VARS" \
+            --timeout 300 \
+            --memory-size 1024 \
             --region $REGION
     fi
 else
@@ -475,10 +319,9 @@ else
         --role $ROLE_ARN \
         --code ImageUri=$ECR_URI \
         --package-type Image \
-        --timeout 900 \
-        --memory-size 2048 \
-        --environment "$ENV_VARS" \
-        --description "Pudu Robot Data Pipeline with Support Ticket Monitoring (Container)" \
+        --timeout 300 \
+        --memory-size 1024 \
+        --description "Pudu Robot Work Location Service with 30-day Archival (Container)" \
         --region $REGION || {
         echo "❌ Lambda creation failed"
         echo "Role ARN: $ROLE_ARN"
@@ -487,63 +330,53 @@ else
     }
 fi
 
-echo "🔧 Environment Variables:"
-echo "   📧 SNS Topic: $SUPPORT_TOPIC_ARN"
-echo "   🌐 API Host: $NOTIFICATION_API_HOST"
-echo "   📡 API Endpoint: $NOTIFICATION_API_ENDPOINT"
-echo "   🎨 Icons Config: $ICONS_CONFIG_PATH"
-
-# Step 8: Set up EventBridge schedule
-echo "📅 Setting up EventBridge schedule..."
+# Step 7: Set up EventBridge schedule for 1-minute intervals
+echo "📅 Setting up EventBridge schedule for 1-minute intervals..."
 aws events put-rule \
-    --name pudu-robot-5min-schedule \
-    --schedule-expression "rate(5 minutes)" \
-    --description "Trigger Pudu robot data pipeline every 5 minutes" \
+    --name pudu-robot-work-location-1min-schedule \
+    --schedule-expression "rate(1 minute)" \
+    --description "Trigger Pudu robot work location service every 1 minute" \
     --state ENABLED \
     --region $REGION >/dev/null
 
-# Step 9: Add Lambda permission for EventBridge
+# Step 8: Add Lambda permission for EventBridge
 aws lambda add-permission \
     --function-name $FUNCTION_NAME \
-    --statement-id pudu-robot-eventbridge-permission \
+    --statement-id pudu-robot-work-location-eventbridge-permission \
     --action lambda:InvokeFunction \
     --principal events.amazonaws.com \
-    --source-arn arn:aws:events:$REGION:$ACCOUNT_ID:rule/pudu-robot-5min-schedule \
+    --source-arn arn:aws:events:$REGION:$ACCOUNT_ID:rule/pudu-robot-work-location-1min-schedule \
     --region $REGION \
     >/dev/null 2>&1 || echo "Permission already exists"
 
-# Step 10: Add Lambda as EventBridge target
+# Step 9: Add Lambda as EventBridge target
 aws events put-targets \
-    --rule pudu-robot-5min-schedule \
+    --rule pudu-robot-work-location-1min-schedule \
     --targets "Id"="1","Arn"="arn:aws:lambda:$REGION:$ACCOUNT_ID:function:$FUNCTION_NAME" \
     --region $REGION >/dev/null
 
 echo ""
-echo "✅ Container deployment completed successfully!"
+echo "✅ Work Location Lambda deployment completed successfully!"
 echo ""
 echo "📊 Function Details:"
 echo "   Function Name: $FUNCTION_NAME"
 echo "   Region: $REGION"
 echo "   Package Type: Image"
 echo "   Image URI: $ECR_URI"
-echo "   Memory: 2048 MB"
-echo "   Schedule: Every 5 minutes"
+echo "   Memory: 1024 MB"
+echo "   Schedule: Every 1 minute"
 echo "   Logs: /aws/lambda/$FUNCTION_NAME"
-echo ""
-echo "📧 Support Ticket Notifications:"
-echo "   🎫 Topic: $SUPPORT_TOPIC_ARN"
-echo "   📧 Email: $NOTIFICATION_EMAIL"
-echo ""
-echo "⚠️  IMPORTANT: Check your email for SNS subscription confirmation!"
+echo "   Retention: 30 days per robot"
 echo ""
 echo "🔧 Useful Commands:"
 echo "   Test: aws lambda invoke --function-name $FUNCTION_NAME --region $REGION test-output.json && cat test-output.json"
 echo "   Logs: aws logs tail /aws/lambda/$FUNCTION_NAME --region $REGION --follow"
-echo "   Disable: aws events disable-rule --name pudu-robot-5min-schedule --region $REGION"
-echo "   Enable: aws events enable-rule --name pudu-robot-5min-schedule --region $REGION"
-echo "   Update Image: docker build --platform linux/amd64 -t $ECR_REPO_NAME:$IMAGE_TAG . && docker tag $ECR_REPO_NAME:$IMAGE_TAG $ECR_URI && docker push $ECR_URI && aws lambda update-function-code --function-name $FUNCTION_NAME --image-uri $ECR_URI --region $REGION"
+echo "   Disable: aws events disable-rule --name pudu-robot-work-location-1min-schedule --region $REGION"
+echo "   Enable: aws events enable-rule --name pudu-robot-work-location-1min-schedule --region $REGION"
+echo "   Update Image: docker build --platform linux/amd64 -f Dockerfile.work_location -t $ECR_REPO_NAME:$IMAGE_TAG . && docker tag $ECR_REPO_NAME:$IMAGE_TAG $ECR_URI && docker push $ECR_URI && aws lambda update-function-code --function-name $FUNCTION_NAME --image-uri $ECR_URI --region $REGION"
 echo ""
-echo "🎫 Your containerized pipeline now monitors support tickets and sends notifications!"
+echo "🗺️ Your work location service now runs every minute with 30-day data retention!"
 
 # Cleanup temporary files
-rm -f requirements_container.txt
+rm -f requirements_work_location.txt
+rm -f Dockerfile.work_location

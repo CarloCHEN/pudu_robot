@@ -1,9 +1,10 @@
 #!/bin/bash
 
 # Enhanced Lambda multi-region setup script with database config updates
+# Now supports both main pipeline and work location service
 ENVIRONMENT=${1:-us-east-2}
 
-echo "🚀 Setting up Lambda for: $ENVIRONMENT"
+echo "🚀 Setting up Lambda services for: $ENVIRONMENT"
 
 # Define region-specific variables including transform databases and S3 buckets
 case $ENVIRONMENT in
@@ -14,8 +15,14 @@ case $ENVIRONMENT in
     export RDS_SECRET_NAME="rds!db-ef989dd0-975a-4c33-ab17-69f8ef4e03a1"
 
     # Multiple transform databases and buckets for us-east-1
-    export TRANSFORM_DBS=("foxx_irvine_office")
+    # Only university_of_florida supports transformations
+    export TRANSFORM_DBS=("university_of_florida")
+
+    # But all databases have S3 buckets
+    export ALL_DBS=("university_of_florida" "nexus_iq_office" "foxx_irvine_office")
     export S3_BUCKETS=(
+      "pudu-robot-transforms-university-of-florida-145714-us-east-1"
+      "pudu-robot-transforms-nexus-iq-office-145704-us-east-1"
       "pudu-robot-transforms-foxx-irvine-office-845829-us-east-1"
     )
     ;;
@@ -26,9 +33,15 @@ case $ENVIRONMENT in
     export RDS_SECRET_NAME="rds!db-12d35fce-6171-4db1-a7e1-c75f1503ffed"
 
     # Multiple transform databases and buckets for us-east-2
+    # Only university_of_florida supports transformations
     export TRANSFORM_DBS=("university_of_florida")
+
+    # But all databases have S3 buckets
+    export ALL_DBS=("university_of_florida" "nexus_iq_office" "foxx_irvine_office")
     export S3_BUCKETS=(
       "pudu-robot-transforms-university-of-florida-889717-us-east-2"
+      "pudu-robot-transforms-nexus-iq-office-144926-us-east-2"
+      "pudu-robot-transforms-foxx-irvine-office-144924-us-east-2"
     )
     ;;
   *)
@@ -42,9 +55,36 @@ echo "🔧 Transform Databases: ${TRANSFORM_DBS[*]}"
 echo "📦 S3 Buckets: ${#S3_BUCKETS[@]} buckets configured"
 
 # Display bucket mappings
-for i in "${!TRANSFORM_DBS[@]}"; do
-    echo "   ${TRANSFORM_DBS[$i]} -> ${S3_BUCKETS[$i]}"
+for i in "${!ALL_DBS[@]}"; do
+    echo "   ${ALL_DBS[$i]} -> ${S3_BUCKETS[$i]}"
 done
+
+# Main Pipeline Lambda Configuration
+export MAIN_FUNCTION_NAME="pudu-robot-pipeline"
+export MAIN_SCHEDULE="rate(5 minutes)"
+export MAIN_ROLE_NAME="pudu-robot-lambda-role"
+export MAIN_ECR_REPO="pudu-robot-pipeline"
+
+# Work Location Lambda Configuration (separate from main pipeline)
+export WORK_LOCATION_FUNCTION_NAME="pudu-robot-work-location"
+export WORK_LOCATION_SCHEDULE="rate(1 minute)"
+export WORK_LOCATION_ROLE_NAME="pudu-robot-work-location-lambda-role"
+export WORK_LOCATION_ECR_REPO="pudu-robot-work-location"
+
+echo ""
+echo "📊 Lambda Configuration Summary:"
+echo "🔄 Main Pipeline Lambda:"
+echo "   Function: $MAIN_FUNCTION_NAME"
+echo "   Schedule: $MAIN_SCHEDULE"
+echo "   Role: $MAIN_ROLE_NAME"
+echo "   ECR Repo: $MAIN_ECR_REPO"
+echo ""
+echo "🗺️ Work Location Lambda:"
+echo "   Function: $WORK_LOCATION_FUNCTION_NAME"
+echo "   Schedule: $WORK_LOCATION_SCHEDULE"
+echo "   Role: $WORK_LOCATION_ROLE_NAME"
+echo "   ECR Repo: $WORK_LOCATION_ECR_REPO"
+echo ""
 
 # Update lambda/deploy_lambda.sh - replace region lines properly
 cp lambda/deploy_lambda.sh lambda/deploy_lambda.sh.bak
@@ -56,6 +96,17 @@ sed -i '' \
   lambda/deploy_lambda.sh
 
 echo "📝 Updated lambda/deploy_lambda.sh for $AWS_REGION"
+
+# Update lambda/deploy_work_location_lambda.sh if it exists
+if [ -f "lambda/deploy_work_location_lambda.sh" ]; then
+    cp lambda/deploy_work_location_lambda.sh lambda/deploy_work_location_lambda.sh.bak
+
+    sed -i '' \
+      -e "s/REGION=\"us-east-[12]\"/REGION=\"$AWS_REGION\"/" \
+      lambda/deploy_work_location_lambda.sh
+
+    echo "📝 Updated lambda/deploy_work_location_lambda.sh for $AWS_REGION"
+fi
 
 # Update src/pudu/rds/credentials.yaml
 cat > src/pudu/rds/credentials.yaml << EOF
@@ -153,9 +204,9 @@ s3_config:
 EOF
 
         # Add each bucket mapping
-        for i in "${!TRANSFORM_DBS[@]}"; do
+        for i in "${!ALL_DBS[@]}"; do
             # Convert database name to bucket format (underscore to hyphen)
-            bucket_db_name="${TRANSFORM_DBS[$i]}"
+            bucket_db_name="${ALL_DBS[$i]}"
             echo "    $bucket_db_name: \"${S3_BUCKETS[$i]}\"" >> /tmp/new_s3_config
         done
         echo "" >> /tmp/new_s3_config
@@ -193,9 +244,9 @@ s3_config:
 EOF
 
         # Add each bucket mapping
-        for i in "${!TRANSFORM_DBS[@]}"; do
+        for i in "${!ALL_DBS[@]}"; do
             # Convert database name to bucket format (underscore to hyphen)
-            bucket_db_name="${TRANSFORM_DBS[$i]}"
+            bucket_db_name="${ALL_DBS[$i]}"
             echo "    $bucket_db_name: \"${S3_BUCKETS[$i]}\"" >> "$CONFIG_FILE"
         done
         echo "" >> "$CONFIG_FILE"
@@ -234,8 +285,8 @@ s3_config:
   buckets:
 EOF
 
-    for i in "${!TRANSFORM_DBS[@]}"; do
-        bucket_db_name="${TRANSFORM_DBS[$i]}"
+    for i in "${!ALL_DBS[@]}"; do
+        bucket_db_name="${ALL_DBS[$i]}"
         echo "    $bucket_db_name: \"${S3_BUCKETS[$i]}\"" >> "$CONFIG_FILE"
     done
 
@@ -253,12 +304,16 @@ EOF
 fi
 
 echo ""
-echo "✅ Lambda configured for $ENVIRONMENT"
+echo "✅ Lambda services configured for $ENVIRONMENT"
 echo "📊 Configuration Summary:"
 echo "   Region: $AWS_REGION"
 echo "   Transform Databases: ${#TRANSFORM_DBS[@]}"
 echo "   S3 Buckets: ${#S3_BUCKETS[@]}"
+echo "   Main Pipeline: $MAIN_FUNCTION_NAME (${MAIN_SCHEDULE})"
+echo "   Work Location: $WORK_LOCATION_FUNCTION_NAME (${WORK_LOCATION_SCHEDULE})"
 echo ""
 echo "🚀 Next steps:"
 echo "   1. Verify S3 buckets exist: aws s3 ls --region $AWS_REGION | grep pudu-robot-transforms"
-echo "   2. Run deployment: ./lambda/deploy_lambda.sh"
+echo "   2. Run main deployment: ./lambda/deploy_lambda.sh"
+echo "   3. Run work location deployment: ./lambda/deploy_work_location_lambda.sh"
+echo "   4. Or run both: ./lambda/deploy_to_region.sh"
