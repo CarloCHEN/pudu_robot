@@ -255,7 +255,7 @@ class ChartDataFormatter:
                     }
                 ]
             }
-    
+
     def format_event_level_chart(self, event_metrics: Dict[str, Any]) -> Dict[str, Any]:
         try:
             event_levels = event_metrics.get('event_levels', {})
@@ -295,15 +295,7 @@ class ChartDataFormatter:
             }
 
     def format_all_chart_data(self, metrics: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Format all chart data for the comprehensive report
-
-        Args:
-            metrics: Complete metrics dictionary from calculator
-
-        Returns:
-            Dict with all formatted chart data
-        """
+        """Format all chart data for the comprehensive report"""
         try:
             task_metrics = metrics.get('task_performance', {})
             charging_metrics = metrics.get('charging_performance', {})
@@ -312,19 +304,33 @@ class ChartDataFormatter:
             event_metrics = metrics.get('event_analysis', {})
             trend_data = metrics.get('trend_data', {})
 
-            return {
+            chart_data = {
                 'taskStatusChart': self.format_task_status_chart(task_metrics),
                 'taskModeChart': self.format_task_mode_chart(task_metrics),
-                'chargingChart': self.format_charging_performance_chart(charging_metrics, trend_data),
-                'resourceChart': self.format_resource_utilization_chart(resource_metrics, trend_data),
-                'financialChart': self.format_financial_performance_chart(cost_metrics, trend_data),
                 'eventTypeChart': self.format_event_type_chart(event_metrics),
                 'eventLevelChart': self.format_event_level_chart(event_metrics)
             }
 
+            # FIX: Add trend_data directly to chart_data for JavaScript access
+            chart_data['trend_data'] = trend_data
+
+            return chart_data
+
         except Exception as e:
             logger.error(f"Error formatting all chart data: {e}")
-            return self._get_default_all_charts()
+            return {
+                'taskStatusChart': self._get_default_task_chart(),
+                'taskModeChart': self._get_default_mode_chart(),
+                'eventTypeChart': self._get_default_event_chart(),
+                'eventLevelChart': self._get_default_level_chart(),
+                'trend_data': {
+                    'dates': ['01/01', '01/02', '01/03'],
+                    'charging_sessions_trend': [5, 7, 6],
+                    'charging_duration_trend': [45.2, 52.1, 48.7],
+                    'energy_consumption_trend': [12.5, 15.2, 13.8],
+                    'water_usage_trend': [245, 289, 267]
+                }
+            }
 
     def _get_default_charging_chart(self) -> Dict[str, Any]:
         """Return default charging chart data"""

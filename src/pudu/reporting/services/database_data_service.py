@@ -768,6 +768,7 @@ class DatabaseDataService:
 
             # Event analysis metrics
             metrics['event_analysis'] = self.metrics_calculator.calculate_event_analysis_metrics(events_data)
+            metrics['event_location_mapping'] = self.calculate_event_location_mapping(events_data, robot_locations)
 
             # Enhanced facility performance metrics using location data
             if not robot_locations.empty:
@@ -813,6 +814,173 @@ class DatabaseDataService:
 
         except Exception as e:
             logger.error(f"Error calculating comprehensive metrics: {e}")
+            return {}
+
+    def calculate_daily_trends(self, tasks_data: pd.DataFrame, charging_data: pd.DataFrame,
+                              start_date: str, end_date: str) -> Dict[str, List]:
+        """Calculate daily trend data from actual database records"""
+        try:
+            if tasks_data.empty and charging_data.empty:
+                return {}
+
+            start_dt = datetime.strptime(start_date.split(' ')[0], '%Y-%m-%d')
+            end_dt = datetime.strptime(end_date.split(' ')[0], '%Y-%m-%d')
+
+            # Generate date range
+            date_range = []
+            current_date = start_dt
+            while current_date <= end_dt and len(date_range) < 30:  # Limit to 30 days for chart readability
+                date_range.append(current_date)
+                current_date += timedelta(days=1)
+
+            # Initialize daily data
+            daily_data = {date.strftime('%m/%d'): {
+                'charging_sessions': 0,
+                'charging_duration_total': 0,
+                'charging_count': 0,
+                'energy_consumption': 0,
+                'water_usage': 0
+            } for date in date_range}
+
+            # Process tasks data
+            if not tasks_data.empty and 'start_time' in tasks_data.columns:
+                for _, task in tasks_data.iterrows():
+                    try:
+                        task_date = pd.to_datetime(task['start_time']).date()
+                        date_str = task_date.strftime('%m/%d')
+
+                        if date_str in daily_data:
+                            energy = float(task.get('consumption', 0) or 0)
+                            water = float(task.get('water_consumption', 0) or 0)
+                            daily_data[date_str]['energy_consumption'] += energy
+                            daily_data[date_str]['water_usage'] += water
+                    except:
+                        continue
+
+            # Process charging data
+            if not charging_data.empty and 'start_time' in charging_data.columns:
+                for _, charge in charging_data.iterrows():
+                    try:
+                        charge_date = pd.to_datetime(charge['start_time']).date()
+                        date_str = charge_date.strftime('%m/%d')
+
+                        if date_str in daily_data:
+                            daily_data[date_str]['charging_sessions'] += 1
+
+                            # Parse duration
+                            duration_str = str(charge.get('duration', ''))
+                            duration_minutes = self._parse_duration_to_minutes(duration_str)
+                            if duration_minutes > 0:
+                                daily_data[date_str]['charging_duration_total'] += duration_minutes
+                                daily_data[date_str]['charging_count'] += 1
+                    except:
+                        continue
+
+            # Convert to chart format
+            dates = list(daily_data.keys())
+            charging_sessions = [daily_data[date]['charging_sessions'] for date in dates]
+
+            charging_durations = []
+            for date in dates:
+                total_duration = daily_data[date]['charging_duration_total']
+                count = daily_data[date]['charging_count']
+                avg_duration = total_duration / count if count > 0 else 0
+                charging_durations.append(round(avg_duration, 1))
+
+            energy_consumption = [round(daily_data[date]['energy_consumption'], 1) for date in dates]
+            water_usage = [round(daily_data[date]['water_usage'], 0) for date in dates]
+
+            return {
+                'dates': dates,
+                'charging_sessions_trend': charging_sessions,
+                'charging_duration_trend': charging_durations,
+                'energy_consumption_trend': energy_consumption,
+                'water_usage_trend': water_usage
+            }
+
+        except Exception as e:
+            logger.error(f"Error calculating daily trends: {e}")
+            return {}
+
+    def _parse_duration_to_minutes(self, duration_str) -> float:
+        """Parse duration string to minutes"""
+        try:
+            if pd.isna(duration_str) or not str(duration_str).strip():
+                return 0.0
+
+            duration_str = str(duration_str).strip()
+            hours = 0
+            minutes = 0
+
+            if 'h' in duration_str and 'min' in duration_str:
+                parts = duration_str.split('h')
+                hours = int(parts[0].strip())
+                min_part = parts[1].strip()
+                if min_part.endswith('min'):
+                    minutes = int(min_part.replace('min', '').strip())
+            elif 'min' in duration_str:
+                minutes = int(duration_str.replace('min', '').strip())
+            elif 'h' in duration_str:
+                hours = int(duration_str.replace('h', '').strip())
+            else:
+                # Try to parse as pure seconds and convert to minutes
+                seconds = float(duration_str)
+                minutes = seconds / 60
+
+            return hours * 60 + minutes
+        except:
+            return 0.0
+
+    def calculate_facility_efficiency_metrics(self, tasks_data: pd.DataFrame,
+                                            robot_locations: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
+        """Calculate water efficiency and time efficiency for facilities"""
+        try:
+            if robot_locations.empty or tasks_data.empty:
+                return {}
+
+            facility_metrics = {}
+
+            for building_name in robot_locations['building_name'].dropna().unique():
+                facility_robots = robot_locations[robot_locations['building_name'] == building_name]['robot_sn'].tolist()
+                facility_tasks = tasks_data[tasks_data['robot_sn'].isin(facility_robots)]
+
+                if facility_tasks.empty:
+                    continue
+
+                # Area calculations - convert from square meters to square feet
+                total_area_sqm = facility_tasks['actual_area'].fillna(0).sum() if 'actual_area' in facility_tasks.columns else 0
+                total_area_sqft = total_area_sqm * 10.764
+
+                # Water efficiency (area per unit water)
+                water_consumption = facility_tasks['water_consumption'].fillna(0).sum() if 'water_consumption' in facility_tasks.columns else 0
+                water_efficiency = total_area_sqft / water_consumption if water_consumption > 0 else 0
+
+                # Time efficiency (area per unit hour) - use duration directly in seconds
+                total_time_hours = 0
+                if 'duration' in facility_tasks.columns:
+                    for duration in facility_tasks['duration']:
+                        if pd.notna(duration):
+                            try:
+                                seconds = float(str(duration).strip())
+                                hours = seconds / 3600
+                                if hours > 0:
+                                    total_time_hours += hours
+                            except:
+                                continue
+
+                time_efficiency = total_area_sqft / total_time_hours if total_time_hours > 0 else 0
+
+                facility_metrics[building_name] = {
+                    'water_efficiency': round(water_efficiency, 1),  # sq ft per fl oz
+                    'time_efficiency': round(time_efficiency, 1),   # sq ft per hour
+                    'total_area_cleaned': round(total_area_sqft, 0),
+                    'total_time_hours': round(total_time_hours, 1)
+                }
+
+            return facility_metrics
+
+        except Exception as e:
+            logger.error(f"Error calculating facility efficiency metrics: {e}")
             return {}
 
     def calculate_comprehensive_metrics_with_comparison(self, current_data: Dict[str, pd.DataFrame],
@@ -870,18 +1038,6 @@ class DatabaseDataService:
             weekday_completion = self.metrics_calculator.calculate_weekday_completion_rates(tasks_data)
             current_metrics['weekday_completion'] = weekday_completion
 
-            # Calculate facility efficiency metrics
-            facility_efficiency = self.metrics_calculator.calculate_facility_efficiency_metrics(tasks_data, robot_locations)
-            current_metrics['facility_efficiency_metrics'] = facility_efficiency
-
-            # Calculate map performance by building
-            map_performance = self.metrics_calculator.calculate_map_performance_by_building(tasks_data, robot_locations)
-            current_metrics['map_performance_by_building'] = map_performance
-
-            # Update trend data to use daily instead of weekly
-            daily_trend_data = self.metrics_calculator.calculate_daily_trends(tasks_data, charging_data, current_start, current_end)
-            current_metrics['trend_data'].update(daily_trend_data)
-
             # Calculate facility-specific detailed metrics
             robot_locations = current_data.get('robot_locations', pd.DataFrame())
             if not robot_locations.empty:
@@ -893,8 +1049,28 @@ class DatabaseDataService:
                 facility_charging_metrics = self.calculate_facility_specific_charging_metrics(charging_data, robot_locations)
                 current_metrics['facility_charging_metrics'] = facility_charging_metrics
 
+                # Update trend data to use daily instead of weekly
+                daily_trend_data = self.calculate_daily_trends(tasks_data, charging_data, current_start, current_end)
+                if daily_trend_data and daily_trend_data.get('dates'):
+                    current_metrics['trend_data'] = daily_trend_data
+
                 facility_resource_metrics = self.calculate_facility_specific_resource_metrics(tasks_data, robot_locations)
                 current_metrics['facility_resource_metrics'] = facility_resource_metrics
+
+                # Calculate facility efficiency metrics
+                facility_efficiency = self.metrics_calculator.calculate_facility_efficiency_metrics(tasks_data, robot_locations)
+                current_metrics['facility_efficiency_metrics'] = facility_efficiency
+
+                if hasattr(self.metrics_calculator, 'calculate_facility_efficiency_metrics'):
+                    facility_efficiency = self.metrics_calculator.calculate_facility_efficiency_metrics(tasks_data, robot_locations)
+                    current_metrics['facility_efficiency_metrics'] = facility_efficiency
+                else:
+                    # The method doesn't exist! Need to add it to metrics_calculator.py:
+                    current_metrics['facility_efficiency_metrics'] = self.calculate_facility_efficiency_metrics(tasks_data, robot_locations)
+
+                # Calculate map performance by building
+                map_performance = self.metrics_calculator.calculate_map_performance_by_building(tasks_data, robot_locations)
+                current_metrics['map_performance_by_building'] = map_performance
 
             logger.info("Successfully calculated metrics with period comparison")
             return current_metrics
@@ -916,6 +1092,10 @@ class DatabaseDataService:
             current_metrics['facility_task_metrics'] = {}
             current_metrics['facility_charging_metrics'] = {}
             current_metrics['facility_resource_metrics'] = {}
+            current_metrics['facility_efficiency_metrics'] = {}
+            current_metrics['map_performance_by_building'] = {}
+            current_metrics['weekday_completion'] = {}
+            current_metrics['trend_data'] = {}
 
             return current_metrics
 
@@ -985,9 +1165,58 @@ class DatabaseDataService:
             logger.error(f"Error calculating facility-specific task metrics: {e}")
             return {}
 
+    def calculate_event_location_mapping(self, events_data: pd.DataFrame,
+                                       robot_locations: pd.DataFrame) -> Dict[str, Dict[str, int]]:
+        """Map events to actual building locations using robot_sn"""
+        try:
+            if events_data.empty or robot_locations.empty:
+                return {}
+
+            # Create robot to building mapping
+            robot_building_map = {}
+            for _, row in robot_locations.iterrows():
+                robot_sn = row.get('robot_sn')
+                building_name = row.get('building_name')
+                if robot_sn and building_name:
+                    robot_building_map[robot_sn] = building_name
+
+            # Count events by actual building
+            building_events = {}
+            for _, event in events_data.iterrows():
+                robot_sn = event.get('robot_sn')
+                event_level = str(event.get('event_level', 'info')).lower()
+
+                building_name = robot_building_map.get(robot_sn, 'Unknown Building')
+
+                if building_name not in building_events:
+                    building_events[building_name] = {
+                        'total_events': 0,
+                        'critical_events': 0,
+                        'error_events': 0,
+                        'warning_events': 0,
+                        'info_events': 0
+                    }
+
+                building_events[building_name]['total_events'] += 1
+
+                if 'critical' in event_level:
+                    building_events[building_name]['critical_events'] += 1
+                elif 'error' in event_level:
+                    building_events[building_name]['error_events'] += 1
+                elif 'warning' in event_level:
+                    building_events[building_name]['warning_events'] += 1
+                else:
+                    building_events[building_name]['info_events'] += 1
+
+            return building_events
+
+        except Exception as e:
+            logger.error(f"Error mapping events to locations: {e}")
+            return {}
+
     def calculate_facility_specific_charging_metrics(self, charging_data: pd.DataFrame,
-                                                    robot_locations: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
-        """Calculate REAL charging metrics per facility"""
+                                                robot_locations: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
+        """Calculate REAL charging metrics per facility with proper duration parsing"""
         logger.info("Calculating facility-specific charging metrics")
 
         try:
@@ -1004,52 +1233,70 @@ class DatabaseDataService:
                     facility_metrics[building_name] = {
                         'total_sessions': 0,
                         'avg_duration_minutes': 0.0,
+                        'median_duration_minutes': 0.0,
                         'avg_power_gain_percent': 0.0,
-                        'success_rate': 0.0
+                        'median_power_gain_percent': 0.0
                     }
                     continue
 
-                # Calculate REAL facility-specific charging metrics
                 total_sessions = len(facility_charging)
 
-                # Parse durations for this facility (assuming seconds)
+                # REAL duration parsing - fix the 0 duration issue
                 durations = []
-                for duration in facility_charging['duration']:
-                    if pd.notna(duration):
+                for _, row in facility_charging.iterrows():
+                    duration_str = str(row.get('duration', ''))
+                    if pd.notna(duration_str) and duration_str.strip():
                         try:
-                            seconds = float(str(duration).strip())
-                            minutes = seconds / 60
-                            if minutes > 0:
-                                durations.append(minutes)
-                        except:
-                            pass
+                            # Parse your format: "0h 04min", "1h 59min", etc.
+                            hours = 0
+                            minutes = 0
 
-                avg_duration = np.mean(durations) if durations else 0
+                            if 'h' in duration_str and 'min' in duration_str:
+                                parts = duration_str.split('h')
+                                hours = int(parts[0].strip())
+                                min_part = parts[1].strip()
+                                if min_part.endswith('min'):
+                                    minutes = int(min_part.replace('min', '').strip())
+                            elif 'min' in duration_str:
+                                minutes = int(duration_str.replace('min', '').strip())
+                            elif 'h' in duration_str:
+                                hours = int(duration_str.replace('h', '').strip())
 
-                # Parse power gains
+                            duration_minutes = hours * 60 + minutes
+                            if duration_minutes > 0:
+                                durations.append(duration_minutes)
+                        except Exception as e:
+                            logger.warning(f"Could not parse duration '{duration_str}': {e}")
+                            continue
+
+                # REAL power gain parsing
                 power_gains = []
-                for power_gain in facility_charging['power_gain']:
-                    if pd.notna(power_gain):
+                for _, row in facility_charging.iterrows():
+                    power_gain_str = str(row.get('power_gain', ''))
+                    if pd.notna(power_gain_str) and power_gain_str.strip():
                         try:
-                            gain_value = float(str(power_gain).replace('+', '').replace('%', '').strip())
+                            # Parse your format: "+1%", "+59%", "+0%"
+                            gain_value = float(power_gain_str.replace('+', '').replace('%', '').strip())
                             power_gains.append(gain_value)
-                        except:
-                            pass
+                        except Exception as e:
+                            logger.warning(f"Could not parse power gain '{power_gain_str}': {e}")
+                            continue
 
+                # Calculate real statistics
+                avg_duration = np.mean(durations) if durations else 0
+                median_duration = np.median(durations) if durations else 0
                 avg_power_gain = np.mean(power_gains) if power_gains else 0
-
-                # Success rate
-                successful_sessions = len(facility_charging[facility_charging['status'].str.lower() == 'done']) if 'status' in facility_charging.columns else 0
-                success_rate = (successful_sessions / total_sessions * 100) if total_sessions > 0 else 0
+                median_power_gain = np.median(power_gains) if power_gains else 0
 
                 facility_metrics[building_name] = {
                     'total_sessions': total_sessions,
                     'avg_duration_minutes': round(avg_duration, 1),
+                    'median_duration_minutes': round(median_duration, 1),
                     'avg_power_gain_percent': round(avg_power_gain, 1),
-                    'success_rate': round(success_rate, 1)
+                    'median_power_gain_percent': round(median_power_gain, 1)
                 }
 
-            logger.info(f"Calculated charging metrics for {len(facility_metrics)} facilities")
+            logger.info(f"Calculated real charging metrics for {len(facility_metrics)} facilities")
             return facility_metrics
 
         except Exception as e:
