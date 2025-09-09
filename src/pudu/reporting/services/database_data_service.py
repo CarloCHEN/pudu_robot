@@ -435,7 +435,7 @@ class DatabaseDataService:
                     'location': location_name,
                     'tasks_completed': completed_tasks,
                     'total_tasks': total_tasks,
-                    'operational_hours': round(operational_hours, 1),
+                    'running_hours': round(operational_hours, 1),
                     'status': status,
                     'status_class': status_class,
                     'charging_sessions': len(robot_charging)
@@ -507,7 +507,7 @@ class DatabaseDataService:
                     'area_cleaned': round(total_area_sqft, 0),  # in square feet
                     'planned_area': round(planned_area_sqft, 0),  # in square feet
                     'coverage_efficiency': round(coverage_efficiency, 1),
-                    'operating_hours': round(operating_hours, 1),
+                    'running_hours': round(operating_hours, 1),
                     'power_efficiency': round(power_efficiency, 0),  # sq ft per kWh
                     'robot_count': len(facility_robots)
                 }
@@ -865,6 +865,22 @@ class DatabaseDataService:
                 'previous_period': {'start': previous_start, 'end': previous_end},
                 'comparison_available': True
             }
+
+            # Calculate weekday completion rates
+            weekday_completion = self.metrics_calculator.calculate_weekday_completion_rates(tasks_data)
+            current_metrics['weekday_completion'] = weekday_completion
+
+            # Calculate facility efficiency metrics
+            facility_efficiency = self.metrics_calculator.calculate_facility_efficiency_metrics(tasks_data, robot_locations)
+            current_metrics['facility_efficiency_metrics'] = facility_efficiency
+
+            # Calculate map performance by building
+            map_performance = self.metrics_calculator.calculate_map_performance_by_building(tasks_data, robot_locations)
+            current_metrics['map_performance_by_building'] = map_performance
+
+            # Update trend data to use daily instead of weekly
+            daily_trend_data = self.metrics_calculator.calculate_daily_trends(tasks_data, charging_data, current_start, current_end)
+            current_metrics['trend_data'].update(daily_trend_data)
 
             # Calculate facility-specific detailed metrics
             robot_locations = current_data.get('robot_locations', pd.DataFrame())

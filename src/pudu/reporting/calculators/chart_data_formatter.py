@@ -255,30 +255,26 @@ class ChartDataFormatter:
                     }
                 ]
             }
-
+    
     def format_event_level_chart(self, event_metrics: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Format event level distribution for doughnut chart
-
-        Args:
-            event_metrics: Event analysis metrics
-
-        Returns:
-            Chart.js compatible data structure
-        """
         try:
             event_levels = event_metrics.get('event_levels', {})
 
-            # Standard order for event levels
+            # Standard order for event levels with corrected colors
             level_order = ['critical', 'error', 'warning', 'info']
             labels = []
             data = []
-            colors = ['#6c757d', '#dc3545', '#ffc107', '#28a745']
+            colors = ['#dc3545', '#fd7e14', '#ffc107', '#007bff']  # Red, Orange, Yellow, Blue
 
             for level in level_order:
                 if level in event_levels:
                     labels.append(level.capitalize())
-                    data.append(int(event_levels[level]))  # Convert to int
+                    data.append(int(event_levels[level]))
+
+            # Ensure all levels are included even if zero
+            if not labels:
+                labels = ['Critical', 'Error', 'Warning', 'Events']
+                data = [0, 0, 0, 0]
 
             return {
                 'labels': labels,
