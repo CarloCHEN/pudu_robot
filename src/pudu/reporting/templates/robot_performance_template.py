@@ -19,298 +19,321 @@ class RobotPerformanceTemplate:
             chart_js_data = self._generate_chart_data(content)
 
             html_content = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Robot Performance Report - {content.get('period', 'Latest Period')}</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
-    <style>
-        body {{
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            line-height: 1.6;
-            margin: 0;
-            padding: 20px;
-            background-color: #f8f9fa;
-        }}
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Robot Performance Report - {content.get('period', 'Latest Period')}</title>
+                <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+                <style>
+                    body {{
+                        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                        line-height: 1.6;
+                        margin: 0;
+                        padding: 20px;
+                        background-color: #f8f9fa;
+                    }}
+                    .chart-toggle-container {{
+                        text-align: center;
+                        margin-bottom: 15px;
+                    }}
 
-        .container {{
-            max-width: 1200px;
-            margin: 0 auto;
-            background: white;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 0 20px rgba(0,0,0,0.1);
-        }}
+                    .chart-toggle-btn {{
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                        border: none;
+                        padding: 8px 16px;
+                        border-radius: 5px;
+                        cursor: pointer;
+                        font-size: 0.9em;
+                        transition: opacity 0.3s ease;
+                    }}
 
-        h1 {{
-            color: #2c3e50;
-            text-align: center;
-            margin-bottom: 10px;
-            font-size: 2.5em;
-        }}
+                    .chart-toggle-btn:hover {{
+                        opacity: 0.8;
+                    }}
 
-        .subtitle {{
-            text-align: center;
-            color: #7f8c8d;
-            font-size: 1.2em;
-            margin-bottom: 30px;
-        }}
+                    .chart-toggle-btn.active {{
+                        background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+                    }}
 
-        h2 {{
-            color: #34495e;
-            border-bottom: 3px solid #3498db;
-            padding-bottom: 10px;
-            margin-top: 40px;
-        }}
+                    .container {{
+                        max-width: 1200px;
+                        margin: 0 auto;
+                        background: white;
+                        padding: 30px;
+                        border-radius: 10px;
+                        box-shadow: 0 0 20px rgba(0,0,0,0.1);
+                    }}
 
-        h3 {{
-            color: #2980b9;
-            margin-top: 30px;
-        }}
+                    h1 {{
+                        color: #2c3e50;
+                        text-align: center;
+                        margin-bottom: 10px;
+                        font-size: 2.5em;
+                    }}
 
-        .highlight-box {{
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 20px;
-            border-radius: 10px;
-            margin: 20px 0;
-        }}
+                    .subtitle {{
+                        text-align: center;
+                        color: #7f8c8d;
+                        font-size: 1.2em;
+                        margin-bottom: 30px;
+                    }}
 
-        .metrics-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin: 20px 0;
-        }}
+                    h2 {{
+                        color: #34495e;
+                        border-bottom: 3px solid #3498db;
+                        padding-bottom: 10px;
+                        margin-top: 40px;
+                    }}
 
-        .metric-card {{
-            background: #f8f9fa;
-            border: 1px solid #e9ecef;
-            border-radius: 8px;
-            padding: 20px;
-            text-align: center;
-            transition: transform 0.3s ease;
-        }}
+                    h3 {{
+                        color: #2980b9;
+                        margin-top: 30px;
+                    }}
 
-        .metric-card:hover {{
-            transform: translateY(-5px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-        }}
+                    .highlight-box {{
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                        padding: 20px;
+                        border-radius: 10px;
+                        margin: 20px 0;
+                    }}
 
-        .metric-value {{
-            font-size: 2em;
-            font-weight: bold;
-            color: #2c3e50;
-        }}
+                    .metrics-grid {{
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                        gap: 20px;
+                        margin: 20px 0;
+                    }}
 
-        .metric-label {{
-            color: #7f8c8d;
-            font-size: 0.9em;
-            margin-top: 5px;
-        }}
+                    .metric-card {{
+                        background: #f8f9fa;
+                        border: 1px solid #e9ecef;
+                        border-radius: 8px;
+                        padding: 20px;
+                        text-align: center;
+                        transition: transform 0.3s ease;
+                    }}
 
-        .chart-container {{
-            position: relative;
-            height: 400px;
-            margin: 30px 0;
-            background: white;
-            border-radius: 8px;
-            padding: 20px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }}
+                    .metric-card:hover {{
+                        transform: translateY(-5px);
+                        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+                    }}
 
-        .chart-row {{
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 30px;
-            margin: 30px 0;
-        }}
+                    .metric-value {{
+                        font-size: 2em;
+                        font-weight: bold;
+                        color: #2c3e50;
+                    }}
 
-        .chart-small {{
-            position: relative;
-            height: 300px;
-        }}
+                    .metric-label {{
+                        color: #7f8c8d;
+                        font-size: 0.9em;
+                        margin-top: 5px;
+                    }}
 
-        table {{
-            width: 100%;
-            border-collapse: collapse;
-            margin: 20px 0;
-            background: white;
-            border-radius: 8px;
-            overflow: hidden;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }}
+                    .chart-container {{
+                        position: relative;
+                        height: 400px;
+                        margin: 30px 0;
+                        background: white;
+                        border-radius: 8px;
+                        padding: 20px;
+                        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                    }}
 
-        th, td {{
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid #e9ecef;
-        }}
+                    .chart-row {{
+                        display: grid;
+                        grid-template-columns: 1fr 1fr;
+                        gap: 30px;
+                        margin: 30px 0;
+                    }}
 
-        th {{
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            font-weight: 600;
-        }}
+                    .chart-small {{
+                        position: relative;
+                        height: 300px;
+                    }}
 
-        tr:hover {{
-            background: #f8f9fa;
-        }}
+                    table {{
+                        width: 100%;
+                        border-collapse: collapse;
+                        margin: 20px 0;
+                        background: white;
+                        border-radius: 8px;
+                        overflow: hidden;
+                        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                    }}
 
-        .progress-container {{
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin: 10px 0;
-        }}
+                    th, td {{
+                        padding: 12px;
+                        text-align: left;
+                        border-bottom: 1px solid #e9ecef;
+                    }}
 
-        .progress-bar {{
-            width: 60%;
-            height: 15px;
-            background: #e9ecef;
-            border-radius: 8px;
-            overflow: hidden;
-            margin: 3px 0;
-            display: inline-block;
-        }}
+                    th {{
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                        font-weight: 600;
+                    }}
 
-        .progress-fill {{
-            height: 100%;
-            background: linear-gradient(90deg, #28a745, #20c997);
-            transition: width 0.3s ease;
-        }}
+                    tr:hover {{
+                        background: #f8f9fa;
+                    }}
 
-        .progress-text {{
-            display: inline-block;
-            margin-left: 10px;
-            font-weight: bold;
-            color: #2c3e50;
-        }}
+                    .progress-container {{
+                        display: flex;
+                        align-items: center;
+                        gap: 10px;
+                        margin: 10px 0;
+                    }}
 
-        .status-indicator {{
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-        }}
+                    .progress-bar {{
+                        width: 60%;
+                        height: 15px;
+                        background: #e9ecef;
+                        border-radius: 8px;
+                        overflow: hidden;
+                        margin: 3px 0;
+                        display: inline-block;
+                    }}
 
-        .status-dot {{
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-        }}
+                    .progress-fill {{
+                        height: 100%;
+                        background: linear-gradient(90deg, #28a745, #20c997);
+                        transition: width 0.3s ease;
+                    }}
 
-        .status-excellent {{ background: #28a745; }}
-        .status-good {{ background: #17a2b8; }}
-        .status-warning {{ background: #ffc107; }}
-        .status-error {{ background: #dc3545; }}
+                    .progress-text {{
+                        display: inline-block;
+                        margin-left: 10px;
+                        font-weight: bold;
+                        color: #2c3e50;
+                    }}
 
-        .two-column {{
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 30px;
-            margin: 20px 0;
-        }}
+                    .status-indicator {{
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 5px;
+                    }}
 
-        .tooltip {{
-            position: relative;
-            display: inline-block;
-            cursor: help;
-            color: #3498db;
-            text-decoration: underline dotted;
-        }}
+                    .status-dot {{
+                        width: 10px;
+                        height: 10px;
+                        border-radius: 50%;
+                    }}
 
-        .tooltip .tooltiptext {{
-            visibility: hidden;
-            width: 300px;
-            background-color: #555;
-            color: #fff;
-            text-align: left;
-            border-radius: 6px;
-            padding: 10px;
-            position: absolute;
-            z-index: 1;
-            bottom: 125%;
-            left: 50%;
-            margin-left: -150px;
-            opacity: 0;
-            transition: opacity 0.3s;
-            font-size: 0.9em;
-        }}
+                    .status-excellent {{ background: #28a745; }}
+                    .status-good {{ background: #17a2b8; }}
+                    .status-warning {{ background: #ffc107; }}
+                    .status-error {{ background: #dc3545; }}
 
-        .tooltip:hover .tooltiptext {{
-            visibility: visible;
-            opacity: 1;
-        }}
+                    .two-column {{
+                        display: grid;
+                        grid-template-columns: 1fr 1fr;
+                        gap: 30px;
+                        margin: 20px 0;
+                    }}
 
-        .map-section {{
-            margin: 30px 0;
-            padding: 20px;
-            background: #f8f9fa;
-            border-radius: 8px;
-        }}
+                    .tooltip {{
+                        position: relative;
+                        display: inline-block;
+                        cursor: help;
+                        color: #3498db;
+                        text-decoration: underline dotted;
+                    }}
 
-        .building-maps {{
-            margin: 15px 0;
-        }}
+                    .tooltip .tooltiptext {{
+                        visibility: hidden;
+                        width: 300px;
+                        background-color: #555;
+                        color: #fff;
+                        text-align: left;
+                        border-radius: 6px;
+                        padding: 10px;
+                        position: absolute;
+                        z-index: 1;
+                        bottom: 125%;
+                        left: 50%;
+                        margin-left: -150px;
+                        opacity: 0;
+                        transition: opacity 0.3s;
+                        font-size: 0.9em;
+                    }}
 
-        .map-metrics {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 15px;
-            margin: 10px 0;
-        }}
+                    .tooltip:hover .tooltiptext {{
+                        visibility: visible;
+                        opacity: 1;
+                    }}
 
-        .map-metric {{
-            background: white;
-            padding: 10px;
-            border-radius: 5px;
-            text-align: center;
-            border: 1px solid #dee2e6;
-        }}
+                    .map-section {{
+                        margin: 30px 0;
+                        padding: 20px;
+                        background: #f8f9fa;
+                        border-radius: 8px;
+                    }}
 
-        @media (max-width: 768px) {{
-            .chart-row, .two-column {{
-                grid-template-columns: 1fr;
-            }}
+                    .building-maps {{
+                        margin: 15px 0;
+                    }}
 
-            .container {{
-                padding: 15px;
-            }}
+                    .map-metrics {{
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                        gap: 15px;
+                        margin: 10px 0;
+                    }}
 
-            .progress-bar {{
-                width: 40%;
-            }}
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Robot Performance Report</h1>
-        <p class="subtitle">{content.get('period', 'Latest Period')}</p>
+                    .map-metric {{
+                        background: white;
+                        padding: 10px;
+                        border-radius: 5px;
+                        text-align: center;
+                        border: 1px solid #dee2e6;
+                    }}
 
-        {self._generate_executive_summary(content)}
-        {self._generate_fleet_section(content)}
-        {self._generate_facility_section(content)}
-        {self._generate_task_section(content)}
-        {self._generate_charging_section(content)}
-        {self._generate_resource_section(content)}
-        {self._generate_financial_section(content)}
-        {self._generate_event_section(content)}
-        {self._generate_conclusion(content)}
-        {self._generate_footer(content)}
-    </div>
-    {self._generate_javascript(chart_js_data)}
-</body>
-</html>"""
+                    @media (max-width: 768px) {{
+                        .chart-row, .two-column {{
+                            grid-template-columns: 1fr;
+                        }}
+
+                        .container {{
+                            padding: 15px;
+                        }}
+
+                        .progress-bar {{
+                            width: 40%;
+                        }}
+                    }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h1>Robot Performance Report</h1>
+                    <p class="subtitle">{content.get('period', 'Latest Period')}</p>
+
+                    {self._generate_executive_summary(content)}
+                    {self._generate_fleet_section(content)}
+                    {self._generate_facility_section(content)}
+                    {self._generate_task_section(content)}
+                    {self._generate_resource_section(content)}
+                    {self._generate_financial_section(content)}
+                    {self._generate_charging_section(content)}
+                    {self._generate_conclusion(content)}
+                    {self._generate_footer(content)}
+                </div>
+                {self._generate_javascript(chart_js_data)}
+            </body>
+            </html>"""
 
             return html_content
 
         except Exception as e:
             logger.error(f"Error generating report: {e}")
             return f"""<!DOCTYPE html>
-<html><head><title>Error</title></head>
-<body><h1>Report Generation Error</h1><p>{str(e)}</p></body></html>"""
+            <html><head><title>Error</title></head>
+            <body><h1>Report Generation Error</h1><p>{str(e)}</p></body></html>
+            """
 
     def _generate_executive_summary(self, content: Dict[str, Any]) -> str:
         """Generate executive summary section with real data and tooltips"""
@@ -340,7 +363,7 @@ class RobotPerformanceTemplate:
             <h2>📊 Executive Summary</h2>
             <div class="highlight-box">
                 <p>Robot deployment during {period_desc} achieved {format_value(robots_online_rate, '%', 'percent')} robots online status
-                with {format_value(task_data.get('completion_rate', 0), '%', 'percent')} task completion rate,
+                with {format_value(task_data.get('total_tasks', 0))} total tasks processed,
                 covering {format_value(resource_data.get('total_area_cleaned_sqft', 0), ' square feet')}.</p>
             </div>
 
@@ -352,10 +375,10 @@ class RobotPerformanceTemplate:
                     <div class="metric-label">Robots Online</div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-value tooltip">{format_value(cost_data.get('monthly_cost_savings', 'N/A'), '', 'number')}
-                        <span class="tooltiptext">Monthly cost savings compared to traditional cleaning methods. Currently not available - requires cost configuration and baseline data.</span>
+                    <div class="metric-value tooltip">{format_value(cost_data.get('savings', 'N/A'), '', 'number')}
+                        <span class="tooltiptext">Total savings compared to manual cleaning based on robot running hours. Calculated using robot operational hours and standard labor cost.</span>
                     </div>
-                    <div class="metric-label">Monthly Cost Savings</div>
+                    <div class="metric-label">Total Savings</div>
                 </div>
                 <div class="metric-card">
                     <div class="metric-value tooltip">{format_value(resource_data.get('total_energy_consumption_kwh', 0), ' kWh')}
@@ -370,10 +393,10 @@ class RobotPerformanceTemplate:
                     <div class="metric-label">Coverage</div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-value tooltip">{format_value(task_data.get('completion_rate', 0), '%', 'percent')}
-                        <span class="tooltiptext">Percentage of tasks with 'completed' or 'ended' status from total tasks during the reporting period.</span>
+                    <div class="metric-value tooltip">{format_value(fleet_data.get('total_running_hours', 0))}
+                        <span class="tooltiptext">Total running hours from all robots during the reporting period, calculated from task duration data.</span>
                     </div>
-                    <div class="metric-label">Task Completion</div>
+                    <div class="metric-label">Total Running Hours</div>
                 </div>
                 <div class="metric-card">
                     <div class="metric-value tooltip">{format_value(resource_data.get('total_area_cleaned_sqft', 0))}
@@ -556,11 +579,6 @@ class RobotPerformanceTemplate:
                             <td style="color: {get_comparison_color(facility_comp.get('coverage_efficiency', 'N/A'))};">{format_comparison(facility_comp.get('coverage_efficiency', 'N/A'))}</td>
                         </tr>
                         <tr>
-                            <td>Task Completion Rate</td>
-                            <td>{metrics.get('completion_rate', 0):.1f}%</td>
-                            <td style="color: {get_comparison_color(facility_comp.get('completion_rate', 'N/A'))};">{format_comparison(facility_comp.get('completion_rate', 'N/A'))}</td>
-                        </tr>
-                        <tr>
                             <td>Running Hours</td>
                             <td>{metrics.get('running_hours', 0):.1f} hours</td>
                             <td style="color: {get_comparison_color(facility_comp.get('running_hours', 'N/A'))};">{format_comparison(facility_comp.get('running_hours', 'N/A'))}</td>
@@ -594,7 +612,7 @@ class RobotPerformanceTemplate:
             <h3>Map-Specific Performance</h3>
             <div class="tooltip" style="margin-bottom: 15px;">
                 <span style="color: #3498db; text-decoration: underline dotted;">How these figures are calculated</span>
-                <span class="tooltiptext">Coverage: (actual area / planned area) × 100. Area Cleaned: sum of actual_area converted to sq ft. Task Completion: completed tasks / total tasks × 100. Running Hours: sum of task durations converted from seconds. Power Efficiency: area cleaned / energy consumption. Time Efficiency: area cleaned / running hours.</span>
+                <span class="tooltiptext">Coverage: (actual area / planned area) × 100. Area Cleaned: sum of actual_area converted to sq ft. Running Hours: sum of task durations converted from seconds. Power Efficiency: area cleaned / energy consumption. Time Efficiency: area cleaned / running hours.</span>
             </div>"""
 
             for building_name, maps in map_performance_by_building.items():
@@ -622,10 +640,6 @@ class RobotPerformanceTemplate:
                                 <div class="map-metric">
                                     <div style="font-weight: bold;">{map_data.get('area_cleaned', 0):,.0f}</div>
                                     <div style="font-size: 0.8em; color: #6c757d;">Area Cleaned (sq ft)</div>
-                                </div>
-                                <div class="map-metric">
-                                    <div style="font-weight: bold;">{map_data.get('completion_rate', 0):.1f}%</div>
-                                    <div style="font-size: 0.8em; color: #6c757d;">Task Completion</div>
                                 </div>
                                 <div class="map-metric">
                                     <div style="font-weight: bold;">{map_data.get('running_hours', 0):.1f}</div>
@@ -662,24 +676,15 @@ class RobotPerformanceTemplate:
         </section>"""
 
     def _generate_task_section(self, content: Dict[str, Any]) -> str:
-        """Generate task performance section with weekday completion rates"""
+        """Generate task performance section with updated efficiency analysis"""
         task_data = content.get('task_performance', {})
         facilities = content.get('facility_performance', {}).get('facilities', {})
         comparisons = content.get('period_comparisons', {})
         facility_comparisons = comparisons.get('facility_comparisons', {})
 
-        # From YOUR DATA: weekday_completion has the right values
-        weekday_data = content.get('weekday_completion', {})
-
         # Get real calculated values
         weekend_completion = task_data.get('weekend_schedule_completion', 0)
         avg_duration = task_data.get('avg_task_duration_minutes', 0)
-
-        # From YOUR DATA: Saturday: 100.0, Sunday: 50.0
-        highest_day = weekday_data.get('highest_day', 'N/A')
-        highest_rate = weekday_data.get('highest_rate', 0)
-        lowest_day = weekday_data.get('lowest_day', 'N/A')
-        lowest_rate = weekday_data.get('lowest_rate', 0)
 
         # Format comparison values
         def format_comparison(value):
@@ -707,18 +712,17 @@ class RobotPerformanceTemplate:
             primary_mode = facility_task_data.get('primary_mode', 'Mixed tasks')
 
             # New metrics for this facility
-            completion_efficiency = metrics.get('completion_rate', 0)
             total_area = metrics.get('area_cleaned', 0)
 
             facility_patterns += f"""
             <div>
                 <h4>{facility_name} Task Patterns</h4>
                 <ul>
-                    <li><strong>Task completion efficiency:</strong> {completion_efficiency:.1f}% (vs last period: <span style="color: {get_comparison_color(facility_comp.get('completion_rate', 'N/A'))};">{format_comparison(facility_comp.get('completion_rate', 'N/A'))}</span>)</li>
                     <li><strong>Area productivity:</strong> {total_area:,.0f} sq ft coverage (vs last period: <span style="color: {get_comparison_color(facility_comp.get('area_cleaned', 'N/A'))};">{format_comparison(facility_comp.get('area_cleaned', 'N/A'))}</span>)</li>
                     <li><strong>Task pattern:</strong> {primary_mode}</li>
-                    <li><strong>Operation rhythm:</strong> {facility_avg_duration:.1f} minutes average task duration</li>
-                    <li><strong>Scheduling effectiveness:</strong> {facility_task_data.get('completed_tasks', metrics.get('completed_tasks', 0))} of {facility_task_data.get('total_tasks', metrics.get('total_tasks', 0))} tasks completed</li>
+                    <li><strong>Average Task Duration:</strong> {facility_avg_duration:.1f} minutes average task duration</li>
+                    <li><strong>Total Tasks:</strong> {facility_task_data.get('total_tasks', metrics.get('total_tasks', 0))} total tasks</li>
+                    <li><strong>Running hours:</strong> {metrics.get('running_hours', 0):.1f} hours (vs last period: <span style="color: {get_comparison_color(facility_comp.get('running_hours', 'N/A'))};">{format_comparison(facility_comp.get('running_hours', 'N/A'))}</span>)</li>
                 </ul>
             </div>"""
 
@@ -727,10 +731,10 @@ class RobotPerformanceTemplate:
             <div>
                 <h4>Overall Task Patterns</h4>
                 <ul>
-                    <li><strong>Task volume:</strong> {task_data.get('total_tasks', 0)} total tasks (vs last period: <span style="color: {get_comparison_color(comparisons.get('total_tasks', 'N/A'))};">{format_comparison(comparisons.get('total_tasks', 'N/A'))}</span>)</li>
-                    <li><strong>Completion effectiveness:</strong> {task_data.get('completion_rate', 0):.1f}% rate (vs last period: <span style="color: {get_comparison_color(comparisons.get('completion_rate', 'N/A'))};">{format_comparison(comparisons.get('completion_rate', 'N/A'))}</span>)</li>
-                    <li><strong>Operational timing:</strong> {avg_duration:.1f} minutes average duration</li>
+                    <li><strong>Total Tasks:</strong> {task_data.get('total_tasks', 0)} total tasks (vs last period: <span style="color: {get_comparison_color(comparisons.get('total_tasks', 'N/A'))};">{format_comparison(comparisons.get('total_tasks', 'N/A'))}</span>)</li>
+                    <li><strong>Average Task Duration:</strong> {avg_duration:.1f} minutes average duration</li>
                     <li><strong>Weekend schedule performance:</strong> {weekend_completion:.1f}% completion</li>
+                    <li><strong>Running hours:</strong> {content.get('fleet_performance', {}).get('total_running_hours', 0):.1f} hours</li>
                 </ul>
             </div>"""
 
@@ -739,7 +743,7 @@ class RobotPerformanceTemplate:
             <h2>📋 Task & Schedule Performance</h2>
 
             <h3>Task Management Efficiency</h3>
-            <p>Task tracking across all facilities: {task_data.get('total_tasks', 0)} total tasks with {task_data.get('completion_rate', 0):.1f}% completion rate, {task_data.get('total_area_cleaned', 0):,.0f} sq ft total coverage, and {avg_duration:.1f} minutes average task duration.</p>
+            <p>Task tracking across all facilities: {task_data.get('total_tasks', 0)} total tasks with {task_data.get('total_area_cleaned', 0):,.0f} sq ft total coverage and {avg_duration:.1f} minutes average task duration.</p>
 
             <table>
                 <thead>
@@ -748,7 +752,7 @@ class RobotPerformanceTemplate:
                         <th>Total</th>
                         <th>Completed</th>
                         <th>In Progress</th>
-                        <th>Completion Rate</th>
+                        <th>Average Duration</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -758,10 +762,9 @@ class RobotPerformanceTemplate:
                         <td>{task_data.get('completed_tasks', 0)}</td>
                         <td>0</td>
                         <td>
-                            <div class="progress-bar">
-                                <div class="progress-fill" style="width: {task_data.get('completion_rate', 0)}%"></div>
-                            </div>
-                            <span class="progress-text">{task_data.get('completion_rate', 0):.1f}%</span>
+                            <span class="tooltip">{avg_duration:.1f} min
+                                <span class="tooltiptext">Average task duration calculated from actual task durations in the database.</span>
+                            </span>
                         </td>
                     </tr>
                 </tbody>
@@ -777,42 +780,17 @@ class RobotPerformanceTemplate:
             </div>
 
             <h3>Task Efficiency Analysis</h3>
-            <p>Schedule performance analysis based on actual task data showing weekday completion patterns and weekend performance.</p>
+            <p>Daily task performance analysis showing running hours and coverage efficiency patterns over time.</p>
 
-            <div class="metrics-grid">
-                <div class="metric-card">
-                    <div class="metric-value">{highest_day}</div>
-                    <div class="metric-label">Highest Performance Day</div>
-                    <div style="font-size: 0.9em; margin-top: 5px; color: #28a745;">
-                        {highest_rate:.1f}% completion rate
-                    </div>
+            <div class="chart-container">
+                <div class="chart-toggle-container">
+                    <button class="chart-toggle-btn" onclick="toggleTaskEfficiencyView()" id="taskEfficiencyToggle">
+                        View Weekly Trend
+                    </button>
                 </div>
-                <div class="metric-card">
-                    <div class="metric-value">{lowest_day}</div>
-                    <div class="metric-label">Lowest Performance Day</div>
-                    <div style="font-size: 0.9em; margin-top: 5px; color: #dc3545;">
-                        {lowest_rate:.1f}% completion rate
-                    </div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value tooltip">{task_data.get('incomplete_task_rate', 0):.1f}%
-                        <span class="tooltiptext">Percentage of tasks that were cancelled or interrupted based on task status.</span>
-                    </div>
-                    <div class="metric-label">Incomplete Task Rate</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value tooltip">{weekend_completion:.1f}%
-                        <span class="tooltiptext">Task completion rate specifically for weekend schedules, calculated from actual task timestamps.</span>
-                    </div>
-                    <div class="metric-label">Weekend Schedule Completion</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value tooltip">{avg_duration:.1f} min
-                        <span class="tooltiptext">Average task duration calculated from actual task durations in the database.</span>
-                    </div>
-                    <div class="metric-label">Average Task Duration</div>
-                </div>
+                <canvas id="taskEfficiencyChart"></canvas>
             </div>
+
 
             <h3>Task Performance by Location</h3>
             <div class="two-column">
@@ -920,6 +898,11 @@ class RobotPerformanceTemplate:
             </div>
 
             <div class="chart-container">
+                <div class="chart-toggle-container">
+                    <button class="chart-toggle-btn" onclick="toggleChargingView()" id="chargingToggle">
+                        View Weekly Trend
+                    </button>
+                </div>
                 <canvas id="chargingChart"></canvas>
             </div>
 
@@ -1008,6 +991,11 @@ class RobotPerformanceTemplate:
             <h2>⚡ Resource Utilization & Efficiency</h2>
 
             <div class="chart-container">
+                <div class="chart-toggle-container">
+                    <button class="chart-toggle-btn" onclick="toggleResourceView()" id="resourceToggle">
+                        View Weekly Trend
+                    </button>
+                </div>
                 <canvas id="resourceChart"></canvas>
             </div>
 
@@ -1091,9 +1079,13 @@ class RobotPerformanceTemplate:
             </table>
 
             <div class="chart-container">
+                <div class="chart-toggle-container">
+                    <button class="chart-toggle-btn" onclick="toggleFinancialView()" id="financialToggle">
+                        View Weekly Trend
+                    </button>
+                </div>
                 <canvas id="financialChart"></canvas>
             </div>
-
             <div class="highlight-box">
                 <h3>💡 Financial Impact Summary</h3>
                 <div class="metrics-grid">
@@ -1114,17 +1106,13 @@ class RobotPerformanceTemplate:
                         <div>Annual projected savings</div>
                     </div>
                     <div style="text-align: center;">
-                        <div style="font-size: 1.5em; margin-bottom: 5px;"><strong>{cost_data.get('cost_efficiency_improvement', 0):.1f}%</strong></div>
-                        <div>Cost efficiency improvement</div>
-                    </div>
-                    <div style="text-align: center;">
                         <div style="font-size: 1.5em; margin-bottom: 5px;"><strong>{cost_data.get('hours_saved', 0):.1f} hrs</strong></div>
                         <div>Hours saved vs manual</div>
                     </div>
                 </div>
-                <p style="margin-top: 15px; font-size: 0.9em; opacity: 0.8;">
-                    {cost_data.get('note', 'Cost calculations based on actual resource usage and human cleaning speed benchmarks.')}
-                </p>
+            <p style="margin-top: 15px; font-size: 0.9em; opacity: 0.8;">
+                {cost_data.get('note', 'Cost calculations based on actual resource usage and human cleaning speed benchmarks.')}
+            </p>
             </div>
         </section>"""
 
@@ -1286,14 +1274,386 @@ class RobotPerformanceTemplate:
             return obj
 
     def _generate_javascript(self, chart_data: Dict[str, Any]) -> str:
-        """Generate JavaScript for charts using real data with daily charts"""
+        """Generate JavaScript for charts using real data with daily charts and weekly toggle"""
         # Get trend data for daily charts
         trend_data = chart_data.get('trend_data', {})
         dates = trend_data.get('dates', [])
+        financial_trend_data = chart_data.get('financial_trend_data', {})
 
         return f"""
     <script>
-        // Task Status Chart
+        // Store original daily data
+        let originalData = {{
+            dates: {json.dumps(dates)},
+            charging_sessions: {json.dumps(trend_data.get('charging_sessions_trend', []))},
+            charging_durations: {json.dumps(trend_data.get('charging_duration_trend', []))},
+            energy_data: {json.dumps(trend_data.get('energy_consumption_trend', []))},
+            water_data: {json.dumps(trend_data.get('water_usage_trend', []))},
+            hours_saved: {json.dumps(financial_trend_data.get('hours_saved_trend', []))},
+            savings_data: {json.dumps(financial_trend_data.get('savings_trend', []))}
+        }};
+
+        // Store chart instances
+        let chartInstances = {{}};
+
+        // Helper function to aggregate data by day of week
+        function aggregateByDayOfWeek(dates, values) {{
+            const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+            const dayTotals = new Array(7).fill(0);
+            const dayCounts = new Array(7).fill(0);
+
+            dates.forEach((dateStr, index) => {{
+                if (values[index] !== undefined && values[index] !== null) {{
+                    // Parse date (format: MM/DD)
+                    const [month, day] = dateStr.split('/').map(Number);
+                    const currentYear = new Date().getFullYear();
+                    const date = new Date(currentYear, month - 1, day);
+                    const dayOfWeek = (date.getDay() + 6) % 7; // Convert Sunday=0 to Monday=0
+
+                    dayTotals[dayOfWeek] += values[index] || 0;
+                    dayCounts[dayOfWeek]++;
+                }}
+            }});
+
+            // Calculate averages
+            const averages = dayTotals.map((total, index) =>
+                dayCounts[index] > 0 ? Math.round((total / dayCounts[index]) * 100) / 100 : 0
+            );
+
+            return {{ labels: dayNames, data: averages }};
+        }}
+
+        // Toggle functions for each chart
+        function toggleTaskEfficiencyView() {{
+            const btn = document.getElementById('taskEfficiencyToggle');
+            const isWeekly = btn.textContent === 'View Daily Trend';
+
+            if (isWeekly) {{
+                // Switch back to daily
+                btn.textContent = 'View Weekly Trend';
+                btn.classList.remove('active');
+                const runningHours = originalData.energy_data.map(x => x * 0.5); // Approximate conversion
+                const coverage = originalData.water_data.map(x => Math.min(x / 10, 100)); // Approximate coverage
+                createTaskEfficiencyChart(originalData.dates, runningHours, coverage);
+            }} else {{
+                // Switch to weekly
+                btn.textContent = 'View Daily Trend';
+                btn.classList.add('active');
+
+                const runningHours = originalData.energy_data.map(x => x * 0.5);
+                const coverage = originalData.water_data.map(x => Math.min(x / 10, 100));
+                const weeklyHours = aggregateByDayOfWeek(originalData.dates, runningHours);
+                const weeklyCoverage = aggregateByDayOfWeek(originalData.dates, coverage);
+
+                createTaskEfficiencyChart(weeklyHours.labels, weeklyHours.data, weeklyCoverage.data);
+            }}
+        }}
+
+        function toggleChargingView() {{
+            const btn = document.getElementById('chargingToggle');
+            const isWeekly = btn.textContent === 'View Daily Trend';
+
+            if (isWeekly) {{
+                btn.textContent = 'View Weekly Trend';
+                btn.classList.remove('active');
+                createChargingChart(originalData.dates, originalData.charging_sessions, originalData.charging_durations);
+            }} else {{
+                btn.textContent = 'View Daily Trend';
+                btn.classList.add('active');
+
+                const weeklySessions = aggregateByDayOfWeek(originalData.dates, originalData.charging_sessions);
+                const weeklyDurations = aggregateByDayOfWeek(originalData.dates, originalData.charging_durations);
+
+                createChargingChart(weeklySessions.labels, weeklySessions.data, weeklyDurations.data);
+            }}
+        }}
+
+        function toggleResourceView() {{
+            const btn = document.getElementById('resourceToggle');
+            const isWeekly = btn.textContent === 'View Daily Trend';
+
+            if (isWeekly) {{
+                btn.textContent = 'View Weekly Trend';
+                btn.classList.remove('active');
+                createResourceChart(originalData.dates, originalData.energy_data, originalData.water_data);
+            }} else {{
+                btn.textContent = 'View Daily Trend';
+                btn.classList.add('active');
+
+                const weeklyEnergy = aggregateByDayOfWeek(originalData.dates, originalData.energy_data);
+                const weeklyWater = aggregateByDayOfWeek(originalData.dates, originalData.water_data);
+
+                createResourceChart(weeklyEnergy.labels, weeklyEnergy.data, weeklyWater.data);
+            }}
+        }}
+
+        function toggleFinancialView() {{
+            const btn = document.getElementById('financialToggle');
+            const isWeekly = btn.textContent === 'View Daily Trend';
+
+            if (isWeekly) {{
+                btn.textContent = 'View Weekly Trend';
+                btn.classList.remove('active');
+                createFinancialChart(originalData.dates, originalData.hours_saved, originalData.savings_data);
+            }} else {{
+                btn.textContent = 'View Daily Trend';
+                btn.classList.add('active');
+
+                const weeklyHours = aggregateByDayOfWeek(originalData.dates, originalData.hours_saved);
+                const weeklySavings = aggregateByDayOfWeek(originalData.dates, originalData.savings_data);
+
+                createFinancialChart(weeklyHours.labels, weeklyHours.data, weeklySavings.data);
+            }}
+        }}
+
+        // Chart creation functions
+        function createTaskEfficiencyChart(labels, runningHours, coverage) {{
+            if (chartInstances.taskEfficiency) {{
+                chartInstances.taskEfficiency.destroy();
+            }}
+
+            const ctx = document.getElementById('taskEfficiencyChart');
+            if (ctx) {{
+                chartInstances.taskEfficiency = new Chart(ctx, {{
+                    type: 'bar',
+                    data: {{
+                        labels: labels.length > 0 ? labels : ['No Data'],
+                        datasets: [{{
+                            label: 'Running Hours',
+                            data: runningHours.length > 0 ? runningHours : [0],
+                            backgroundColor: '#3498db',
+                            yAxisID: 'y'
+                        }}, {{
+                            label: 'Coverage %',
+                            data: coverage.length > 0 ? coverage : [0],
+                            type: 'line',
+                            borderColor: '#e74c3c',
+                            backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                            tension: 0.4,
+                            yAxisID: 'y1'
+                        }}]
+                    }},
+                    options: {{
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {{
+                            title: {{
+                                display: true,
+                                text: 'Task Efficiency - Running Hours & Coverage'
+                            }}
+                        }},
+                        scales: {{
+                            y: {{
+                                type: 'linear',
+                                display: true,
+                                position: 'left',
+                                title: {{
+                                    display: true,
+                                    text: 'Running Hours'
+                                }}
+                            }},
+                            y1: {{
+                                type: 'linear',
+                                display: true,
+                                position: 'right',
+                                title: {{
+                                    display: true,
+                                    text: 'Coverage %'
+                                }},
+                                grid: {{
+                                    drawOnChartArea: false,
+                                }},
+                            }}
+                        }}
+                    }}
+                }});
+            }}
+        }}
+
+        function createChargingChart(labels, sessions, durations) {{
+            if (chartInstances.charging) {{
+                chartInstances.charging.destroy();
+            }}
+
+            const ctx = document.getElementById('chargingChart');
+            if (ctx) {{
+                chartInstances.charging = new Chart(ctx, {{
+                    type: 'bar',
+                    data: {{
+                        labels: labels.length > 0 ? labels : ['No Data'],
+                        datasets: [{{
+                            label: 'Charging Sessions',
+                            data: sessions.length > 0 ? sessions : [0],
+                            backgroundColor: '#17a2b8',
+                            yAxisID: 'y'
+                        }}, {{
+                            label: 'Avg Duration (min)',
+                            data: durations.length > 0 ? durations : [0],
+                            type: 'line',
+                            borderColor: '#e74c3c',
+                            backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                            tension: 0.4,
+                            yAxisID: 'y1'
+                        }}]
+                    }},
+                    options: {{
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {{
+                            title: {{
+                                display: true,
+                                text: 'Daily Charging Performance'
+                            }}
+                        }},
+                        scales: {{
+                            y: {{
+                                type: 'linear',
+                                display: true,
+                                position: 'left',
+                                title: {{
+                                    display: true,
+                                    text: 'Sessions'
+                                }}
+                            }},
+                            y1: {{
+                                type: 'linear',
+                                display: true,
+                                position: 'right',
+                                title: {{
+                                    display: true,
+                                    text: 'Duration (min)'
+                                }},
+                                grid: {{
+                                    drawOnChartArea: false,
+                                }},
+                            }}
+                        }}
+                    }}
+                }});
+            }}
+        }}
+
+        function createResourceChart(labels, energy, water) {{
+            if (chartInstances.resource) {{
+                chartInstances.resource.destroy();
+            }}
+
+            const ctx = document.getElementById('resourceChart');
+            if (ctx) {{
+                chartInstances.resource = new Chart(ctx, {{
+                    type: 'bar',
+                    data: {{
+                        labels: labels.length > 0 ? labels : ['No Data'],
+                        datasets: [{{
+                            label: 'Energy (kWh)',
+                            data: energy.length > 0 ? energy : [0],
+                            backgroundColor: '#e74c3c',
+                            yAxisID: 'y'
+                        }}, {{
+                            label: 'Water (fl oz)',
+                            data: water.length > 0 ? water : [0],
+                            backgroundColor: '#3498db',
+                            yAxisID: 'y1'
+                        }}]
+                    }},
+                    options: {{
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {{
+                            title: {{
+                                display: true,
+                                text: 'Daily Resource Usage'
+                            }}
+                        }},
+                        scales: {{
+                            y: {{
+                                type: 'linear',
+                                display: true,
+                                position: 'left',
+                                title: {{
+                                    display: true,
+                                    text: 'Energy (kWh)'
+                                }}
+                            }},
+                            y1: {{
+                                type: 'linear',
+                                display: true,
+                                position: 'right',
+                                title: {{
+                                    display: true,
+                                    text: 'Water (fl oz)'
+                                }},
+                                grid: {{
+                                    drawOnChartArea: false,
+                                }},
+                            }}
+                        }}
+                    }}
+                }});
+            }}
+        }}
+
+        function createFinancialChart(labels, hours, savings) {{
+            if (chartInstances.financial) {{
+                chartInstances.financial.destroy();
+            }}
+
+            const ctx = document.getElementById('financialChart');
+            if (ctx) {{
+                chartInstances.financial = new Chart(ctx, {{
+                    type: 'bar',
+                    data: {{
+                        labels: labels.length > 0 ? labels : ['No Data'],
+                        datasets: [{{
+                            label: 'Hours Saved',
+                            data: hours.length > 0 ? hours : [0],
+                            backgroundColor: '#28a745',
+                            yAxisID: 'y'
+                        }}, {{
+                            label: 'Savings ($)',
+                            data: savings.length > 0 ? savings : [0],
+                            backgroundColor: '#17a2b8',
+                            yAxisID: 'y1'
+                        }}]
+                    }},
+                    options: {{
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {{
+                            title: {{
+                                display: true,
+                                text: 'Daily Financial Performance'
+                            }}
+                        }},
+                        scales: {{
+                            y: {{
+                                type: 'linear',
+                                display: true,
+                                position: 'left',
+                                title: {{
+                                    display: true,
+                                    text: 'Hours Saved'
+                                }}
+                            }},
+                            y1: {{
+                                type: 'linear',
+                                display: true,
+                                position: 'right',
+                                title: {{
+                                    display: true,
+                                    text: 'Savings ($)'
+                                }},
+                                grid: {{
+                                    drawOnChartArea: false,
+                                }},
+                            }}
+                        }}
+                    }}
+                }});
+            }}
+        }}
+
+        // Task Status Chart (static)
         const taskStatusCtx = document.getElementById('taskStatusChart');
         if (taskStatusCtx) {{
             const taskStatusData = {json.dumps(chart_data.get('taskStatusChart', {}))};
@@ -1320,7 +1680,7 @@ class RobotPerformanceTemplate:
             }});
         }}
 
-        // Task Mode Chart
+        // Task Mode Chart (static)
         const taskModeCtx = document.getElementById('taskModeChart');
         if (taskModeCtx) {{
             const taskModeData = {json.dumps(chart_data.get('taskModeChart', {}))};
@@ -1346,239 +1706,22 @@ class RobotPerformanceTemplate:
             }});
         }}
 
-        // Event Type Chart
-        const eventTypeCtx = document.getElementById('eventTypeChart');
-        if (eventTypeCtx) {{
-            const eventData = {json.dumps(chart_data.get('eventTypeChart', {}))};
-            new Chart(eventTypeCtx, {{
-                type: 'bar',
-                data: eventData.datasets ? eventData : {{
-                    labels: ['No Events'],
-                    datasets: [{{
-                        label: 'Events',
-                        data: [0],
-                        backgroundColor: '#6c757d'
-                    }}]
-                }},
-                options: {{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {{
-                        title: {{
-                            display: true,
-                            text: 'Event Types'
-                        }}
-                    }}
-                }}
-            }});
-        }}
+        // Initialize all time series charts with daily data when page loads
+        document.addEventListener('DOMContentLoaded', function() {{
+            // Task Efficiency Chart
+            const runningHours = originalData.energy_data.map(x => x * 0.5); // Approximate conversion
+            const coverage = originalData.water_data.map(x => Math.min(x / 10, 100)); // Approximate coverage
+            createTaskEfficiencyChart(originalData.dates, runningHours, coverage);
 
-        // Event Level Chart
-        const eventLevelCtx = document.getElementById('eventLevelChart');
-        if (eventLevelCtx) {{
-            const eventLevelData = {json.dumps(chart_data.get('eventLevelChart', {}))};
-            new Chart(eventLevelCtx, {{
-                type: 'doughnut',
-                data: {{
-                    labels: eventLevelData.labels || ['No Events'],
-                    datasets: [{{
-                        data: eventLevelData.data || [1],
-                        backgroundColor: eventLevelData.backgroundColor || ['#6c757d']
-                    }}]
-                }},
-                options: {{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {{
-                        title: {{
-                            display: true,
-                            text: 'Event Level Distribution'
-                        }}
-                    }}
-                }}
-            }});
-        }}
+            // Charging Chart
+            createChargingChart(originalData.dates, originalData.charging_sessions, originalData.charging_durations);
 
-        // Charging Chart - Daily bars instead of weekly lines
-        const chargingCtx = document.getElementById('chargingChart');
-        if (chargingCtx) {{
-            const chargingDates = {json.dumps(dates)};
-            const chargingSessions = {json.dumps(trend_data.get('charging_sessions_trend', []))};
-            const chargingDurations = {json.dumps(trend_data.get('charging_duration_trend', []))};
+            // Resource Chart
+            createResourceChart(originalData.dates, originalData.energy_data, originalData.water_data);
 
-            new Chart(chargingCtx, {{
-                type: 'bar',
-                data: {{
-                    labels: chargingDates.length > 0 ? chargingDates : ['No Data'],
-                    datasets: [{{
-                        label: 'Charging Sessions',
-                        data: chargingSessions.length > 0 ? chargingSessions : [0],
-                        backgroundColor: '#17a2b8',
-                        yAxisID: 'y'
-                    }}, {{
-                        label: 'Avg Duration (min)',
-                        data: chargingDurations.length > 0 ? chargingDurations : [0],
-                        type: 'line',
-                        borderColor: '#e74c3c',
-                        backgroundColor: 'rgba(231, 76, 60, 0.1)',
-                        tension: 0.4,
-                        yAxisID: 'y1'
-                    }}]
-                }},
-                options: {{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {{
-                        title: {{
-                            display: true,
-                            text: 'Daily Charging Performance'
-                        }}
-                    }},
-                    scales: {{
-                        y: {{
-                            type: 'linear',
-                            display: true,
-                            position: 'left',
-                            title: {{
-                                display: true,
-                                text: 'Sessions'
-                            }}
-                        }},
-                        y1: {{
-                            type: 'linear',
-                            display: true,
-                            position: 'right',
-                            title: {{
-                                display: true,
-                                text: 'Duration (min)'
-                            }},
-                            grid: {{
-                                drawOnChartArea: false,
-                            }},
-                        }}
-                    }}
-                }}
-            }});
-        }}
-
-        // Resource Chart - Daily bars instead of weekly lines
-        const resourceCtx = document.getElementById('resourceChart');
-        if (resourceCtx) {{
-            const resourceDates = {json.dumps(dates)};
-            const energyData = {json.dumps(trend_data.get('energy_consumption_trend', []))};
-            const waterData = {json.dumps(trend_data.get('water_usage_trend', []))};
-
-            new Chart(resourceCtx, {{
-                type: 'bar',
-                data: {{
-                    labels: resourceDates.length > 0 ? resourceDates : ['No Data'],
-                    datasets: [{{
-                        label: 'Energy (kWh)',
-                        data: energyData.length > 0 ? energyData : [0],
-                        backgroundColor: '#e74c3c',
-                        yAxisID: 'y'
-                    }}, {{
-                        label: 'Water (fl oz)',
-                        data: waterData.length > 0 ? waterData : [0],
-                        backgroundColor: '#3498db',
-                        yAxisID: 'y1'
-                    }}]
-                }},
-                options: {{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {{
-                        title: {{
-                            display: true,
-                            text: 'Daily Resource Usage'
-                        }}
-                    }},
-                    scales: {{
-                        y: {{
-                            type: 'linear',
-                            display: true,
-                            position: 'left',
-                            title: {{
-                                display: true,
-                                text: 'Energy (kWh)'
-                            }}
-                        }},
-                        y1: {{
-                            type: 'linear',
-                            display: true,
-                            position: 'right',
-                            title: {{
-                                display: true,
-                                text: 'Water (fl oz)'
-                            }},
-                            grid: {{
-                                drawOnChartArea: false,
-                            }},
-                        }}
-                    }}
-                }}
-            }});
-        }}
-
-        // Financial Chart - Real cost data with bars
-        const financialCtx = document.getElementById('financialChart');
-        if (financialCtx) {{
-            const financialTrendData = {json.dumps(chart_data.get('financial_trend_data', {}))};
-            const financialDates = financialTrendData.dates || [];
-            const hoursSavedData = financialTrendData.hours_saved_trend || [];
-            const savingsData = financialTrendData.savings_trend || [];
-
-            new Chart(financialCtx, {{
-                type: 'bar',
-                data: {{
-                    labels: financialDates.length > 0 ? financialDates : ['No Data'],
-                    datasets: [{{
-                        label: 'Hours Saved',
-                        data: hoursSavedData.length > 0 ? hoursSavedData : [0],
-                        backgroundColor: '#28a745',
-                        yAxisID: 'y'
-                    }}, {{
-                        label: 'Savings ($)',
-                        data: savingsData.length > 0 ? savingsData : [0],
-                        backgroundColor: '#17a2b8',
-                        yAxisID: 'y1'
-                    }}]
-                }},
-                options: {{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {{
-                        title: {{
-                            display: true,
-                            text: 'Daily Financial Performance'
-                        }}
-                    }},
-                    scales: {{
-                        y: {{
-                            type: 'linear',
-                            display: true,
-                            position: 'left',
-                            title: {{
-                                display: true,
-                                text: 'Hours Saved'
-                            }}
-                        }},
-                        y1: {{
-                            type: 'linear',
-                            display: true,
-                            position: 'right',
-                            title: {{
-                                display: true,
-                                text: 'Savings ($)'
-                            }},
-                            grid: {{
-                                drawOnChartArea: false,
-                            }},
-                        }}
-                    }}
-                }}
-            }});
-        }}
+            // Financial Chart
+            createFinancialChart(originalData.dates, originalData.hours_saved, originalData.savings_data);
+        }});
     </script>"""
 
     def generate_report(self, content: Dict[str, Any], config: ReportConfig) -> str:

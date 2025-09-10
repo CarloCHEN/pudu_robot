@@ -685,10 +685,10 @@ class PerformanceMetricsCalculator:
             logger.info("Calculating real cost analysis metrics")
 
             # Constants
-            HOURLY_WAGE = 25.0  # USD per hour
-            COST_PER_FL_OZ_WATER = 0.0  # USD per fl oz (set to 0 as requested)
-            COST_PER_KWH = 0.0  # USD per kWh (set to 0 as requested)
-            HUMAN_CLEANING_SPEED = 1000.0  # sq ft per hour (typical human cleaning speed)
+            HOURLY_WAGE = 25   # USD per hour
+            COST_PER_FL_OZ_WATER = 0.0  # USD per fl oz (set to 0)
+            COST_PER_KWH = 0.0  # USD per kWh (set to 0)
+            HUMAN_CLEANING_SPEED = 8000.0  # sq ft per hour (typical human cleaning speed)
 
             # Get resource usage from metrics
             total_area_sqft = resource_metrics.get('total_area_cleaned_sqft', 0)
