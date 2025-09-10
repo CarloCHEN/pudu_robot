@@ -206,93 +206,185 @@ class ChartDataFormatter:
 
     def format_event_type_chart(self, event_metrics: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Format event types for bar chart
-
-        Args:
-            event_metrics: Event analysis metrics
-
-        Returns:
-            Chart.js compatible data structure
+        Format event types for bar chart with location breakdown
         """
         try:
+            logger.info(f"Formatting event type chart with keys: {list(event_metrics.keys())}")
+
+            # Check for exact breakdown data first
+            event_type_by_location = event_metrics.get('event_type_by_location', {})
+
+            if event_type_by_location:
+                logger.info(f"Using exact event breakdown: {event_type_by_location}")
+                return self._format_exact_breakdown(event_type_by_location)
+
+            # Fallback to proportional distribution
             event_types = event_metrics.get('event_types', {})
+            event_location_mapping = event_metrics.get('event_location_mapping', {})
 
-            # Get top event types
-            sorted_events = sorted(event_types.items(), key=lambda x: x[1], reverse=True)[:4]
-            labels = [item[0] for item in sorted_events]
-            data = [int(item[1]) for item in sorted_events]  # Convert to int
+            if event_types and event_location_mapping:
+                logger.info("Using proportional distribution fallback")
+                return self._format_proportional_breakdown(event_types, event_location_mapping)
 
-            return {
-                'labels': labels,
-                'datasets': [
-                    {
-                        'label': 'Marston Library',
-                        'data': [d // 2 for d in data],  # Split data between facilities
-                        'backgroundColor': '#3498db'
-                    },
-                    {
-                        'label': 'Dental Science Building',
-                        'data': [d - (d // 2) for d in data],
-                        'backgroundColor': '#e74c3c'
-                    }
-                ]
-            }
+            logger.warning("No event data available - using default chart")
+            return self._get_default_event_type_chart()
 
         except Exception as e:
             logger.error(f"Error formatting event type chart: {e}")
-            return {
-                'labels': ['Brush Error', 'Lost Localization', 'Drop Detection', 'Odom Slip'],
-                'datasets': [
-                    {
-                        'label': 'Marston Library',
-                        'data': [0, 1, 8, 4],
-                        'backgroundColor': '#3498db'
-                    },
-                    {
-                        'label': 'Dental Science Building',
-                        'data': [7, 1, 7, 4],
-                        'backgroundColor': '#e74c3c'
-                    }
-                ]
-            }
+            return self._get_default_event_type_chart()
+
+    def _format_exact_breakdown(self, event_type_by_location: Dict[str, Dict[str, int]]) -> Dict[str, Any]:
+        """Format using exact event type breakdown"""
+        # Get top 4 event types
+        total_by_type = {event_type: sum(locations.values())
+                         for event_type, locations in event_type_by_location.items()}
+
+        sorted_events = sorted(total_by_type.items(), key=lambda x: x[1], reverse=True)[:4]
+        event_labels = [event[0] for event in sorted_events]
+
+        # Get all locations
+        all_locations = set()
+        for locations in event_type_by_location.values():
+            all_locations.update(locations.keys())
+
+        location_list = sorted([loc for loc in all_locations if loc != 'Unknown Building'])
+
+        # Create datasets
+        datasets = []
+        colors = ['#3498db', '#e74c3c', '#2ecc71', '#f39c12']
+
+        for i, location in enumerate(location_list):
+            data = []
+            for event_type in event_labels:
+                count = event_type_by_location.get(event_type, {}).get(location, 0)
+                data.append(count)
+
+            datasets.append({
+                'label': location,
+                'data': data,
+                'backgroundColor': colors[i % len(colors)]
+            })
+
+        return {
+            'labels': event_labels,
+            'datasets': datasets
+        }
+
+    def _format_proportional_breakdown(self, event_types: Dict[str, int],
+                                      event_location_mapping: Dict[str, Dict[str, int]]) -> Dict[str, Any]:
+        """Format using proportional distribution"""
+        # Get top 4 event types
+        sorted_events = sorted(event_types.items(), key=lambda x: x[1], reverse=True)[:4]
+        event_labels = [event[0] for event in sorted_events]
+
+        # Get locations
+        locations = [loc for loc in event_location_mapping.keys() if loc != 'Unknown Building']
+
+        total_all_events = sum(loc_data['total_events'] for loc_data in event_location_mapping.values())
+
+        datasets = []
+        colors = ['#3498db', '#e74c3c', '#2ecc71', '#f39c12']
+
+        for i, location in enumerate(locations):
+            data = []
+            location_total = event_location_mapping[location]['total_events']
+            location_proportion = location_total / total_all_events if total_all_events > 0 else 0
+
+            for event_type, total_count in sorted_events:
+                estimated_count = int(total_count * location_proportion)
+                data.append(estimated_count)
+
+            datasets.append({
+                'label': location,
+                'data': data,
+                'backgroundColor': colors[i % len(colors)]
+            })
+
+        return {
+            'labels': event_labels,
+            'datasets': datasets
+        }
 
     def format_event_level_chart(self, event_metrics: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Format event levels for pie chart - rename 'fatal' to 'Critical'
+        """
         try:
             event_levels = event_metrics.get('event_levels', {})
 
-            # Standard order for event levels with corrected colors
-            level_order = ['critical', 'error', 'warning', 'info']
-            labels = []
-            data = []
-            colors = ['#dc3545', '#fd7e14', '#ffc107', '#007bff']  # Red, Orange, Yellow, Blue
-
-            for level in level_order:
-                if level in event_levels:
-                    labels.append(level.capitalize())
-                    data.append(int(event_levels[level]))
-
-            # Ensure all levels are included even if zero
-            if not labels:
-                labels = ['Critical', 'Error', 'Warning', 'Events']
-                data = [0, 0, 0, 0]
-
-            return {
-                'labels': labels,
-                'data': data,
-                'backgroundColor': colors[:len(data)],
-                'borderWidth': 2,
-                'borderColor': '#fff'
+            # Map levels and rename fatal to Critical
+            level_mapping = {
+                'fatal': 'Critical',
+                'critical': 'Critical',
+                'error': 'Error',
+                'warning': 'Warning',
+                'info': 'Event'
             }
+
+            # Colors for each level
+            level_colors = {
+                'Critical': '#dc3545',  # Red
+                'Error': '#fd7e14',     # Orange
+                'Warning': '#ffc107',   # Yellow
+                'Info': '#007bff'       # Blue
+            }
+
+            # Process the levels
+            processed_levels = {}
+
+            for level, count in event_levels.items():
+                mapped_level = level_mapping.get(level.lower(), level.capitalize())
+
+                if mapped_level in processed_levels:
+                    processed_levels[mapped_level] += count
+                else:
+                    processed_levels[mapped_level] = count
+
+            # Create the chart data
+            if processed_levels:
+                # Sort by count (descending) for better visual presentation
+                sorted_levels = sorted(processed_levels.items(), key=lambda x: x[1], reverse=True)
+
+                labels = [level for level, count in sorted_levels]
+                data = [int(count) for level, count in sorted_levels]
+                colors = [level_colors.get(level, '#6c757d') for level in labels]
+
+                return {
+                    'labels': labels,
+                    'data': data,
+                    'backgroundColor': colors,
+                    'borderWidth': 2,
+                    'borderColor': '#fff'
+                }
+            else:
+                return {
+                    'labels': ['No Events'],
+                    'data': [1],
+                    'backgroundColor': ['#6c757d'],
+                    'borderWidth': 2,
+                    'borderColor': '#fff'
+                }
 
         except Exception as e:
             logger.error(f"Error formatting event level chart: {e}")
             return {
-                'labels': ['Critical', 'Error', 'Warning', 'Info'],
-                'data': [0, 8, 23, 147],
-                'backgroundColor': ['#6c757d', '#dc3545', '#ffc107', '#28a745'],
+                'labels': ['No Events'],
+                'data': [1],
+                'backgroundColor': ['#6c757d'],
                 'borderWidth': 2,
                 'borderColor': '#fff'
             }
+
+    def _get_default_event_type_chart(self) -> Dict[str, Any]:
+        """Return default event type chart when no data available"""
+        return {
+            'labels': ['No Event Data'],
+            'datasets': [{
+                'label': 'No Data Available',
+                'data': [1],
+                'backgroundColor': '#6c757d'
+            }]
+        }
 
     def format_all_chart_data(self, metrics: Dict[str, Any]) -> Dict[str, Any]:
         """Format all chart data for the comprehensive report"""
@@ -304,14 +396,26 @@ class ChartDataFormatter:
             event_metrics = metrics.get('event_analysis', {})
             trend_data = metrics.get('trend_data', {})
 
+            # Include event_type_by_location in event_metrics for chart formatting
+            event_type_by_location = metrics.get('event_type_by_location', {})
+            event_location_mapping = metrics.get('event_location_mapping', {})
+
+            # Combine event data for chart formatting
+            enhanced_event_metrics = event_metrics.copy()
+            enhanced_event_metrics['event_type_by_location'] = event_type_by_location
+            enhanced_event_metrics['event_location_mapping'] = event_location_mapping
+
+            logger.info(f"Enhanced event metrics keys: {list(enhanced_event_metrics.keys())}")
+            logger.info(f"Event type by location in chart data: {bool(event_type_by_location)}")
+
             chart_data = {
                 'taskStatusChart': self.format_task_status_chart(task_metrics),
                 'taskModeChart': self.format_task_mode_chart(task_metrics),
-                'eventTypeChart': self.format_event_type_chart(event_metrics),
-                'eventLevelChart': self.format_event_level_chart(event_metrics)
+                'eventTypeChart': self.format_event_type_chart(enhanced_event_metrics),
+                'eventLevelChart': self.format_event_level_chart(enhanced_event_metrics)
             }
 
-            # FIX: Add trend_data directly to chart_data for JavaScript access
+            # Add trend_data directly to chart_data for JavaScript access
             chart_data['trend_data'] = trend_data
 
             return chart_data

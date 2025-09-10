@@ -166,23 +166,6 @@ class RobotPerformanceTemplate:
         }}
 
         .progress-bar {{
-            flex: 1;
-            min-width: 100px;
-            height: 15px;
-            background: #e9ecef;
-            border-radius: 8px;
-            overflow: hidden;
-        }}
-
-        .progress-text {{
-            font-weight: bold;
-            color: #2c3e50;
-            white-space: nowrap;
-            min-width: 60px;
-            text-align: right;
-        }}
-
-        .progress-bar {{
             width: 60%;
             height: 15px;
             background: #e9ecef;
@@ -331,7 +314,12 @@ class RobotPerformanceTemplate:
 
     def _generate_executive_summary(self, content: Dict[str, Any]) -> str:
         """Generate executive summary section with real data and tooltips"""
-        exec_data = content.get('executive_summary', {})
+        # Access data from the ACTUAL structure shown in your metrics
+        fleet_data = content.get('fleet_performance', {})
+        task_data = content.get('task_performance', {})
+        resource_data = content.get('resource_utilization', {})
+        cost_data = content.get('cost_analysis', {})
+
         period_desc = content.get('period', 'the reporting period')
 
         # Handle N/A values gracefully
@@ -339,21 +327,21 @@ class RobotPerformanceTemplate:
             if value == 'N/A' or value is None:
                 return 'N/A'
             if format_type == "number":
-                return f"{value:,.0f}{suffix}" if isinstance(value, (int, float)) else f"{value}{suffix}"
+                return f"{value:,.1f}{suffix}" if isinstance(value, (int, float)) else f"{value}{suffix}"
             elif format_type == "percent":
                 return f"{value}%" if isinstance(value, (int, float)) else f"{value}"
             return str(value)
 
-        # Get robots online rate instead of fleet availability
-        robots_online_rate = exec_data.get('robots_online_rate', exec_data.get('fleet_availability_rate', 0))
+        # From YOUR DATA: fleet_performance.robots_online_rate = 100.0
+        robots_online_rate = fleet_data.get('robots_online_rate', 0)
 
         return f"""
         <section id="executive-summary">
             <h2>📊 Executive Summary</h2>
             <div class="highlight-box">
                 <p>Robot deployment during {period_desc} achieved {format_value(robots_online_rate, '%', 'percent')} robots online status
-                with {format_value(exec_data.get('task_completion_rate', 0), '%', 'percent')} task completion rate,
-                covering {format_value(exec_data.get('total_area_cleaned', 0), ' square feet')}.</p>
+                with {format_value(task_data.get('completion_rate', 0), '%', 'percent')} task completion rate,
+                covering {format_value(resource_data.get('total_area_cleaned_sqft', 0), ' square feet')}.</p>
             </div>
 
             <div class="metrics-grid">
@@ -364,31 +352,31 @@ class RobotPerformanceTemplate:
                     <div class="metric-label">Robots Online</div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-value tooltip">{format_value(exec_data.get('monthly_cost_savings', 'N/A'), '', 'number')}
+                    <div class="metric-value tooltip">{format_value(cost_data.get('monthly_cost_savings', 'N/A'), '', 'number')}
                         <span class="tooltiptext">Monthly cost savings compared to traditional cleaning methods. Currently not available - requires cost configuration and baseline data.</span>
                     </div>
                     <div class="metric-label">Monthly Cost Savings</div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-value tooltip">{format_value(exec_data.get('energy_saved_kwh', 0), ' kWh')}
+                    <div class="metric-value tooltip">{format_value(resource_data.get('total_energy_consumption_kwh', 0), ' kWh')}
                         <span class="tooltiptext">Total energy consumption calculated from task data consumption field during the reporting period.</span>
                     </div>
                     <div class="metric-label">Energy Used</div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-value tooltip">{format_value(exec_data.get('coverage_efficiency', 0), '%', 'percent')}
+                    <div class="metric-value tooltip">{format_value(task_data.get('coverage_efficiency', 0), '%', 'percent')}
                         <span class="tooltiptext">Coverage efficiency calculated as (actual area cleaned / planned area) × 100 from task performance data.</span>
                     </div>
                     <div class="metric-label">Coverage</div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-value tooltip">{format_value(exec_data.get('task_completion_rate', 0), '%', 'percent')}
+                    <div class="metric-value tooltip">{format_value(task_data.get('completion_rate', 0), '%', 'percent')}
                         <span class="tooltiptext">Percentage of tasks with 'completed' or 'ended' status from total tasks during the reporting period.</span>
                     </div>
                     <div class="metric-label">Task Completion</div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-value tooltip">{format_value(exec_data.get('total_area_cleaned', 0))}
+                    <div class="metric-value tooltip">{format_value(resource_data.get('total_area_cleaned_sqft', 0))}
                         <span class="tooltiptext">Total area cleaned in square feet, converted from actual_area field in task data (originally in square meters).</span>
                     </div>
                     <div class="metric-label">Sq Ft Cleaned</div>
@@ -397,22 +385,24 @@ class RobotPerformanceTemplate:
 
             <h3>🎯 Key Achievements</h3>
             <ul style="font-size: 1.1em; color: #2c3e50;">
-                <li>{format_value(exec_data.get('total_tasks', 0))} total tasks processed during reporting period</li>
-                <li>{format_value(exec_data.get('total_area_cleaned', 0))} square feet cleaned across all locations</li>
-                <li>{format_value(exec_data.get('total_robots', 0))} robots actively deployed and monitored</li>
-                <li>{format_value(exec_data.get('total_charging_sessions', 0))} charging sessions during the period</li>
+                <li>{format_value(task_data.get('total_tasks', 0))} total tasks processed during reporting period</li>
+                <li>{format_value(resource_data.get('total_area_cleaned_sqft', 0))} square feet cleaned across all locations</li>
+                <li>{format_value(fleet_data.get('total_robots', 0))} robots actively deployed and monitored</li>
+                <li>{format_value(content.get('charging_performance', {}).get('total_sessions', 0))} charging sessions during the period</li>
             </ul>
         </section>"""
 
     def _generate_fleet_section(self, content: Dict[str, Any]) -> str:
         """Generate fleet management section with tooltips and online/offline status"""
-        fleet_data = content.get('fleet_management', {})
+        fleet_data = content.get('fleet_performance', {})
         individual_robots = content.get('individual_robots', [])
         comparisons = content.get('period_comparisons', {})
 
-        # Get robots online rate instead of fleet availability
-        robots_online_rate = fleet_data.get('robots_online_rate', 0)
-        total_running_hours = fleet_data.get('total_running_hours', fleet_data.get('total_operational_hours', 0))
+        # From YOUR DATA: All values exist in fleet_performance
+        robots_online_rate = fleet_data.get('robots_online_rate', 0)  # 100.0
+        total_running_hours = fleet_data.get('total_running_hours', 0)  # 33.1
+        total_robots = fleet_data.get('total_robots', 0)  # 2
+        average_utilization = fleet_data.get('average_robot_utilization', 0)  # 16.6
 
         # Format comparison values with color coding
         def format_comparison(value):
@@ -434,7 +424,7 @@ class RobotPerformanceTemplate:
             for robot in individual_robots[:10]:  # Show top 10 robots
                 status_text = robot.get('status', 'Unknown')
                 status_class = robot.get('status_class', 'status-error')
-                running_hours = robot.get('running_hours', robot.get('operational_hours', 0))
+                running_hours = robot.get('running_hours', 0)
 
                 robot_rows += f"""
                 <tr>
@@ -448,8 +438,8 @@ class RobotPerformanceTemplate:
         if not robot_rows:
             robot_rows = '<tr><td colspan="5">No robot data available</td></tr>'
 
-        # Summarize key performance metrics instead of generic statements
-        performance_summary = f"Fleet includes {fleet_data.get('total_robots', 0)} robots with {robots_online_rate}% currently online, completing {fleet_data.get('completed_tasks', 0) if 'completed_tasks' in fleet_data else 'N/A'} tasks and accumulating {total_running_hours:,.0f} total running hours."
+        # Summarize key performance metrics
+        performance_summary = f"Fleet includes {total_robots} robots with {robots_online_rate}% currently online, accumulating {total_running_hours:,.1f} total running hours."
 
         return f"""
         <section id="fleet-management">
@@ -460,7 +450,7 @@ class RobotPerformanceTemplate:
 
             <div class="metrics-grid">
                 <div class="metric-card">
-                    <div class="metric-value">{fleet_data.get('total_robots', 0)}</div>
+                    <div class="metric-value">{total_robots}</div>
                     <div class="metric-label">Total Robots</div>
                 </div>
                 <div class="metric-card">
@@ -470,7 +460,7 @@ class RobotPerformanceTemplate:
                     <div class="metric-label">Robots Online</div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-value tooltip">{total_running_hours:,.0f}
+                    <div class="metric-value tooltip">{total_running_hours:,.1f}
                         <span class="tooltiptext">Total running hours calculated from task duration data (converted from seconds to hours) across all robots during the reporting period.</span>
                     </div>
                     <div class="metric-label">Total Running Hours</div>
@@ -479,10 +469,10 @@ class RobotPerformanceTemplate:
                     </div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-value tooltip">{fleet_data.get('average_robot_utilization', 0):.1f}
+                    <div class="metric-value tooltip">{average_utilization:.1f}
                         <span class="tooltiptext">Average running hours per robot calculated as total running hours divided by number of robots.</span>
                     </div>
-                    <div class="metric-label">Avg Utilization (hrs/robot)</div>
+                    <div class="metric-label">Avg Running Hours per Robot (hrs/robot)</div>
                 </div>
             </div>
 
@@ -504,10 +494,11 @@ class RobotPerformanceTemplate:
         </section>"""
 
     def _generate_facility_section(self, content: Dict[str, Any]) -> str:
-        """Generate facility performance section with efficiency metrics and map-specific performance"""
+        """Generate facility performance section with efficiency metrics and comparisons"""
         facilities = content.get('facility_performance', {}).get('facilities', {})
         facility_efficiency = content.get('facility_efficiency_metrics', {})
         map_performance_by_building = content.get('map_performance_by_building', {})
+
         comparisons = content.get('period_comparisons', {})
         facility_comparisons = comparisons.get('facility_comparisons', {})
 
@@ -525,22 +516,25 @@ class RobotPerformanceTemplate:
             else:
                 return '#6c757d'  # Gray for neutral
 
-        # Generate facility performance tables with new metrics
+        # Generate facility performance tables with REAL efficiency metrics
         facility_sections = ""
         for facility_name, metrics in facilities.items():
+            # FIX: Get facility comparisons (which now include efficiency comparisons)
             facility_comp = facility_comparisons.get(facility_name, {})
             facility_eff = facility_efficiency.get(facility_name, {})
 
-            # Calculate coverage (average if multiple tasks)
+            # Calculate coverage
             total_tasks = metrics.get('total_tasks', 0)
             coverage_eff = metrics.get('coverage_efficiency', 0)
-            # For display, show as average coverage since it's calculated from multiple tasks
-            avg_coverage = coverage_eff  # This is already an average from the calculation
+
+            # Get water and time efficiency WITH units
+            water_efficiency = facility_eff.get('water_efficiency', 0)
+            time_efficiency = facility_eff.get('time_efficiency', 0)
 
             facility_sections += f"""
             <div>
                 <h3>{facility_name}</h3>
-                <p>Performance metrics for {facility_name}: {total_tasks} total tasks, {metrics.get('area_cleaned', 0):,.0f} sq ft total area cleaned, {avg_coverage:.1f}% average coverage, {facility_eff.get('water_efficiency', 0):.1f} sq ft/fl oz water efficiency, and {facility_eff.get('time_efficiency', 0):.1f} sq ft/hour time efficiency.</p>
+                <p>Performance metrics for {facility_name}: {total_tasks} total tasks, {metrics.get('area_cleaned', 0):,.0f} sq ft total area cleaned, {coverage_eff:.1f}% average coverage, {water_efficiency:.1f} sq ft/fl oz water efficiency, and {time_efficiency:.1f} sq ft/hour time efficiency.</p>
 
                 <table>
                     <thead>
@@ -558,7 +552,7 @@ class RobotPerformanceTemplate:
                         </tr>
                         <tr>
                             <td>Average Coverage</td>
-                            <td>{avg_coverage:.1f}%</td>
+                            <td>{coverage_eff:.1f}%</td>
                             <td style="color: {get_comparison_color(facility_comp.get('coverage_efficiency', 'N/A'))};">{format_comparison(facility_comp.get('coverage_efficiency', 'N/A'))}</td>
                         </tr>
                         <tr>
@@ -568,7 +562,7 @@ class RobotPerformanceTemplate:
                         </tr>
                         <tr>
                             <td>Running Hours</td>
-                            <td>{metrics.get('running_hours', metrics.get('operating_hours', 0)):.1f} hours</td>
+                            <td>{metrics.get('running_hours', 0):.1f} hours</td>
                             <td style="color: {get_comparison_color(facility_comp.get('running_hours', 'N/A'))};">{format_comparison(facility_comp.get('running_hours', 'N/A'))}</td>
                         </tr>
                         <tr>
@@ -578,13 +572,13 @@ class RobotPerformanceTemplate:
                         </tr>
                         <tr>
                             <td>Water Efficiency</td>
-                            <td>{facility_eff.get('water_efficiency', 0):.1f} sq ft/fl oz</td>
-                            <td>N/A</td>
+                            <td>{water_efficiency:.1f} sq ft/fl oz</td>
+                            <td style="color: {get_comparison_color(facility_comp.get('water_efficiency', 'N/A'))};">{format_comparison(facility_comp.get('water_efficiency', 'N/A'))}</td>
                         </tr>
                         <tr>
                             <td>Time Efficiency</td>
-                            <td>{facility_eff.get('time_efficiency', 0):.1f} sq ft/hour</td>
-                            <td>N/A</td>
+                            <td>{time_efficiency:.1f} sq ft/hr</td>
+                            <td style="color: {get_comparison_color(facility_comp.get('time_efficiency', 'N/A'))};">{format_comparison(facility_comp.get('time_efficiency', 'N/A'))}</td>
                         </tr>
                     </tbody>
                 </table>
@@ -593,7 +587,7 @@ class RobotPerformanceTemplate:
         if not facility_sections:
             facility_sections = '<div><p>No facility-specific data available</p></div>'
 
-        # Generate map-specific performance section
+        # Generate map-specific performance section using YOUR REAL DATA
         map_sections = ""
         if map_performance_by_building:
             map_sections = """
@@ -604,7 +598,7 @@ class RobotPerformanceTemplate:
             </div>"""
 
             for building_name, maps in map_performance_by_building.items():
-                if maps:  # Only show buildings that have maps
+                if maps and len(maps) > 0:  # Only show buildings that have maps
                     map_sections += f"""
                     <div class="map-section">
                         <h4>{building_name} Maps</h4>
@@ -639,11 +633,11 @@ class RobotPerformanceTemplate:
                                 </div>
                                 <div class="map-metric">
                                     <div style="font-weight: bold;">{map_data.get('power_efficiency', 0):.0f}</div>
-                                    <div style="font-size: 0.8em; color: #6c757d;">Power Efficiency</div>
+                                    <div style="font-size: 0.8em; color: #6c757d;">Power Efficiency (sq ft/kWh)</div>
                                 </div>
                                 <div class="map-metric">
                                     <div style="font-weight: bold;">{map_data.get('time_efficiency', 0):.0f}</div>
-                                    <div style="font-size: 0.8em; color: #6c757d;">Time Efficiency</div>
+                                    <div style="font-size: 0.8em; color: #6c757d;">Time Efficiency (sq ft/hr)</div>
                                 </div>
                             </div>
                         </div>"""
@@ -673,16 +667,18 @@ class RobotPerformanceTemplate:
         facilities = content.get('facility_performance', {}).get('facilities', {})
         comparisons = content.get('period_comparisons', {})
         facility_comparisons = comparisons.get('facility_comparisons', {})
+
+        # From YOUR DATA: weekday_completion has the right values
         weekday_data = content.get('weekday_completion', {})
 
         # Get real calculated values
         weekend_completion = task_data.get('weekend_schedule_completion', 0)
         avg_duration = task_data.get('avg_task_duration_minutes', 0)
 
-        # Get weekday completion data
-        highest_day = weekday_data.get('highest_day', 'Monday')
+        # From YOUR DATA: Saturday: 100.0, Sunday: 50.0
+        highest_day = weekday_data.get('highest_day', 'N/A')
         highest_rate = weekday_data.get('highest_rate', 0)
-        lowest_day = weekday_data.get('lowest_day', 'Sunday')
+        lowest_day = weekday_data.get('lowest_day', 'N/A')
         lowest_rate = weekday_data.get('lowest_rate', 0)
 
         # Format comparison values
@@ -878,53 +874,6 @@ class RobotPerformanceTemplate:
                 </tbody>
             </table>"""
         else:
-            # Fallback if no facility-specific charging data
-            facilities = content.get('facility_performance', {}).get('facilities', {})
-            if facilities:
-                total_sessions = charging_data.get('total_sessions', 0)
-                facility_count = len(facilities)
-
-                if facility_count > 0:
-                    sessions_per_facility = total_sessions // facility_count
-                    remaining_sessions = total_sessions % facility_count
-
-                    charging_by_location = """
-                    <h3>Charging Patterns by Location</h3>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Location</th>
-                                <th>Total Sessions</th>
-                                <th>Avg Duration</th>
-                                <th>Median Duration</th>
-                                <th>Avg Power Gain</th>
-                                <th>Median Power Gain</th>
-                            </tr>
-                        </thead>
-                        <tbody>"""
-
-                    for i, facility_name in enumerate(facilities.keys()):
-                        sessions = sessions_per_facility + (1 if i < remaining_sessions else 0)
-                        avg_duration = charging_data.get('avg_charging_duration_minutes', 0)
-                        median_duration = charging_data.get('median_charging_duration_minutes', 0)
-                        avg_power_gain = charging_data.get('avg_power_gain_percent', 0)
-                        median_power_gain = charging_data.get('median_power_gain_percent', 0)
-
-                        charging_by_location += f"""
-                            <tr>
-                                <td>{facility_name}</td>
-                                <td>{sessions}</td>
-                                <td>{avg_duration:.1f} min</td>
-                                <td>{median_duration:.1f} min</td>
-                                <td>+{avg_power_gain:.1f}%</td>
-                                <td>+{median_power_gain:.1f}%</td>
-                            </tr>"""
-
-                    charging_by_location += """
-                        </tbody>
-                    </table>"""
-
-        if not charging_by_location:
             charging_by_location = "<h3>Charging Patterns by Location</h3><p>Location-specific charging data not available</p>"
 
         return f"""
@@ -1033,7 +982,7 @@ class RobotPerformanceTemplate:
                 <div>
                     <h4>Power Consumption Analysis</h4>
                     <ul>
-                        <li><strong>Total consumption:</strong> {total_energy:.1f} kWh
+                        <li><strong>Total consumption:</strong> {total_energy:.2f} kWh
                             <span style="color: {get_comparison_color(comparisons.get('energy_consumption', 'N/A'))};">
                                 (vs last period: {format_comparison(comparisons.get('energy_consumption', 'N/A'))})
                             </span>
@@ -1063,7 +1012,7 @@ class RobotPerformanceTemplate:
             </div>
 
             <h3>Resource Performance</h3>
-            <p>Resource utilization: {resource_data.get('total_energy_consumption_kwh', 0):.1f} kWh total energy consumption, {resource_data.get('total_water_consumption_floz', 0):.0f} fl oz total water usage, {resource_data.get('area_per_kwh', 0):.0f} sq ft per kWh energy efficiency, and {resource_data.get('area_per_gallon', 0):.0f} sq ft per gallon water efficiency.</p>
+            <p>Resource utilization: {resource_data.get('total_energy_consumption_kwh', 0):.2f} kWh total energy consumption, {resource_data.get('total_water_consumption_floz', 0):.0f} fl oz total water usage, {resource_data.get('area_per_kwh', 0):.0f} sq ft per kWh energy efficiency, and {resource_data.get('area_per_gallon', 0):.0f} sq ft per gallon water efficiency.</p>
 
             {facility_breakdown}
         </section>"""
@@ -1152,9 +1101,10 @@ class RobotPerformanceTemplate:
         </section>"""
 
     def _generate_event_section(self, content: Dict[str, Any]) -> str:
-        # ... existing code until location_analysis = ""
+        """Generate event analysis section with location mapping"""
+        event_data = content.get('event_analysis', {})
 
-        # REPLACE the location_analysis section with:
+        # Generate location analysis using real event location mapping
         location_analysis = ""
         event_location_mapping = content.get('event_location_mapping', {})
 
@@ -1173,7 +1123,7 @@ class RobotPerformanceTemplate:
                             <li><strong>Critical Events:</strong> {building_events['critical_events']}</li>
                             <li><strong>Error Events:</strong> {building_events['error_events']}</li>
                             <li><strong>Warning Events:</strong> {building_events['warning_events']}</li>
-                            <li><strong>Info Events:</strong> {building_events['info_events']}</li>
+                            <li><strong>Events:</strong> {building_events['info_events']}</li>
                         </ul>
                     </div>"""
 
@@ -1184,18 +1134,58 @@ class RobotPerformanceTemplate:
             <h3>Event Analysis by Location</h3>
             <p>No location-specific event data available</p>"""
 
+        return f"""
+        <section id="event-analysis">
+            <h2>⚠️ Event Analysis & System Health</h2>
+
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-value">{event_data.get('total_events', 0)}</div>
+                    <div class="metric-label">Total Events</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">{event_data.get('critical_events', 0)}</div>
+                    <div class="metric-label">Critical Events</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">{event_data.get('error_events', 0)}</div>
+                    <div class="metric-label">Error Events</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">{event_data.get('warning_events', 0)}</div>
+                    <div class="metric-label">Warning Events</div>
+                </div>
+            </div>
+
+            <div class="chart-row">
+                <div class="chart-small">
+                    <canvas id="eventTypeChart"></canvas>
+                </div>
+                <div class="chart-small">
+                    <canvas id="eventLevelChart"></canvas>
+                </div>
+            </div>
+
+            {location_analysis}
+        </section>"""
+
     def _generate_conclusion(self, content: Dict[str, Any]) -> str:
         """Generate conclusion section with key numbers summary"""
-        exec_data = content.get('executive_summary', {})
+        # Access data from correct sections
+        fleet_data = content.get('fleet_performance', {})
+        task_data = content.get('task_performance', {})
+        resource_data = content.get('resource_utilization', {})
+        charging_data = content.get('charging_performance', {})
+
         period = content.get('period', 'the reporting period')
 
         def format_value(value, suffix=""):
             if value == 'N/A' or value is None:
                 return 'N/A'
-            return f"{value:,.0f}{suffix}" if isinstance(value, (int, float)) else f"{value}{suffix}"
+            return f"{value:,.1f}{suffix}" if isinstance(value, (int, float)) else f"{value}{suffix}"
 
-        # Get robots online rate instead of fleet availability
-        robots_online_rate = exec_data.get('robots_online_rate', exec_data.get('fleet_availability_rate', 0))
+        # From YOUR DATA: fleet_performance.robots_online_rate = 100.0
+        robots_online_rate = fleet_data.get('robots_online_rate', 0)
 
         return f"""
         <section id="conclusion">
@@ -1203,13 +1193,13 @@ class RobotPerformanceTemplate:
 
             <div class="highlight-box">
                 <p>{period.title()} performance summary: {format_value(robots_online_rate, '%')} robots online,
-                {format_value(exec_data.get('task_completion_rate', 0), '%')} task completion rate across
-                {format_value(exec_data.get('total_robots', 0))} robot(s),
-                {format_value(exec_data.get('total_tasks', 0))} tasks completed,
-                {format_value(exec_data.get('total_area_cleaned', 0))} sq ft cleaned,
-                {format_value(exec_data.get('total_charging_sessions', 0))} charging sessions,
-                {format_value(exec_data.get('energy_saved_kwh', 0))} kWh energy consumption,
-                and {format_value(exec_data.get('water_consumption', 0))} fl oz water usage.</p>
+                {format_value(task_data.get('completion_rate', 0), '%')} task completion rate across
+                {format_value(fleet_data.get('total_robots', 0))} robot(s),
+                {format_value(task_data.get('total_tasks', 0))} tasks completed,
+                {format_value(resource_data.get('total_area_cleaned_sqft', 0))} sq ft cleaned,
+                {format_value(charging_data.get('total_sessions', 0))} charging sessions,
+                {format_value(resource_data.get('total_energy_consumption_kwh', 0))} kWh energy consumption,
+                and {format_value(resource_data.get('total_water_consumption_floz', 0))} fl oz water usage.</p>
             </div>
         </section>"""
 
@@ -1235,7 +1225,9 @@ class RobotPerformanceTemplate:
                 'resource_utilization': content.get('resource_utilization', {}),
                 'cost_analysis': content.get('cost_analysis', {}),
                 'event_analysis': content.get('event_analysis', {}),
-                'trend_data': content.get('trend_data', {})
+                'trend_data': content.get('trend_data', {}),
+                'event_type_by_location': content.get('event_type_by_location', {}),
+                'event_location_mapping': content.get('event_location_mapping', {})
             }
 
             chart_data = self.chart_formatter.format_all_chart_data(metrics)
@@ -1349,7 +1341,7 @@ class RobotPerformanceTemplate:
             }});
         }}
 
-        // Event Level Chart - Fixed to include all levels
+        // Event Level Chart
         const eventLevelCtx = document.getElementById('eventLevelChart');
         if (eventLevelCtx) {{
             const eventLevelData = {json.dumps(chart_data.get('eventLevelChart', {}))};
@@ -1530,7 +1522,18 @@ class RobotPerformanceTemplate:
         }}
     </script>"""
 
-    # Legacy method for backward compatibility
     def generate_report(self, content: Dict[str, Any], config: ReportConfig) -> str:
-        """Legacy method - redirects to comprehensive report generation"""
+        """
+        Legacy method for backward compatibility
+
+        This method maintains compatibility with existing code that calls generate_report
+        while internally using the enhanced comprehensive report generation logic.
+
+        Args:
+            content: Report content data structure
+            config: Report configuration object
+
+        Returns:
+            str: Generated HTML report content
+        """
         return self.generate_comprehensive_report(content, config)

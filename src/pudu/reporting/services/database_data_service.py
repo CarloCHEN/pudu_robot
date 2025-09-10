@@ -730,14 +730,6 @@ class DatabaseDataService:
                                        start_date: str, end_date: str) -> Dict[str, Any]:
         """
         Calculate comprehensive metrics using the calculator and enhanced data
-
-        Args:
-            report_data: Raw data from database queries
-            start_date: Start date for calculations
-            end_date: End date for calculations
-
-        Returns:
-            Dict with all calculated metrics for the template
         """
         logger.info("Calculating comprehensive metrics for report template")
 
@@ -768,20 +760,39 @@ class DatabaseDataService:
 
             # Event analysis metrics
             metrics['event_analysis'] = self.metrics_calculator.calculate_event_analysis_metrics(events_data)
-            metrics['event_location_mapping'] = self.calculate_event_location_mapping(events_data, robot_locations)
+
+            # Calculate event location mapping correctly
+            if not events_data.empty and not robot_locations.empty:
+                event_location_mapping = self.calculate_event_location_mapping(events_data, robot_locations)
+                metrics['event_location_mapping'] = event_location_mapping
+
+                # Calculate event type by location breakdown
+                event_type_by_location = self.calculate_event_type_by_location(events_data, robot_locations)
+                metrics['event_type_by_location'] = event_type_by_location
+                logger.info(f"Added event_type_by_location with keys: {list(event_type_by_location.keys())}")
+            else:
+                metrics['event_location_mapping'] = {}
+                metrics['event_type_by_location'] = {}
+                logger.warning("No events or location data for event breakdown")
 
             # Enhanced facility performance metrics using location data
             if not robot_locations.empty:
                 facility_metrics = self.calculate_facility_specific_metrics(tasks_data, robot_locations)
                 metrics['facility_performance'] = {'facilities': facility_metrics}
+
+                # FIX: Calculate facility efficiency metrics
+                facility_efficiency = self.calculate_facility_efficiency_metrics(tasks_data, robot_locations)
+                metrics['facility_efficiency_metrics'] = facility_efficiency
+                logger.info(f"Added facility efficiency metrics: {list(facility_efficiency.keys())}")
             else:
                 # Fallback to basic facility calculation
                 metrics['facility_performance'] = self.metrics_calculator.calculate_facility_performance_metrics(
                     tasks_data, robot_data
                 )
+                metrics['facility_efficiency_metrics'] = {}
 
             # Individual robot metrics for detailed tables
-            metrics['individual_robots'] = self.calculate_individual_robot_metrics(
+            metrics['individual_robots'] = self.metrics_calculator.calculate_individual_robot_performance(
                 tasks_data, charging_data, robot_locations if not robot_locations.empty else robot_data
             )
 
@@ -797,19 +808,8 @@ class DatabaseDataService:
             metrics['cost_analysis'] = self.metrics_calculator.calculate_cost_analysis_metrics(
                 tasks_data, metrics['resource_utilization']
             )
-            # Override with N/A placeholders for cost data
-            metrics['cost_analysis'].update({
-                'monthly_operational_cost': 'N/A',
-                'traditional_cleaning_cost': 'N/A',
-                'monthly_cost_savings': 'N/A',
-                'annual_projected_savings': 'N/A',
-                'cost_efficiency_improvement': 'N/A',
-                'cost_per_sqft': 'N/A',
-                'roi_improvement': 'N/A',
-                'note': 'Cost metrics require configuration - data not available'
-            })
 
-            logger.info("Comprehensive metrics calculation completed")
+            logger.info("Comprehensive metrics calculation completed with facility efficiency")
             return metrics
 
         except Exception as e:
@@ -983,23 +983,151 @@ class DatabaseDataService:
             logger.error(f"Error calculating facility efficiency metrics: {e}")
             return {}
 
+    def calculate_event_type_by_location(self, events_data: pd.DataFrame,
+                                       robot_locations: pd.DataFrame) -> Dict[str, Dict[str, int]]:
+        """
+        Calculate event types breakdown by actual building locations
+        """
+        try:
+            logger.info(f"Calculating event type by location - events: {len(events_data)}, locations: {len(robot_locations)}")
+
+            if events_data.empty:
+                logger.warning("Events data is empty")
+                return {}
+
+            if robot_locations.empty:
+                logger.warning("Robot locations data is empty")
+                return {}
+
+            # Create robot to building mapping
+            robot_building_map = {}
+            for _, row in robot_locations.iterrows():
+                robot_sn = row.get('robot_sn')
+                building_name = row.get('building_name')
+                if robot_sn and building_name:
+                    robot_building_map[robot_sn] = building_name
+
+            logger.info(f"Robot building mapping created: {robot_building_map}")
+
+            # Count events by type and location
+            event_type_location_breakdown = {}
+            processed_events = 0
+
+            for _, event in events_data.iterrows():
+                robot_sn = event.get('robot_sn')
+                event_type = event.get('event_type')
+
+                if not event_type or pd.isna(event_type):
+                    continue
+
+                building_name = robot_building_map.get(robot_sn, 'Unknown Building')
+
+                # Initialize if needed
+                if event_type not in event_type_location_breakdown:
+                    event_type_location_breakdown[event_type] = {}
+
+                if building_name not in event_type_location_breakdown[event_type]:
+                    event_type_location_breakdown[event_type][building_name] = 0
+
+                event_type_location_breakdown[event_type][building_name] += 1
+                processed_events += 1
+
+            logger.info(f"Processed {processed_events} events")
+            logger.info(f"Event type location breakdown: {event_type_location_breakdown}")
+            return event_type_location_breakdown
+
+        except Exception as e:
+            logger.error(f"Error calculating event type by location: {e}")
+            return {}
+
+    def calculate_enhanced_period_comparisons(self, current_metrics: Dict[str, Any],
+                                            previous_metrics: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Calculate enhanced period comparisons including facility efficiency metrics
+        """
+        try:
+            logger.info("Calculating enhanced period comparisons with facility efficiency")
+
+            # Use the existing metrics_calculator for basic comparisons
+            basic_comparisons = self.metrics_calculator.calculate_period_comparison_metrics(
+                current_metrics, previous_metrics
+            )
+
+            # Helper function to calculate change
+            def calculate_change(current, previous, format_type="number", suffix=""):
+                if current == 'N/A' or previous == 'N/A' or previous == 0:
+                    return "N/A"
+
+                try:
+                    current_val = float(current)
+                    previous_val = float(previous)
+
+                    if previous_val == 0:
+                        return "N/A"
+
+                    if format_type == "percent":
+                        change = current_val - previous_val
+                        return f"{'+' if change >= 0 else ''}{change:.1f}%"
+                    else:
+                        change = current_val - previous_val
+                        return f"{'+' if change >= 0 else ''}{change:.1f}{suffix}"
+                except (ValueError, TypeError):
+                    return "N/A"
+
+            # FIX: Add facility efficiency comparisons
+            current_facility_eff = current_metrics.get('facility_efficiency_metrics', {})
+            previous_facility_eff = previous_metrics.get('facility_efficiency_metrics', {})
+
+            logger.info(f"Current facility efficiency: {current_facility_eff}")
+            logger.info(f"Previous facility efficiency: {previous_facility_eff}")
+
+            facility_efficiency_comparisons = {}
+            for facility_name in current_facility_eff.keys():
+                if facility_name in previous_facility_eff:
+                    current_eff = current_facility_eff[facility_name]
+                    previous_eff = previous_facility_eff[facility_name]
+
+                    facility_efficiency_comparisons[facility_name] = {
+                        'water_efficiency': calculate_change(
+                            current_eff.get('water_efficiency', 0),
+                            previous_eff.get('water_efficiency', 0),
+                            "number", ""
+                        ),
+                        'time_efficiency': calculate_change(
+                            current_eff.get('time_efficiency', 0),
+                            previous_eff.get('time_efficiency', 0),
+                            "number", ""
+                        )
+                    }
+
+                    logger.info(f"Efficiency comparison for {facility_name}: {facility_efficiency_comparisons[facility_name]}")
+                else:
+                    facility_efficiency_comparisons[facility_name] = {
+                        'water_efficiency': 'N/A',
+                        'time_efficiency': 'N/A'
+                    }
+                    logger.info(f"No previous data for {facility_name} efficiency")
+
+            # Add efficiency comparisons to basic comparisons
+            enhanced_comparisons = basic_comparisons.copy()
+            enhanced_comparisons['facility_efficiency_comparisons'] = facility_efficiency_comparisons
+
+            logger.info(f"Enhanced comparisons keys: {list(enhanced_comparisons.keys())}")
+            logger.info(f"Facility efficiency comparisons: {facility_efficiency_comparisons}")
+
+            return enhanced_comparisons
+
+        except Exception as e:
+            logger.error(f"Error calculating enhanced period comparisons: {e}")
+            # Return basic comparisons without efficiency if there's an error
+            return self.metrics_calculator.calculate_period_comparison_metrics(current_metrics, previous_metrics)
+
     def calculate_comprehensive_metrics_with_comparison(self, current_data: Dict[str, pd.DataFrame],
                                                        previous_data: Dict[str, pd.DataFrame],
                                                        current_start: str, current_end: str,
                                                        previous_start: str, previous_end: str) -> Dict[str, Any]:
         """
-        Calculate comprehensive metrics with period comparison
-
-        Args:
-            current_data: Current period data
-            previous_data: Previous period data
-            current_start: Current period start date
-            current_end: Current period end date
-            previous_start: Previous period start date
-            previous_end: Previous period end date
-
-        Returns:
-            Dict with current metrics plus comparison data
+        Calculate comprehensive metrics with period comparison INCLUDING facility efficiency comparisons
         """
         logger.info("Calculating comprehensive metrics with period comparison")
 
@@ -1010,21 +1138,59 @@ class DatabaseDataService:
             # Calculate previous period metrics
             previous_metrics = self.calculate_comprehensive_metrics(previous_data, previous_start, previous_end)
 
-            # Add weekend schedule completion and average duration to current metrics
+            # Get data for additional calculations
             tasks_data = current_data.get('cleaning_tasks', pd.DataFrame())
+            events_data = current_data.get('events', pd.DataFrame())
+            robot_locations = current_data.get('robot_locations', pd.DataFrame())
+            charging_data = current_data.get('charging_tasks', pd.DataFrame())
 
-            # Calculate weekend completion rate
+            # Add weekend schedule completion and average duration
             weekend_completion = self.metrics_calculator.calculate_weekend_schedule_completion(tasks_data)
             current_metrics['task_performance']['weekend_schedule_completion'] = weekend_completion
 
-            # Calculate average task duration
             avg_duration = self.metrics_calculator.calculate_average_task_duration(tasks_data)
             current_metrics['task_performance']['avg_task_duration_minutes'] = avg_duration
 
-            # Calculate period comparisons
-            period_comparisons = self.metrics_calculator.calculate_period_comparison_metrics(
-                current_metrics, previous_metrics
-            )
+            # Calculate weekday completion rates
+            weekday_completion = self.metrics_calculator.calculate_weekday_completion_rates(tasks_data)
+            current_metrics['weekday_completion'] = weekday_completion
+
+            # Calculate facility-specific detailed metrics
+            if not robot_locations.empty:
+                # Calculate facility-specific detailed metrics
+                facility_task_metrics = self.calculate_facility_specific_task_metrics(tasks_data, robot_locations)
+                current_metrics['facility_task_metrics'] = facility_task_metrics
+
+                facility_charging_metrics = self.calculate_facility_specific_charging_metrics(charging_data, robot_locations)
+                current_metrics['facility_charging_metrics'] = facility_charging_metrics
+
+                facility_resource_metrics = self.calculate_facility_specific_resource_metrics(tasks_data, robot_locations)
+                current_metrics['facility_resource_metrics'] = facility_resource_metrics
+
+                # Calculate facility efficiency metrics
+                facility_efficiency = self.calculate_facility_efficiency_metrics(tasks_data, robot_locations)
+                current_metrics['facility_efficiency_metrics'] = facility_efficiency
+
+                # Calculate map performance by building
+                map_performance = self.metrics_calculator.calculate_map_performance_by_building(tasks_data, robot_locations)
+                current_metrics['map_performance_by_building'] = map_performance
+
+                # Add event type by location breakdown
+                if not events_data.empty:
+                    event_type_by_location = self.calculate_event_type_by_location(events_data, robot_locations)
+                    current_metrics['event_type_by_location'] = event_type_by_location
+                    logger.info(f"Added event_type_by_location with {len(event_type_by_location)} event types")
+                else:
+                    current_metrics['event_type_by_location'] = {}
+                    logger.warning("No events data for event type breakdown")
+
+            # Update trend data to use daily instead of weekly
+            daily_trend_data = self.calculate_daily_trends(tasks_data, charging_data, current_start, current_end)
+            if daily_trend_data and daily_trend_data.get('dates'):
+                current_metrics['trend_data'] = daily_trend_data
+
+            # FIX: Calculate period comparisons INCLUDING facility efficiency
+            period_comparisons = self.calculate_enhanced_period_comparisons(current_metrics, previous_metrics)
             current_metrics['period_comparisons'] = period_comparisons
 
             # Add comparison metadata
@@ -1034,53 +1200,14 @@ class DatabaseDataService:
                 'comparison_available': True
             }
 
-            # Calculate weekday completion rates
-            weekday_completion = self.metrics_calculator.calculate_weekday_completion_rates(tasks_data)
-            current_metrics['weekday_completion'] = weekday_completion
-
-            # Calculate facility-specific detailed metrics
-            robot_locations = current_data.get('robot_locations', pd.DataFrame())
-            if not robot_locations.empty:
-                # Calculate facility-specific detailed metrics
-                facility_task_metrics = self.calculate_facility_specific_task_metrics(tasks_data, robot_locations)
-                current_metrics['facility_task_metrics'] = facility_task_metrics
-
-                charging_data = current_data.get('charging_tasks', pd.DataFrame())
-                facility_charging_metrics = self.calculate_facility_specific_charging_metrics(charging_data, robot_locations)
-                current_metrics['facility_charging_metrics'] = facility_charging_metrics
-
-                # Update trend data to use daily instead of weekly
-                daily_trend_data = self.calculate_daily_trends(tasks_data, charging_data, current_start, current_end)
-                if daily_trend_data and daily_trend_data.get('dates'):
-                    current_metrics['trend_data'] = daily_trend_data
-
-                facility_resource_metrics = self.calculate_facility_specific_resource_metrics(tasks_data, robot_locations)
-                current_metrics['facility_resource_metrics'] = facility_resource_metrics
-
-                # Calculate facility efficiency metrics
-                facility_efficiency = self.metrics_calculator.calculate_facility_efficiency_metrics(tasks_data, robot_locations)
-                current_metrics['facility_efficiency_metrics'] = facility_efficiency
-
-                if hasattr(self.metrics_calculator, 'calculate_facility_efficiency_metrics'):
-                    facility_efficiency = self.metrics_calculator.calculate_facility_efficiency_metrics(tasks_data, robot_locations)
-                    current_metrics['facility_efficiency_metrics'] = facility_efficiency
-                else:
-                    # The method doesn't exist! Need to add it to metrics_calculator.py:
-                    current_metrics['facility_efficiency_metrics'] = self.calculate_facility_efficiency_metrics(tasks_data, robot_locations)
-
-                # Calculate map performance by building
-                map_performance = self.metrics_calculator.calculate_map_performance_by_building(tasks_data, robot_locations)
-                current_metrics['map_performance_by_building'] = map_performance
-
-            logger.info("Successfully calculated metrics with period comparison")
+            logger.info("Successfully calculated metrics with period comparison and facility efficiency comparisons")
             return current_metrics
 
         except Exception as e:
             logger.error(f"Error calculating metrics with comparison: {e}")
             # Fallback to current metrics only
             current_metrics = self.calculate_comprehensive_metrics(current_data, current_start, current_end)
-
-            # Add weekend completion and average duration even without comparison
+            # Add required fields even without comparison
             tasks_data = current_data.get('cleaning_tasks', pd.DataFrame())
             weekend_completion = self.metrics_calculator.calculate_weekend_schedule_completion(tasks_data)
             avg_duration = self.metrics_calculator.calculate_average_task_duration(tasks_data)
@@ -1096,6 +1223,7 @@ class DatabaseDataService:
             current_metrics['map_performance_by_building'] = {}
             current_metrics['weekday_completion'] = {}
             current_metrics['trend_data'] = {}
+            current_metrics['event_type_by_location'] = {}
 
             return current_metrics
 
@@ -1167,7 +1295,7 @@ class DatabaseDataService:
 
     def calculate_event_location_mapping(self, events_data: pd.DataFrame,
                                        robot_locations: pd.DataFrame) -> Dict[str, Dict[str, int]]:
-        """Map events to actual building locations using robot_sn"""
+        """Map events to actual building locations using robot_sn - FIX the level mapping"""
         try:
             if events_data.empty or robot_locations.empty:
                 return {}
@@ -1191,7 +1319,7 @@ class DatabaseDataService:
                 if building_name not in building_events:
                     building_events[building_name] = {
                         'total_events': 0,
-                        'critical_events': 0,
+                        'critical_events': 0,  # FIX: This should map to fatal
                         'error_events': 0,
                         'warning_events': 0,
                         'info_events': 0
@@ -1199,11 +1327,12 @@ class DatabaseDataService:
 
                 building_events[building_name]['total_events'] += 1
 
-                if 'critical' in event_level:
-                    building_events[building_name]['critical_events'] += 1
+                # FIX: Correct the level mapping
+                if 'fatal' in event_level or 'critical' in event_level:
+                    building_events[building_name]['critical_events'] += 1  # Map fatal->critical
                 elif 'error' in event_level:
                     building_events[building_name]['error_events'] += 1
-                elif 'warning' in event_level:
+                elif 'warning' in event_level or 'warn' in event_level:
                     building_events[building_name]['warning_events'] += 1
                 else:
                     building_events[building_name]['info_events'] += 1

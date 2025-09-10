@@ -1212,13 +1212,6 @@ class PerformanceMetricsCalculator:
                                             previous_metrics: Dict[str, Any]) -> Dict[str, str]:
         """
         Calculate vs Last Period comparisons for various metrics
-
-        Args:
-            current_metrics: Metrics for current period
-            previous_metrics: Metrics for previous period
-
-        Returns:
-            Dict with comparison strings (e.g., "+15.2%", "-3 tasks")
         """
         try:
             comparisons = {}
@@ -1228,12 +1221,21 @@ class PerformanceMetricsCalculator:
                 if current == 'N/A' or previous == 'N/A' or previous == 0:
                     return "N/A"
 
-                if format_type == "percent":
-                    change = current - previous
-                    return f"{'+' if change >= 0 else ''}{change:.1f}%"
-                else:
-                    change = current - previous
-                    return f"{'+' if change >= 0 else ''}{change:,.0f}{suffix}"
+                try:
+                    current_val = float(current)
+                    previous_val = float(previous)
+
+                    if previous_val == 0:
+                        return "N/A"
+
+                    if format_type == "percent":
+                        change = current_val - previous_val
+                        return f"{'+' if change >= 0 else ''}{change:.1f}%"
+                    else:
+                        change = current_val - previous_val
+                        return f"{'+' if change >= 0 else ''}{change:.1f}{suffix}"
+                except (ValueError, TypeError):
+                    return "N/A"
 
             # Task performance comparisons
             task_current = current_metrics.get('task_performance', {})
@@ -1257,14 +1259,13 @@ class PerformanceMetricsCalculator:
                 "number", " sq ft"
             )
 
-            # Fleet performance comparisons - Remove fleet availability comparison
+            # Fleet performance comparisons
             fleet_current = current_metrics.get('fleet_performance', {})
             fleet_previous = previous_metrics.get('fleet_performance', {})
 
-            # Set fleet availability comparison to N/A as requested
             comparisons['fleet_availability'] = 'N/A'
 
-            comparisons['running_hours'] = calculate_change(  # Changed from operational_hours
+            comparisons['running_hours'] = calculate_change(
                 fleet_current.get('total_running_hours', 0),
                 fleet_previous.get('total_running_hours', 0),
                 "number", " hrs"
@@ -1302,14 +1303,18 @@ class PerformanceMetricsCalculator:
                 "number", " min"
             )
 
-            # Facility-specific comparisons (if available)
+            # Facility-specific comparisons (including efficiency)
             facility_current = current_metrics.get('facility_performance', {}).get('facilities', {})
             facility_previous = previous_metrics.get('facility_performance', {}).get('facilities', {})
+
+            # FIX: Get efficiency metrics for comparisons
+            current_facility_eff = current_metrics.get('facility_efficiency_metrics', {})
+            previous_facility_eff = previous_metrics.get('facility_efficiency_metrics', {})
 
             comparisons['facility_comparisons'] = {}
             for facility_name in facility_current.keys():
                 if facility_name in facility_previous:
-                    comparisons['facility_comparisons'][facility_name] = {
+                    facility_comp = {
                         'area_cleaned': calculate_change(
                             facility_current[facility_name].get('area_cleaned', 0),
                             facility_previous[facility_name].get('area_cleaned', 0),
@@ -1320,7 +1325,7 @@ class PerformanceMetricsCalculator:
                             facility_previous[facility_name].get('completion_rate', 0),
                             "percent"
                         ),
-                        'running_hours': calculate_change(  # Changed from operating_hours
+                        'running_hours': calculate_change(
                             facility_current[facility_name].get('running_hours', 0),
                             facility_previous[facility_name].get('running_hours', 0),
                             "number", " hrs"
@@ -1336,16 +1341,36 @@ class PerformanceMetricsCalculator:
                             "number", " sq ft/kWh"
                         )
                     }
+
+                    # Add efficiency comparisons
+                    if facility_name in current_facility_eff and facility_name in previous_facility_eff:
+                        facility_comp['water_efficiency'] = calculate_change(
+                            current_facility_eff[facility_name].get('water_efficiency', 0),
+                            previous_facility_eff[facility_name].get('water_efficiency', 0),
+                            "number", " sq ft/fl oz"
+                        )
+                        facility_comp['time_efficiency'] = calculate_change(
+                            current_facility_eff[facility_name].get('time_efficiency', 0),
+                            previous_facility_eff[facility_name].get('time_efficiency', 0),
+                            "number", " sq ft/hr"
+                        )
+                    else:
+                        facility_comp['water_efficiency'] = 'N/A'
+                        facility_comp['time_efficiency'] = 'N/A'
+
+                    comparisons['facility_comparisons'][facility_name] = facility_comp
                 else:
                     comparisons['facility_comparisons'][facility_name] = {
                         'area_cleaned': 'N/A',
                         'completion_rate': 'N/A',
-                        'running_hours': 'N/A',  # Changed from operating_hours
+                        'running_hours': 'N/A',
                         'coverage_efficiency': 'N/A',
-                        'power_efficiency': 'N/A'
+                        'power_efficiency': 'N/A',
+                        'water_efficiency': 'N/A',
+                        'time_efficiency': 'N/A'
                     }
 
-            logger.info(f"Calculated {len(comparisons)} period comparisons")
+            logger.info(f"Calculated {len(comparisons)} period comparisons including facility efficiency")
             return comparisons
 
         except Exception as e:

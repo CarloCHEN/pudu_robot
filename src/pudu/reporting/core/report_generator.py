@@ -315,54 +315,32 @@ class ReportGenerator:
                 'content_categories': report_config.content_categories,
                 'customer_id': report_config.customer_id,
 
-                # Executive Summary Data - using real calculated metrics
-                'executive_summary': self._build_enhanced_executive_summary(comprehensive_metrics),
-
-                # Fleet Management Data - with individual robot performance
-                'fleet_management': comprehensive_metrics.get('fleet_performance', {}),
-                'individual_robots': comprehensive_metrics.get('individual_robots', []),
-
-                # Task Performance Data - enhanced with real metrics
+                # FIX: Pass comprehensive_metrics directly instead of trying to reorganize
+                'fleet_performance': comprehensive_metrics.get('fleet_performance', {}),
                 'task_performance': comprehensive_metrics.get('task_performance', {}),
-
-                # Charging Performance Data
                 'charging_performance': comprehensive_metrics.get('charging_performance', {}),
-
-                # Resource Utilization Data
                 'resource_utilization': comprehensive_metrics.get('resource_utilization', {}),
-
-                # Event Analysis Data
                 'event_analysis': comprehensive_metrics.get('event_analysis', {}),
-
-                # Facility Performance Data - enhanced with location mapping
                 'facility_performance': comprehensive_metrics.get('facility_performance', {}),
-
-                # Cost Analysis Data - all N/A as requested
                 'cost_analysis': comprehensive_metrics.get('cost_analysis', {}),
-
-                # Trend Data - calculated from real database records
                 'trend_data': comprehensive_metrics.get('trend_data', {}),
-
-                # Map Coverage Data - real map analysis
                 'map_coverage': comprehensive_metrics.get('map_coverage', []),
-
-                # Period comparisons data
                 'period_comparisons': comprehensive_metrics.get('period_comparisons', {}),
-
-                # Comparison metadata
                 'comparison_metadata': comprehensive_metrics.get('comparison_metadata', {}),
-
-                # Facility-specific metrics
-               'facility_task_metrics': comprehensive_metrics.get('facility_task_metrics', {}),
-               'facility_charging_metrics': comprehensive_metrics.get('facility_charging_metrics', {}),
-               'facility_resource_metrics': comprehensive_metrics.get('facility_resource_metrics', {}),
+                'individual_robots': comprehensive_metrics.get('individual_robots', []),
+                'weekday_completion': comprehensive_metrics.get('weekday_completion', {}),
+                'facility_task_metrics': comprehensive_metrics.get('facility_task_metrics', {}),
+                'facility_charging_metrics': comprehensive_metrics.get('facility_charging_metrics', {}),
+                'facility_resource_metrics': comprehensive_metrics.get('facility_resource_metrics', {}),
+                'facility_efficiency_metrics': comprehensive_metrics.get('facility_efficiency_metrics', {}),
+                'map_performance_by_building': comprehensive_metrics.get('map_performance_by_building', {}),
+                'event_location_mapping': comprehensive_metrics.get('event_location_mapping', {}),
 
                 # Metadata
                 'robots_included': len(target_robots),
                 'target_robots': target_robots[:10],  # Include first 10 for display
                 'total_target_robots': len(target_robots)
             }
-
             return content
 
     def _build_enhanced_executive_summary(self, comprehensive_metrics: Dict[str, Any]) -> Dict[str, Any]:
