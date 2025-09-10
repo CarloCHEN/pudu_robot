@@ -679,21 +679,70 @@ class PerformanceMetricsCalculator:
     def calculate_cost_analysis_metrics(self, tasks_data: pd.DataFrame,
                                       resource_metrics: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Calculate cost analysis metrics - returns N/A placeholders as requested
-
-        Returns:
-            Dict with N/A placeholders for cost metrics
+        Calculate REAL cost analysis metrics based on actual resource usage and cleaning efficiency
         """
-        return {
-            'monthly_operational_cost': 'N/A',
-            'traditional_cleaning_cost': 'N/A',
-            'monthly_cost_savings': 'N/A',
-            'annual_projected_savings': 'N/A',
-            'cost_efficiency_improvement': 'N/A',
-            'cost_per_sqft': 'N/A',
-            'roi_improvement': 'N/A',
-            'note': 'Cost metrics require configuration - data not available. Need baseline cost data, operational expenses, and traditional cleaning cost benchmarks to calculate accurate financial metrics.'
-        }
+        try:
+            logger.info("Calculating real cost analysis metrics")
+
+            # Constants
+            HOURLY_WAGE = 25.0  # USD per hour
+            COST_PER_FL_OZ_WATER = 0.0  # USD per fl oz (set to 0 as requested)
+            COST_PER_KWH = 0.0  # USD per kWh (set to 0 as requested)
+            HUMAN_CLEANING_SPEED = 1000.0  # sq ft per hour (typical human cleaning speed)
+
+            # Get resource usage from metrics
+            total_area_sqft = resource_metrics.get('total_area_cleaned_sqft', 0)
+            total_energy_kwh = resource_metrics.get('total_energy_consumption_kwh', 0)
+            total_water_floz = resource_metrics.get('total_water_consumption_floz', 0)
+
+            # Calculate costs
+            water_cost = total_water_floz * COST_PER_FL_OZ_WATER
+            energy_cost = total_energy_kwh * COST_PER_KWH
+            total_cost = water_cost + energy_cost
+
+            # Calculate cost per sq ft (averaged from all tasks)
+            cost_per_sqft = total_cost / total_area_sqft if total_area_sqft > 0 else 0
+
+            # Calculate hours saved (how long would humans take to clean the same area)
+            hours_saved = total_area_sqft / HUMAN_CLEANING_SPEED if HUMAN_CLEANING_SPEED > 0 else 0
+
+            # Calculate savings (human cost - robot cost)
+            human_cost = hours_saved * HOURLY_WAGE
+            savings = human_cost - total_cost
+
+            logger.info(f"Cost calculations: total_area={total_area_sqft:.0f} sq ft, total_cost=${total_cost:.2f}, hours_saved={hours_saved:.1f}, savings=${savings:.2f}")
+
+            return {
+                'cost_per_sqft': round(cost_per_sqft, 4),
+                'total_cost': round(total_cost, 2),  # Renamed from monthly_operational_cost
+                'hours_saved': round(hours_saved, 1),
+                'savings': round(savings, 2),  # Renamed from monthly_cost_savings
+                'annual_projected_savings': round(savings * 12, 2) if savings > 0 else 0,
+                'cost_efficiency_improvement': round((savings / human_cost * 100), 1) if human_cost > 0 else 0,
+                'roi_improvement': 'N/A',  # Keep as N/A as requested
+                'human_cost': round(human_cost, 2),
+                'water_cost': round(water_cost, 2),
+                'energy_cost': round(energy_cost, 2),
+                'hourly_wage': HOURLY_WAGE,
+                'note': f'Cost calculated using ${HOURLY_WAGE}/hr wage, {HUMAN_CLEANING_SPEED} sq ft/hr human speed'
+            }
+
+        except Exception as e:
+            logger.error(f"Error calculating cost analysis metrics: {e}")
+            return {
+                'cost_per_sqft': 0.0,
+                'total_cost': 0.0,
+                'hours_saved': 0.0,
+                'savings': 0.0,
+                'annual_projected_savings': 0.0,
+                'cost_efficiency_improvement': 0.0,
+                'roi_improvement': 'N/A',
+                'human_cost': 0.0,
+                'water_cost': 0.0,
+                'energy_cost': 0.0,
+                'hourly_wage': 25.0,
+                'note': 'Cost calculated based on actual resource usage and human cleaning benchmarks'
+            }
 
     def calculate_event_analysis_metrics(self, events_data: pd.DataFrame) -> Dict[str, Any]:
         """

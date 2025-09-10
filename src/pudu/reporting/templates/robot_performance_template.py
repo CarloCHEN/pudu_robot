@@ -1018,12 +1018,40 @@ class RobotPerformanceTemplate:
         </section>"""
 
     def _generate_financial_section(self, content: Dict[str, Any]) -> str:
-        """Generate financial performance section with N/A placeholders"""
+        """Generate financial performance section with REAL calculated values"""
         cost_data = content.get('cost_analysis', {})
+        comparisons = content.get('period_comparisons', {})
+
+        # Format comparison values with color coding
+        def format_comparison(value):
+            return value if value != 'N/A' else 'N/A'
+
+        def get_comparison_color(value):
+            if value == 'N/A' or not value:
+                return '#6c757d'
+            elif value.startswith('+') and 'savings' in str(value).lower():
+                return '#28a745'  # Green for increased savings (good)
+            elif value.startswith('+'):
+                return '#dc3545'  # Red for increased costs (bad)
+            elif value.startswith('-') and 'savings' in str(value).lower():
+                return '#dc3545'  # Red for decreased savings (bad)
+            else:
+                return '#28a745'  # Green for decreased costs (good)
+
+        # Format values safely
+        def safe_format(value, prefix="$", suffix=""):
+            if value == 'N/A' or value is None:
+                return 'N/A'
+            try:
+                return f"{prefix}{float(value):,.2f}{suffix}"
+            except:
+                return str(value)
 
         return f"""
         <section id="financial-performance">
             <h2>💰 Financial Performance</h2>
+
+            <p>Financial analysis based on actual resource usage: {safe_format(cost_data.get('cost_per_sqft', 0), '$', '/sq ft')} average cost per square foot, {safe_format(cost_data.get('total_cost', 0))} total operational cost, {cost_data.get('hours_saved', 0):.1f} hours saved compared to manual cleaning, and {safe_format(cost_data.get('savings', 0))} in realized savings.</p>
 
             <table>
                 <thead>
@@ -1037,21 +1065,21 @@ class RobotPerformanceTemplate:
                 <tbody>
                     <tr>
                         <td>Cost per Sq Ft</td>
-                        <td>N/A</td>
-                        <td>N/A</td>
-                        <td>Requires cost configuration</td>
+                        <td>{safe_format(cost_data.get('cost_per_sqft', 0), '$', '/sq ft')}</td>
+                        <td style="color: {get_comparison_color(comparisons.get('cost_per_sqft', 'N/A'))};">{format_comparison(comparisons.get('cost_per_sqft', 'N/A'))}</td>
+                        <td>Water + energy cost per area cleaned</td>
                     </tr>
                     <tr>
-                        <td>Monthly Total</td>
-                        <td>N/A</td>
-                        <td>N/A</td>
-                        <td>Requires cost configuration</td>
+                        <td>Total Cost</td>
+                        <td>{safe_format(cost_data.get('total_cost', 0))}</td>
+                        <td style="color: {get_comparison_color(comparisons.get('total_cost', 'N/A'))};">{format_comparison(comparisons.get('total_cost', 'N/A'))}</td>
+                        <td>Robot operational cost this period</td>
                     </tr>
                     <tr>
-                        <td>Cost Savings</td>
-                        <td>N/A</td>
-                        <td>N/A</td>
-                        <td>Requires baseline cost data</td>
+                        <td>Savings</td>
+                        <td>{safe_format(cost_data.get('savings', 0))}</td>
+                        <td style="color: {get_comparison_color(comparisons.get('savings', 'N/A'))};">{format_comparison(comparisons.get('savings', 'N/A'))}</td>
+                        <td>Savings vs manual cleaning (${cost_data.get('hourly_wage', 25)}/hr)</td>
                     </tr>
                     <tr>
                         <td>ROI Impact</td>
@@ -1070,32 +1098,32 @@ class RobotPerformanceTemplate:
                 <h3>💡 Financial Impact Summary</h3>
                 <div class="metrics-grid">
                     <div style="text-align: center;">
-                        <div style="font-size: 1.5em; margin-bottom: 5px;"><strong>N/A</strong></div>
-                        <div>Monthly operational cost</div>
+                        <div style="font-size: 1.5em; margin-bottom: 5px;"><strong>{safe_format(cost_data.get('total_cost', 0))}</strong></div>
+                        <div>Total operational cost</div>
                     </div>
                     <div style="text-align: center;">
-                        <div style="font-size: 1.5em; margin-bottom: 5px;"><strong>N/A</strong></div>
-                        <div>Traditional cleaning estimated cost</div>
+                        <div style="font-size: 1.5em; margin-bottom: 5px;"><strong>{safe_format(cost_data.get('human_cost', 0))}</strong></div>
+                        <div>Equivalent manual cleaning cost</div>
                     </div>
                     <div style="text-align: center;">
-                        <div style="font-size: 1.5em; margin-bottom: 5px;"><strong>N/A</strong></div>
-                        <div>Monthly savings realized</div>
+                        <div style="font-size: 1.5em; margin-bottom: 5px;"><strong>{safe_format(cost_data.get('savings', 0))}</strong></div>
+                        <div>Savings realized</div>
                     </div>
                     <div style="text-align: center;">
-                        <div style="font-size: 1.5em; margin-bottom: 5px;"><strong>N/A</strong></div>
+                        <div style="font-size: 1.5em; margin-bottom: 5px;"><strong>{safe_format(cost_data.get('annual_projected_savings', 0))}</strong></div>
                         <div>Annual projected savings</div>
                     </div>
                     <div style="text-align: center;">
-                        <div style="font-size: 1.5em; margin-bottom: 5px;"><strong>N/A</strong></div>
+                        <div style="font-size: 1.5em; margin-bottom: 5px;"><strong>{cost_data.get('cost_efficiency_improvement', 0):.1f}%</strong></div>
                         <div>Cost efficiency improvement</div>
                     </div>
                     <div style="text-align: center;">
-                        <div style="font-size: 1.5em; margin-bottom: 5px;"><strong>N/A</strong></div>
-                        <div>Monthly ROI</div>
+                        <div style="font-size: 1.5em; margin-bottom: 5px;"><strong>{cost_data.get('hours_saved', 0):.1f} hrs</strong></div>
+                        <div>Hours saved vs manual</div>
                     </div>
                 </div>
                 <p style="margin-top: 15px; font-size: 0.9em; opacity: 0.8;">
-                    {cost_data.get('note', 'Financial metrics require cost configuration and baseline data to calculate accurate savings and ROI figures.')}
+                    {cost_data.get('note', 'Cost calculations based on actual resource usage and human cleaning speed benchmarks.')}
                 </p>
             </div>
         </section>"""
@@ -1231,6 +1259,10 @@ class RobotPerformanceTemplate:
             }
 
             chart_data = self.chart_formatter.format_all_chart_data(metrics)
+            # Add financial trend data for financial chart
+            financial_trend_data = content.get('financial_trend_data', {})
+            if financial_trend_data:
+                chart_data['financial_trend_data'] = financial_trend_data
             return self._convert_numpy_types(chart_data)
         except Exception as e:
             logger.error(f"Chart data error: {e}")
@@ -1488,19 +1520,28 @@ class RobotPerformanceTemplate:
             }});
         }}
 
-        // Financial Chart - N/A data
+        // Financial Chart - Real cost data with bars
         const financialCtx = document.getElementById('financialChart');
         if (financialCtx) {{
+            const financialTrendData = {json.dumps(chart_data.get('financial_trend_data', {}))};
+            const financialDates = financialTrendData.dates || [];
+            const hoursSavedData = financialTrendData.hours_saved_trend || [];
+            const savingsData = financialTrendData.savings_trend || [];
+
             new Chart(financialCtx, {{
-                type: 'line',
+                type: 'bar',
                 data: {{
-                    labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
+                    labels: financialDates.length > 0 ? financialDates : ['No Data'],
                     datasets: [{{
-                        label: 'Cost Data Not Available',
-                        data: [0, 0, 0, 0],
-                        borderColor: '#6c757d',
-                        backgroundColor: 'rgba(108, 117, 125, 0.1)',
-                        fill: true
+                        label: 'Hours Saved',
+                        data: hoursSavedData.length > 0 ? hoursSavedData : [0],
+                        backgroundColor: '#28a745',
+                        yAxisID: 'y'
+                    }}, {{
+                        label: 'Savings ($)',
+                        data: savingsData.length > 0 ? savingsData : [0],
+                        backgroundColor: '#17a2b8',
+                        yAxisID: 'y1'
                     }}]
                 }},
                 options: {{
@@ -1509,12 +1550,30 @@ class RobotPerformanceTemplate:
                     plugins: {{
                         title: {{
                             display: true,
-                            text: 'Financial Performance (Data Not Available)'
+                            text: 'Daily Financial Performance'
                         }}
                     }},
                     scales: {{
                         y: {{
-                            display: false
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: {{
+                                display: true,
+                                text: 'Hours Saved'
+                            }}
+                        }},
+                        y1: {{
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: {{
+                                display: true,
+                                text: 'Savings ($)'
+                            }},
+                            grid: {{
+                                drawOnChartArea: false,
+                            }},
                         }}
                     }}
                 }}

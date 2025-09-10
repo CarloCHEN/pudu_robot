@@ -1199,6 +1199,11 @@ class DatabaseDataService:
                 'previous_period': {'start': previous_start, 'end': previous_end},
                 'comparison_available': True
             }
+            # Calculate daily financial trends for chart
+            daily_financial_trends = self.calculate_daily_financial_trends(tasks_data, current_start, current_end)
+            if daily_financial_trends and daily_financial_trends.get('dates'):
+                current_metrics['financial_trend_data'] = daily_financial_trends
+
 
             logger.info("Successfully calculated metrics with period comparison and facility efficiency comparisons")
             return current_metrics
@@ -1224,7 +1229,7 @@ class DatabaseDataService:
             current_metrics['weekday_completion'] = {}
             current_metrics['trend_data'] = {}
             current_metrics['event_type_by_location'] = {}
-
+            current_metrics['financial_trend_data'] = {}
             return current_metrics
 
     def calculate_facility_specific_task_metrics(self, tasks_data: pd.DataFrame,
@@ -1292,6 +1297,100 @@ class DatabaseDataService:
         except Exception as e:
             logger.error(f"Error calculating facility-specific task metrics: {e}")
             return {}
+
+    def calculate_daily_financial_trends(self, tasks_data: pd.DataFrame, start_date: str, end_date: str) -> Dict[str, List]:
+        """
+        Calculate daily financial trend data for charts
+
+        Args:
+            tasks_data: Task performance data
+            start_date: Start date for data range
+            end_date: End date for data range
+
+        Returns:
+            Dict with daily financial trend arrays
+        """
+        try:
+            logger.info("Calculating daily financial trends")
+
+            # Constants
+            HOURLY_WAGE = 25.0
+            HUMAN_CLEANING_SPEED = 1000.0  # sq ft per hour
+            COST_PER_FL_OZ_WATER = 0.0
+            COST_PER_KWH = 0.0
+
+            start_dt = datetime.strptime(start_date.split(' ')[0], '%Y-%m-%d')
+            end_dt = datetime.strptime(end_date.split(' ')[0], '%Y-%m-%d')
+
+            # Create daily buckets
+            daily_data = {}
+            current_date = start_dt
+
+            while current_date <= end_dt:
+                date_str = current_date.strftime('%m/%d')
+                daily_data[date_str] = {
+                    'area_cleaned': 0,
+                    'energy_consumption': 0,
+                    'water_consumption': 0
+                }
+                current_date += timedelta(days=1)
+
+            # Process tasks data by date
+            if not tasks_data.empty and 'start_time' in tasks_data.columns:
+                for _, task in tasks_data.iterrows():
+                    try:
+                        task_date = pd.to_datetime(task['start_time']).date()
+                        if start_dt.date() <= task_date <= end_dt.date():
+                            date_str = task_date.strftime('%m/%d')
+                            if date_str in daily_data:
+                                # Area cleaned (convert to sq ft)
+                                area_sqm = float(task.get('actual_area', 0) or 0)
+                                area_sqft = area_sqm * 10.764
+                                daily_data[date_str]['area_cleaned'] += area_sqft
+
+                                # Energy and water
+                                energy = float(task.get('consumption', 0) or 0)
+                                water = float(task.get('water_consumption', 0) or 0)
+                                daily_data[date_str]['energy_consumption'] += energy
+                                daily_data[date_str]['water_consumption'] += water
+                    except:
+                        continue
+
+            # Calculate daily hours_saved and savings
+            dates = list(daily_data.keys())
+            hours_saved_trend = []
+            savings_trend = []
+
+            for date in dates:
+                area_cleaned = daily_data[date]['area_cleaned']
+                energy = daily_data[date]['energy_consumption']
+                water = daily_data[date]['water_consumption']
+
+                # Calculate daily hours saved
+                hours_saved = area_cleaned / HUMAN_CLEANING_SPEED if HUMAN_CLEANING_SPEED > 0 else 0
+
+                # Calculate daily costs
+                robot_cost = (water * COST_PER_FL_OZ_WATER) + (energy * COST_PER_KWH)
+                human_cost = hours_saved * HOURLY_WAGE
+                savings = human_cost - robot_cost
+
+                hours_saved_trend.append(round(hours_saved, 1))
+                savings_trend.append(round(savings, 2))
+
+            logger.info(f"Calculated daily financial trends for {len(dates)} days")
+            return {
+                'dates': dates,
+                'hours_saved_trend': hours_saved_trend,
+                'savings_trend': savings_trend
+            }
+
+        except Exception as e:
+            logger.error(f"Error calculating daily financial trends: {e}")
+            return {
+                'dates': [],
+                'hours_saved_trend': [],
+                'savings_trend': []
+            }
 
     def calculate_event_location_mapping(self, events_data: pd.DataFrame,
                                        robot_locations: pd.DataFrame) -> Dict[str, Dict[str, int]]:

@@ -339,7 +339,8 @@ class ReportGenerator:
                 # Metadata
                 'robots_included': len(target_robots),
                 'target_robots': target_robots[:10],  # Include first 10 for display
-                'total_target_robots': len(target_robots)
+                'total_target_robots': len(target_robots),
+                'financial_trend_data': comprehensive_metrics.get('financial_trend_data', {})
             }
             return content
 
