@@ -63,16 +63,21 @@ class PerformanceMetricsCalculator:
                             continue
                 avg_task_duration = np.mean(duration_minutes) if duration_minutes else 0
 
-            # Calculate average robot utilization (running hours per robot)
-            avg_utilization = (total_running_hours / num_robots) if num_robots > 0 else 0
+            # Calculate NEW: Avg Daily Running Hours per Robot
+            avg_daily_running_hours = self.calculate_avg_daily_running_hours_per_robot(tasks_data, robot_data)
+
+            # Calculate NEW: Days with Tasks
+            days_with_tasks = self.calculate_days_with_tasks(tasks_data)
 
             return {
                 'robots_online_rate': round(robots_online_rate, 1),  # Changed from fleet_availability_rate
                 'total_running_hours': round(total_running_hours, 1),  # Changed from operational_hours
                 'total_robots': num_robots,
                 'robots_online': robots_online,
-                'average_robot_utilization': round(avg_utilization, 1),
-                'avg_task_duration_minutes': round(avg_task_duration, 1)
+                'average_robot_utilization': round(total_running_hours / num_robots, 1) if num_robots > 0 else 0,
+                'avg_task_duration_minutes': round(avg_task_duration, 1),
+                'avg_daily_running_hours_per_robot': round(avg_daily_running_hours, 1),  # NEW
+                'days_with_tasks': days_with_tasks  # NEW
             }
 
         except Exception as e:
@@ -83,8 +88,112 @@ class PerformanceMetricsCalculator:
                 'total_robots': 0,
                 'robots_online': 0,
                 'average_robot_utilization': 0.0,
-                'avg_task_duration_minutes': 0.0
+                'avg_task_duration_minutes': 0.0,
+                'avg_daily_running_hours_per_robot': 0.0,
+                'days_with_tasks': 0
             }
+
+    def calculate_avg_daily_running_hours_per_robot(self, tasks_data: pd.DataFrame, robot_data: pd.DataFrame) -> float:
+        """Calculate average daily running hours per robot for days when robot had at least 1 task"""
+        try:
+            if tasks_data.empty or 'start_time' not in tasks_data.columns:
+                return 0.0
+
+            robot_daily_hours = {}
+
+            # Convert start_time to datetime and calculate daily hours per robot
+            tasks_data_copy = tasks_data.copy()
+            tasks_data_copy['start_time_dt'] = pd.to_datetime(tasks_data_copy['start_time'], errors='coerce')
+            tasks_data_copy = tasks_data_copy[tasks_data_copy['start_time_dt'].notna()]
+
+            if tasks_data_copy.empty:
+                return 0.0
+
+            tasks_data_copy['date'] = tasks_data_copy['start_time_dt'].dt.date
+
+            for _, task in tasks_data_copy.iterrows():
+                robot_sn = task.get('robot_sn')
+                task_date = task.get('date')
+                duration = task.get('duration')
+
+                if robot_sn and task_date and pd.notna(duration):
+                    try:
+                        seconds = float(str(duration).strip())
+                        hours = seconds / 3600
+                        if hours > 0:
+                            key = (robot_sn, task_date)
+                            if key not in robot_daily_hours:
+                                robot_daily_hours[key] = 0
+                            robot_daily_hours[key] += hours
+                    except:
+                        continue
+
+            # Calculate average daily hours per robot
+            if not robot_daily_hours:
+                return 0.0
+
+            # Group by robot and calculate average daily hours for each robot
+            robot_avg_daily = {}
+            for (robot_sn, date), hours in robot_daily_hours.items():
+                if robot_sn not in robot_avg_daily:
+                    robot_avg_daily[robot_sn] = []
+                robot_avg_daily[robot_sn].append(hours)
+
+            # Calculate average of averages
+            robot_averages = []
+            for robot_sn, daily_hours in robot_avg_daily.items():
+                robot_averages.append(np.mean(daily_hours))
+
+            return np.mean(robot_averages) if robot_averages else 0.0
+
+        except Exception as e:
+            logger.error(f"Error calculating avg daily running hours per robot: {e}")
+            return 0.0
+
+    def calculate_days_with_tasks(self, tasks_data: pd.DataFrame) -> int:
+        """Calculate the number of days when any robot had at least 1 task"""
+        try:
+            if tasks_data.empty or 'start_time' not in tasks_data.columns:
+                return 0
+
+            tasks_data_copy = tasks_data.copy()
+            tasks_data_copy['start_time_dt'] = pd.to_datetime(tasks_data_copy['start_time'], errors='coerce')
+            tasks_data_copy = tasks_data_copy[tasks_data_copy['start_time_dt'].notna()]
+
+            if tasks_data_copy.empty:
+                return 0
+
+            # Get unique dates
+            unique_dates = tasks_data_copy['start_time_dt'].dt.date.nunique()
+            return unique_dates
+
+        except Exception as e:
+            logger.error(f"Error calculating days with tasks: {e}")
+            return 0
+
+    def calculate_robot_days_with_tasks(self, tasks_data: pd.DataFrame, robot_sn: str) -> int:
+        """Calculate days with tasks for a specific robot"""
+        try:
+            if tasks_data.empty or 'start_time' not in tasks_data.columns:
+                return 0
+
+            robot_tasks = tasks_data[tasks_data['robot_sn'] == robot_sn]
+            if robot_tasks.empty:
+                return 0
+
+            robot_tasks_copy = robot_tasks.copy()
+            robot_tasks_copy['start_time_dt'] = pd.to_datetime(robot_tasks_copy['start_time'], errors='coerce')
+            robot_tasks_copy = robot_tasks_copy[robot_tasks_copy['start_time_dt'].notna()]
+
+            if robot_tasks_copy.empty:
+                return 0
+
+            unique_dates = robot_tasks_copy['start_time_dt'].dt.date.nunique()
+            return unique_dates
+
+        except Exception as e:
+            logger.error(f"Error calculating days with tasks for robot {robot_sn}: {e}")
+            return 0
 
     def calculate_task_performance_metrics(self, tasks_data: pd.DataFrame) -> Dict[str, Any]:
         """
@@ -292,8 +401,55 @@ class PerformanceMetricsCalculator:
                 'lowest_rate': 0.0
             }
 
-    def calculate_facility_efficiency_metrics(self, tasks_data: pd.DataFrame,
-                                            robot_locations: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
+    def calculate_facility_coverage_by_day(self, tasks_data: pd.DataFrame, robot_locations: pd.DataFrame, facility_name: str) -> Dict[str, str]:
+        """Calculate highest and lowest coverage days for a facility"""
+        try:
+            if tasks_data.empty or robot_locations.empty:
+                return {'highest_coverage_day': 'N/A', 'lowest_coverage_day': 'N/A'}
+
+            # Get robots for this facility
+            facility_robots = robot_locations[robot_locations['building_name'] == facility_name]['robot_sn'].tolist()
+            facility_tasks = tasks_data[tasks_data['robot_sn'].isin(facility_robots)]
+
+            if facility_tasks.empty or 'start_time' not in facility_tasks.columns:
+                return {'highest_coverage_day': 'N/A', 'lowest_coverage_day': 'N/A'}
+
+            # Convert start_time to datetime
+            facility_tasks_copy = facility_tasks.copy()
+            facility_tasks_copy['start_time_dt'] = pd.to_datetime(facility_tasks_copy['start_time'], errors='coerce')
+            facility_tasks_copy = facility_tasks_copy[facility_tasks_copy['start_time_dt'].notna()]
+
+            if facility_tasks_copy.empty:
+                return {'highest_coverage_day': 'N/A', 'lowest_coverage_day': 'N/A'}
+
+            facility_tasks_copy['weekday'] = facility_tasks_copy['start_time_dt'].dt.day_name()
+
+            # Calculate coverage by weekday
+            weekday_coverage = {}
+            for weekday in ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']:
+                weekday_tasks = facility_tasks_copy[facility_tasks_copy['weekday'] == weekday]
+                if not weekday_tasks.empty:
+                    actual_area = weekday_tasks['actual_area'].fillna(0).sum() if 'actual_area' in weekday_tasks.columns else 0
+                    planned_area = weekday_tasks['plan_area'].fillna(0).sum() if 'plan_area' in weekday_tasks.columns else 0
+                    coverage = (actual_area / planned_area * 100) if planned_area > 0 else 0
+                    weekday_coverage[weekday] = coverage
+
+            if not weekday_coverage:
+                return {'highest_coverage_day': 'N/A', 'lowest_coverage_day': 'N/A'}
+
+            highest_day = max(weekday_coverage, key=weekday_coverage.get)
+            lowest_day = min(weekday_coverage, key=weekday_coverage.get)
+
+            return {
+                'highest_coverage_day': highest_day,
+                'lowest_coverage_day': lowest_day
+            }
+
+        except Exception as e:
+            logger.error(f"Error calculating facility coverage by day for {facility_name}: {e}")
+            return {'highest_coverage_day': 'N/A', 'lowest_coverage_day': 'N/A'}
+
+    def calculate_facility_efficiency_metrics(self, tasks_data: pd.DataFrame, robot_locations: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
         """
         Calculate water efficiency and time efficiency for facilities
         """
@@ -333,11 +489,15 @@ class PerformanceMetricsCalculator:
 
                 time_efficiency = total_area_sqft / total_time_hours if total_time_hours > 0 else 0
 
+                # NEW: Days with tasks for this facility
+                facility_days_with_tasks = self.calculate_facility_days_with_tasks(facility_tasks)
+
                 facility_metrics[building_name] = {
                     'water_efficiency': round(water_efficiency, 1),  # sq ft per fl oz
                     'time_efficiency': round(time_efficiency, 1),   # sq ft per hour
                     'total_area_cleaned': round(total_area_sqft, 0),
-                    'total_time_hours': round(total_time_hours, 1)
+                    'total_time_hours': round(total_time_hours, 1),
+                    'days_with_tasks': facility_days_with_tasks  # NEW
                 }
 
             return facility_metrics
@@ -346,6 +506,25 @@ class PerformanceMetricsCalculator:
             logger.error(f"Error calculating facility efficiency metrics: {e}")
             return {}
 
+    def calculate_facility_days_with_tasks(self, facility_tasks: pd.DataFrame) -> int:
+        """Calculate days with tasks for a specific facility"""
+        try:
+            if facility_tasks.empty or 'start_time' not in facility_tasks.columns:
+                return 0
+
+            facility_tasks_copy = facility_tasks.copy()
+            facility_tasks_copy['start_time_dt'] = pd.to_datetime(facility_tasks_copy['start_time'], errors='coerce')
+            facility_tasks_copy = facility_tasks_copy[facility_tasks_copy['start_time_dt'].notna()]
+
+            if facility_tasks_copy.empty:
+                return 0
+
+            unique_dates = facility_tasks_copy['start_time_dt'].dt.date.nunique()
+            return unique_dates
+
+        except Exception as e:
+            logger.error(f"Error calculating facility days with tasks: {e}")
+            return 0
 
     def calculate_map_performance_by_building(self, tasks_data: pd.DataFrame,
                                         robot_locations: pd.DataFrame) -> Dict[str, List[Dict[str, Any]]]:
@@ -421,6 +600,13 @@ class PerformanceMetricsCalculator:
                     power_efficiency = area_sqft / energy_consumption if energy_consumption > 0 else 0
                     time_efficiency = area_sqft / running_hours if running_hours > 0 else 0
 
+                    # NEW: Water efficiency and Days with tasks
+                    water_consumption = map_df['water_consumption'].fillna(0).sum() if 'water_consumption' in map_df.columns else 0
+                    water_efficiency = area_sqft / water_consumption if water_consumption > 0 else 0
+
+                    # Calculate days with tasks for this map
+                    map_days_with_tasks = self.calculate_map_days_with_tasks(map_df)
+
                     result[building_name].append({
                         'map_name': map_name,
                         'coverage_percentage': round(coverage_percentage, 1),
@@ -429,8 +615,13 @@ class PerformanceMetricsCalculator:
                         'running_hours': round(running_hours, 1),
                         'power_efficiency': round(power_efficiency, 1),
                         'time_efficiency': round(time_efficiency, 1),
+                        'water_efficiency': round(water_efficiency, 1),  # NEW
+                        'days_with_tasks': map_days_with_tasks,  # NEW
                         'total_tasks': total_tasks
                     })
+
+                # Sort maps by coverage percentage in descending order
+                result[building_name].sort(key=lambda x: x['coverage_percentage'], reverse=True)
 
             return result
 
@@ -438,98 +629,25 @@ class PerformanceMetricsCalculator:
             logger.error(f"Error calculating map performance by building: {e}")
             return {}
 
-    def calculate_map_performance_by_building(self, tasks_data: pd.DataFrame,
-                                            robot_locations: pd.DataFrame) -> Dict[str, List[Dict[str, Any]]]:
-        """
-        Calculate map-specific performance metrics organized by building
-        """
+    def calculate_map_days_with_tasks(self, map_df: pd.DataFrame) -> int:
+        """Calculate days with tasks for a specific map"""
         try:
-            if tasks_data.empty or 'map_name' not in tasks_data.columns:
-                return {}
+            if map_df.empty or 'start_time' not in map_df.columns:
+                return 0
 
-            # Get robot-building mapping
-            robot_building_map = {}
-            if not robot_locations.empty:
-                for _, row in robot_locations.iterrows():
-                    robot_sn = row.get('robot_sn')
-                    building_name = row.get('building_name')
-                    if robot_sn and building_name:
-                        robot_building_map[robot_sn] = building_name
+            map_df_copy = map_df.copy()
+            map_df_copy['start_time_dt'] = pd.to_datetime(map_df_copy['start_time'], errors='coerce')
+            map_df_copy = map_df_copy[map_df_copy['start_time_dt'].notna()]
 
-            # Group maps by building
-            building_maps = {}
+            if map_df_copy.empty:
+                return 0
 
-            for _, task in tasks_data.iterrows():
-                robot_sn = task.get('robot_sn')
-                map_name = task.get('map_name')
-
-                if not map_name or pd.isna(map_name):
-                    continue
-
-                # Get building for this robot
-                building_name = robot_building_map.get(robot_sn, 'Unknown Building')
-
-                if building_name not in building_maps:
-                    building_maps[building_name] = {}
-
-                if map_name not in building_maps[building_name]:
-                    building_maps[building_name][map_name] = []
-
-                building_maps[building_name][map_name].append(task)
-
-            # Calculate metrics for each map in each building
-            result = {}
-            for building_name, maps in building_maps.items():
-                result[building_name] = []
-
-                for map_name, map_tasks in maps.items():
-                    map_df = pd.DataFrame(map_tasks)
-
-                    # Calculate metrics
-                    total_actual_area = map_df['actual_area'].fillna(0).sum() if 'actual_area' in map_df.columns else 0
-                    total_planned_area = map_df['plan_area'].fillna(0).sum() if 'plan_area' in map_df.columns else 0
-                    coverage_percentage = (total_actual_area / total_planned_area * 100) if total_planned_area > 0 else 0
-
-                    # Task completion
-                    completed_tasks = len(map_df[map_df['status'].str.contains('end|complet', case=False, na=False)]) if 'status' in map_df.columns else 0
-                    total_tasks = len(map_df)
-                    completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
-
-                    # Running hours
-                    running_hours = 0
-                    if 'duration' in map_df.columns:
-                        for duration in map_df['duration']:
-                            if pd.notna(duration):
-                                try:
-                                    seconds = float(str(duration).strip())
-                                    hours = seconds / 3600
-                                    if hours > 0:
-                                        running_hours += hours
-                                except:
-                                    continue
-
-                    # Efficiency metrics
-                    area_sqft = total_actual_area * 10.764  # Convert to sq ft
-                    energy_consumption = map_df['consumption'].fillna(0).sum() if 'consumption' in map_df.columns else 0
-                    power_efficiency = area_sqft / energy_consumption if energy_consumption > 0 else 0
-                    time_efficiency = area_sqft / running_hours if running_hours > 0 else 0
-
-                    result[building_name].append({
-                        'map_name': map_name,
-                        'coverage_percentage': round(coverage_percentage, 1),
-                        'area_cleaned': round(area_sqft, 0),
-                        'completion_rate': round(completion_rate, 1),
-                        'running_hours': round(running_hours, 1),
-                        'power_efficiency': round(power_efficiency, 1),
-                        'time_efficiency': round(time_efficiency, 1),
-                        'total_tasks': total_tasks
-                    })
-
-            return result
+            unique_dates = map_df_copy['start_time_dt'].dt.date.nunique()
+            return unique_dates
 
         except Exception as e:
-            logger.error(f"Error calculating map performance by building: {e}")
-            return {}
+            logger.error(f"Error calculating map days with tasks: {e}")
+            return 0
 
     def calculate_daily_trends(self, tasks_data: pd.DataFrame, charging_data: pd.DataFrame,
                           start_date: str, end_date: str) -> Dict[str, List]:
@@ -896,7 +1014,7 @@ class PerformanceMetricsCalculator:
                                              charging_data: pd.DataFrame,
                                              robot_status: pd.DataFrame) -> List[Dict[str, Any]]:
         """
-        Calculate detailed performance metrics for individual robots
+        Calculate detailed performance metrics for individual robots with NEW FIELDS
 
         Args:
             tasks_data: Task performance data
@@ -936,25 +1054,19 @@ class PerformanceMetricsCalculator:
                     for duration in robot_tasks['duration']:
                         running_hours += self._parse_duration_to_hours(duration)
 
-                # Calculate area cleaned
-                area_cleaned = 0
-                if not robot_tasks.empty and 'actual_area' in robot_tasks.columns:
-                    area_cleaned = robot_tasks['actual_area'].fillna(0).sum()
+                # Calculate area cleaned and coverage
+                total_area_cleaned = 0
+                total_planned_area = 0
+                if not robot_tasks.empty:
+                    if 'actual_area' in robot_tasks.columns:
+                        total_area_cleaned = robot_tasks['actual_area'].fillna(0).sum() * 10.764  # Convert to sq ft
+                    if 'plan_area' in robot_tasks.columns:
+                        total_planned_area = robot_tasks['plan_area'].fillna(0).sum() * 10.764  # Convert to sq ft
 
-                # Determine operational status - use actual status from database
-                current_status = robot.get('status', 'Unknown')
-                # Convert to Online/Offline based on status
-                if pd.notna(current_status):
-                    status_lower = str(current_status).lower()
-                    if any(online_status in status_lower for online_status in ['online', 'operational', 'active', 'working', 'idle']):
-                        display_status = 'Online'
-                        status_class = 'status-excellent'
-                    else:
-                        display_status = 'Offline'
-                        status_class = 'status-error'
-                else:
-                    display_status = 'Unknown'
-                    status_class = 'status-error'
+                average_coverage = (total_area_cleaned / total_planned_area * 100) if total_planned_area > 0 else 0
+
+                # NEW: Calculate days with tasks for this robot
+                robot_days_with_tasks = self.calculate_robot_days_with_tasks(tasks_data, robot_sn)
 
                 battery_level = robot.get('battery_level', 0)
 
@@ -973,16 +1085,16 @@ class PerformanceMetricsCalculator:
                     'robot_id': robot_sn,
                     'robot_name': robot.get('robot_name', f'Robot {robot_sn}'),
                     'location': location_name,
+                    'total_tasks': total_tasks,  # NEW
                     'tasks_completed': completed_tasks,
-                    'total_tasks': total_tasks,
+                    'total_area_cleaned': round(total_area_cleaned, 0),  # NEW
+                    'average_coverage': round(average_coverage, 1),  # NEW
+                    'days_with_tasks': robot_days_with_tasks,  # NEW
                     'completion_rate': round(completion_rate, 1),
                     'running_hours': round(running_hours, 1),  # Changed from operational_hours
-                    'area_cleaned': round(area_cleaned, 0),
                     'avg_efficiency': round(avg_efficiency, 1),
                     'charging_sessions': len(robot_charging),
                     'battery_level': battery_level,
-                    'status': display_status,  # Online/Offline instead of Operational
-                    'status_class': status_class,
                     'water_level': robot.get('water_level', 0),
                     'sewage_level': robot.get('sewage_level', 0)
                 })
@@ -1069,6 +1181,9 @@ class PerformanceMetricsCalculator:
                             durations.append(duration_mins)
                     avg_duration = np.mean(durations) if durations else 0
 
+                # NEW: Coverage by day analysis
+                coverage_by_day = self.calculate_facility_coverage_by_day(tasks_data, robot_locations, building_name)
+
                 # Build comprehensive facility metrics
                 facility_metrics[building_name] = {
                     'total_tasks': total_tasks,
@@ -1085,7 +1200,9 @@ class PerformanceMetricsCalculator:
                     'robot_count': len(facility_robots),
                     'primary_mode': primary_mode,
                     'avg_task_duration': round(avg_duration, 1),
-                    'cancellation_rate': round((cancelled_tasks / total_tasks * 100), 1) if total_tasks > 0 else 0
+                    'cancellation_rate': round((cancelled_tasks / total_tasks * 100), 1) if total_tasks > 0 else 0,
+                    'highest_coverage_day': coverage_by_day['highest_coverage_day'],  # NEW
+                    'lowest_coverage_day': coverage_by_day['lowest_coverage_day']  # NEW
                 }
 
             logger.info(f"Calculated breakdown metrics for {len(facility_metrics)} facilities")
@@ -1163,6 +1280,441 @@ class PerformanceMetricsCalculator:
         except Exception as e:
             logger.error(f"Error calculating detailed map coverage: {e}")
             return []
+
+    def calculate_period_comparison_metrics(self, current_metrics: Dict[str, Any],
+                                            previous_metrics: Dict[str, Any]) -> Dict[str, str]:
+        """
+        Calculate vs Last Period comparisons for various metrics with ENHANCED comparisons
+        """
+        try:
+            comparisons = {}
+
+            # Helper function to calculate change
+            def calculate_change(current, previous, format_type="number", suffix=""):
+                if current == 'N/A' or previous == 'N/A' or current is None or previous is None:
+                    return "N/A"
+
+                try:
+                    current_val = float(current)
+                    previous_val = float(previous)
+
+                    # REMOVED: if previous_val == 0: return "N/A"
+                    # NEW LOGIC: Handle zero previous values properly
+                    if previous_val == 0:
+                        if current_val == 0:
+                            return "0" + suffix  # No change if both are 0
+                        else:
+                            # When previous is 0 but current has value, show as "new" or full current value
+                            if format_type == "percent":
+                                return f"+{current_val:.1f}%"
+                            else:
+                                return f"+{current_val:.1f}{suffix}"
+
+                    if format_type == "percent":
+                        change = current_val - previous_val
+                        return f"{'+' if change >= 0 else ''}{change:.1f}%"
+                    else:
+                        change = current_val - previous_val
+                        return f"{'+' if change >= 0 else ''}{change:.1f}{suffix}"
+                except (ValueError, TypeError):
+                    return "N/A"
+
+            # Task performance comparisons
+            task_current = current_metrics.get('task_performance', {})
+            task_previous = previous_metrics.get('task_performance', {})
+
+            comparisons['completion_rate'] = calculate_change(
+                task_current.get('completion_rate', 0),
+                task_previous.get('completion_rate', 0),
+                "percent"
+            )
+
+            comparisons['total_tasks'] = calculate_change(
+                task_current.get('total_tasks', 0),
+                task_previous.get('total_tasks', 0),
+                "number", " tasks"
+            )
+
+            comparisons['total_area_cleaned'] = calculate_change(
+                task_current.get('total_area_cleaned', 0),
+                task_previous.get('total_area_cleaned', 0),
+                "number", " sq ft"
+            )
+
+            # Coverage efficiency comparison:
+            comparisons['coverage_efficiency'] = calculate_change(
+                task_current.get('coverage_efficiency', 0),
+                task_previous.get('coverage_efficiency', 0),
+                "percent"
+            )
+
+            # Average duration comparison
+            comparisons['avg_duration'] = calculate_change(
+                task_current.get('avg_task_duration_minutes', 0),
+                task_previous.get('avg_task_duration_minutes', 0),
+                "number", " min"
+            )
+
+            # Fleet performance comparisons
+            fleet_current = current_metrics.get('fleet_performance', {})
+            fleet_previous = previous_metrics.get('fleet_performance', {})
+
+            comparisons['fleet_availability'] = 'N/A'
+
+            comparisons['running_hours'] = calculate_change(
+                fleet_current.get('total_running_hours', 0),
+                fleet_previous.get('total_running_hours', 0),
+                "number", " hrs"
+            )
+
+            # NEW: Days with tasks comparison
+            comparisons['days_with_tasks'] = calculate_change(
+                fleet_current.get('days_with_tasks', 0),
+                fleet_previous.get('days_with_tasks', 0),
+                "number", " days"
+            )
+
+            # NEW: Avg daily running hours per robot comparison
+            comparisons['avg_daily_running_hours_per_robot'] = calculate_change(
+                fleet_current.get('avg_daily_running_hours_per_robot', 0),
+                fleet_previous.get('avg_daily_running_hours_per_robot', 0),
+                "number", " hrs/robot"
+            )
+
+            # Resource utilization comparisons
+            resource_current = current_metrics.get('resource_utilization', {})
+            resource_previous = previous_metrics.get('resource_utilization', {})
+
+            comparisons['energy_consumption'] = calculate_change(
+                resource_current.get('total_energy_consumption_kwh', 0),
+                resource_previous.get('total_energy_consumption_kwh', 0),
+                "number", " kWh"
+            )
+
+            comparisons['water_consumption'] = calculate_change(
+                resource_current.get('total_water_consumption_floz', 0),
+                resource_previous.get('total_water_consumption_floz', 0),
+                "number", " fl oz"
+            )
+
+            # Charging performance comparisons
+            charging_current = current_metrics.get('charging_performance', {})
+            charging_previous = previous_metrics.get('charging_performance', {})
+
+            comparisons['charging_sessions'] = calculate_change(
+                charging_current.get('total_sessions', 0),
+                charging_previous.get('total_sessions', 0),
+                "number", " sessions"
+            )
+
+            comparisons['avg_charging_duration'] = calculate_change(
+                charging_current.get('avg_charging_duration_minutes', 0),
+                charging_previous.get('avg_charging_duration_minutes', 0),
+                "number", " min"
+            )
+
+            # NEW: Median charging duration comparison
+            comparisons['median_charging_duration'] = calculate_change(
+                charging_current.get('median_charging_duration_minutes', 0),
+                charging_previous.get('median_charging_duration_minutes', 0),
+                "number", " min"
+            )
+
+            # NEW: Power gain comparisons
+            comparisons['avg_power_gain'] = calculate_change(
+                charging_current.get('avg_power_gain_percent', 0),
+                charging_previous.get('avg_power_gain_percent', 0),
+                "number", "%"
+            )
+
+            comparisons['median_power_gain'] = calculate_change(
+                charging_current.get('median_power_gain_percent', 0),
+                charging_previous.get('median_power_gain_percent', 0),
+                "number", "%"
+            )
+
+            # Cost analysis comparisons
+            cost_current = current_metrics.get('cost_analysis', {})
+            cost_previous = previous_metrics.get('cost_analysis', {})
+
+            comparisons['cost_per_sqft'] = calculate_change(
+                cost_current.get('cost_per_sqft', 0),
+                cost_previous.get('cost_per_sqft', 0),
+                "number", ""
+            )
+
+            comparisons['total_cost'] = calculate_change(
+                cost_current.get('total_cost', 0),
+                cost_previous.get('total_cost', 0),
+                "number", ""
+            )
+
+            comparisons['savings'] = calculate_change(
+                cost_current.get('savings', 0),
+                cost_previous.get('savings', 0),
+                "number", ""
+            )
+
+            comparisons['hours_saved'] = calculate_change(
+                cost_current.get('hours_saved', 0),
+                cost_previous.get('hours_saved', 0),
+                "number", " hrs"
+            )
+
+            comparisons['annual_projected_savings'] = calculate_change(
+                cost_current.get('annual_projected_savings', 0),
+                cost_previous.get('annual_projected_savings', 0),
+                "number", ""
+            )
+
+            comparisons['human_cost'] = calculate_change(
+                cost_current.get('human_cost', 0),
+                cost_previous.get('human_cost', 0),
+                "number", ""
+            )
+
+            # Facility-specific comparisons (including efficiency)
+            facility_current = current_metrics.get('facility_performance', {}).get('facilities', {})
+            facility_previous = previous_metrics.get('facility_performance', {}).get('facilities', {})
+
+            # FIX: Get efficiency metrics for comparisons
+            current_facility_eff = current_metrics.get('facility_efficiency_metrics', {})
+            previous_facility_eff = previous_metrics.get('facility_efficiency_metrics', {})
+
+            # Get facility task metrics for additional comparisons
+            current_facility_task = current_metrics.get('facility_task_metrics', {})
+            previous_facility_task = previous_metrics.get('facility_task_metrics', {})
+
+            # Get facility resource metrics for additional comparisons
+            current_facility_resource = current_metrics.get('facility_resource_metrics', {})
+            previous_facility_resource = previous_metrics.get('facility_resource_metrics', {})
+
+            # Get facility charging metrics for additional comparisons
+            current_facility_charging = current_metrics.get('facility_charging_metrics', {})
+            previous_facility_charging = previous_metrics.get('facility_charging_metrics', {})
+
+            comparisons['facility_comparisons'] = {}
+            for facility_name in facility_current.keys():
+                if facility_name in facility_previous:
+                    facility_comp = {
+                        'area_cleaned': calculate_change(
+                            facility_current[facility_name].get('area_cleaned', 0),
+                            facility_previous[facility_name].get('area_cleaned', 0),
+                            "number", " sq ft"
+                        ),
+                        'completion_rate': calculate_change(
+                            facility_current[facility_name].get('completion_rate', 0),
+                            facility_previous[facility_name].get('completion_rate', 0),
+                            "percent"
+                        ),
+                        'running_hours': calculate_change(
+                            facility_current[facility_name].get('running_hours', 0),
+                            facility_previous[facility_name].get('running_hours', 0),
+                            "number", " hrs"
+                        ),
+                        'coverage_efficiency': calculate_change(
+                            facility_current[facility_name].get('coverage_efficiency', 0),
+                            facility_previous[facility_name].get('coverage_efficiency', 0),
+                            "percent"
+                        ),
+                        'power_efficiency': calculate_change(
+                            facility_current[facility_name].get('power_efficiency', 0),
+                            facility_previous[facility_name].get('power_efficiency', 0),
+                            "number", " sq ft/kWh"
+                        )
+                    }
+
+                    # Add efficiency comparisons
+                    if facility_name in current_facility_eff and facility_name in previous_facility_eff:
+                        facility_comp['water_efficiency'] = calculate_change(
+                            current_facility_eff[facility_name].get('water_efficiency', 0),
+                            previous_facility_eff[facility_name].get('water_efficiency', 0),
+                            "number", " sq ft/fl oz"
+                        )
+                        facility_comp['time_efficiency'] = calculate_change(
+                            current_facility_eff[facility_name].get('time_efficiency', 0),
+                            previous_facility_eff[facility_name].get('time_efficiency', 0),
+                            "number", " sq ft/hr"
+                        )
+                    else:
+                        facility_comp['water_efficiency'] = 'N/A'
+                        facility_comp['time_efficiency'] = 'N/A'
+
+                    # Add task metric comparisons
+                    if facility_name in current_facility_task and facility_name in previous_facility_task:
+                        facility_comp['avg_task_duration'] = calculate_change(
+                            current_facility_task[facility_name].get('avg_duration_minutes', 0),
+                            previous_facility_task[facility_name].get('avg_duration_minutes', 0),
+                            "number", " min"
+                        )
+                        facility_comp['total_tasks'] = calculate_change(
+                            current_facility_task[facility_name].get('total_tasks', 0),
+                            previous_facility_task[facility_name].get('total_tasks', 0),
+                            "number", " tasks"
+                        )
+                    else:
+                        facility_comp['avg_task_duration'] = 'N/A'
+                        facility_comp['total_tasks'] = 'N/A'
+
+                    # Add resource metric comparisons
+                    if facility_name in current_facility_resource and facility_name in previous_facility_resource:
+                        facility_comp['energy_consumption_facility'] = calculate_change(
+                            current_facility_resource[facility_name].get('energy_consumption_kwh', 0),
+                            previous_facility_resource[facility_name].get('energy_consumption_kwh', 0),
+                            "number", " kWh"
+                        )
+                        facility_comp['water_consumption_facility'] = calculate_change(
+                            current_facility_resource[facility_name].get('water_consumption_floz', 0),
+                            previous_facility_resource[facility_name].get('water_consumption_floz', 0),
+                            "number", " fl oz"
+                        )
+                    else:
+                        facility_comp['energy_consumption_facility'] = 'N/A'
+                        facility_comp['water_consumption_facility'] = 'N/A'
+
+                    # Add charging metric comparisons
+                    if facility_name in current_facility_charging and facility_name in previous_facility_charging:
+                        facility_comp['total_sessions'] = calculate_change(
+                            current_facility_charging[facility_name].get('total_sessions', 0),
+                            previous_facility_charging[facility_name].get('total_sessions', 0),
+                            "number", " sessions"
+                        )
+                        facility_comp['avg_charging_duration'] = calculate_change(
+                            current_facility_charging[facility_name].get('avg_duration_minutes', 0),
+                            previous_facility_charging[facility_name].get('avg_duration_minutes', 0),
+                            "number", " min"
+                        )
+                        facility_comp['median_charging_duration'] = calculate_change(
+                            current_facility_charging[facility_name].get('median_duration_minutes', 0),
+                            previous_facility_charging[facility_name].get('median_duration_minutes', 0),
+                            "number", " min"
+                        )
+                        facility_comp['avg_power_gain_facility'] = calculate_change(
+                            current_facility_charging[facility_name].get('avg_power_gain_percent', 0),
+                            previous_facility_charging[facility_name].get('avg_power_gain_percent', 0),
+                            "number", "%"
+                        )
+                        facility_comp['median_power_gain_facility'] = calculate_change(
+                            current_facility_charging[facility_name].get('median_power_gain_percent', 0),
+                            previous_facility_charging[facility_name].get('median_power_gain_percent', 0),
+                            "number", "%"
+                        )
+                    else:
+                        facility_comp['total_sessions'] = 'N/A'
+                        facility_comp['avg_charging_duration'] = 'N/A'
+                        facility_comp['median_charging_duration'] = 'N/A'
+                        facility_comp['avg_power_gain_facility'] = 'N/A'
+                        facility_comp['median_power_gain_facility'] = 'N/A'
+
+                    # Add coverage by day comparisons (previous period days in brackets)
+                    current_facility_breakdown = current_metrics.get('facility_breakdown_metrics', {})
+                    previous_facility_breakdown = previous_metrics.get('facility_breakdown_metrics', {})
+
+                    if facility_name in current_facility_breakdown and facility_name in previous_facility_breakdown:
+                        current_highest = current_facility_breakdown[facility_name].get('highest_coverage_day', 'N/A')
+                        current_lowest = current_facility_breakdown[facility_name].get('lowest_coverage_day', 'N/A')
+                        previous_highest = previous_facility_breakdown[facility_name].get('highest_coverage_day', 'N/A')
+                        previous_lowest = previous_facility_breakdown[facility_name].get('lowest_coverage_day', 'N/A')
+
+                        facility_comp['highest_coverage_day'] = previous_highest
+                        facility_comp['lowest_coverage_day'] = previous_lowest
+                    else:
+                        facility_comp['highest_coverage_day'] = 'N/A'
+                        facility_comp['lowest_coverage_day'] = 'N/A'
+
+                    comparisons['facility_comparisons'][facility_name] = facility_comp
+                else:
+                    comparisons['facility_comparisons'][facility_name] = {
+                        'area_cleaned': 'N/A',
+                        'completion_rate': 'N/A',
+                        'running_hours': 'N/A',
+                        'coverage_efficiency': 'N/A',
+                        'power_efficiency': 'N/A',
+                        'water_efficiency': 'N/A',
+                        'time_efficiency': 'N/A',
+                        'avg_task_duration': 'N/A',
+                        'total_tasks': 'N/A',
+                        'energy_consumption_facility': 'N/A',
+                        'water_consumption_facility': 'N/A',
+                        'total_sessions': 'N/A',
+                        'avg_charging_duration': 'N/A',
+                        'median_charging_duration': 'N/A',
+                        'avg_power_gain_facility': 'N/A',
+                        'median_power_gain_facility': 'N/A',
+                        'highest_coverage_day': 'N/A',
+                        'lowest_coverage_day': 'N/A'
+                    }
+
+            # Map performance comparisons
+            current_map_performance = current_metrics.get('map_performance_by_building', {})
+            previous_map_performance = previous_metrics.get('map_performance_by_building', {})
+
+            comparisons['map_comparisons'] = {}
+            for building_name, maps in current_map_performance.items():
+                if building_name in previous_map_performance:
+                    comparisons['map_comparisons'][building_name] = {}
+
+                    # Create map lookup for previous period
+                    previous_maps = {m['map_name']: m for m in previous_map_performance[building_name]}
+
+                    for map_data in maps:
+                        map_name = map_data['map_name']
+                        if map_name in previous_maps:
+                            prev_map = previous_maps[map_name]
+                            comparisons['map_comparisons'][building_name][map_name] = {
+                                'coverage_percentage': calculate_change(
+                                    map_data.get('coverage_percentage', 0),
+                                    prev_map.get('coverage_percentage', 0),
+                                    "percent"
+                                ),
+                                'area_cleaned': calculate_change(
+                                    map_data.get('area_cleaned', 0),
+                                    prev_map.get('area_cleaned', 0),
+                                    "number", " sq ft"
+                                ),
+                                'running_hours': calculate_change(
+                                    map_data.get('running_hours', 0),
+                                    prev_map.get('running_hours', 0),
+                                    "number", " hrs"
+                                ),
+                                'power_efficiency': calculate_change(
+                                    map_data.get('power_efficiency', 0),
+                                    prev_map.get('power_efficiency', 0),
+                                    "number", " sq ft/kWh"
+                                ),
+                                'time_efficiency': calculate_change(
+                                    map_data.get('time_efficiency', 0),
+                                    prev_map.get('time_efficiency', 0),
+                                    "number", " sq ft/hr"
+                                ),
+                                'water_efficiency': calculate_change(
+                                    map_data.get('water_efficiency', 0),
+                                    prev_map.get('water_efficiency', 0),
+                                    "number", " sq ft/fl oz"
+                                ),
+                                'days_with_tasks': calculate_change(
+                                    map_data.get('days_with_tasks', 0),
+                                    prev_map.get('days_with_tasks', 0),
+                                    "number", " days"
+                                )
+                            }
+                        else:
+                            comparisons['map_comparisons'][building_name][map_name] = {
+                                'coverage_percentage': 'N/A',
+                                'area_cleaned': 'N/A',
+                                'running_hours': 'N/A',
+                                'power_efficiency': 'N/A',
+                                'time_efficiency': 'N/A',
+                                'water_efficiency': 'N/A',
+                                'days_with_tasks': 'N/A'
+                            }
+
+            logger.info(f"Calculated {len(comparisons)} period comparisons including facility efficiency and map comparisons")
+            return comparisons
+
+        except Exception as e:
+            logger.error(f"Error calculating period comparisons: {e}")
+            return {}
 
     def _parse_duration_to_hours(self, duration) -> float:
         """Parse duration to hours - handles seconds from database"""
@@ -1256,175 +1808,6 @@ class PerformanceMetricsCalculator:
         except Exception as e:
             logger.error(f"Error calculating average task duration: {e}")
             return 0.0
-
-    def calculate_period_comparison_metrics(self, current_metrics: Dict[str, Any],
-                                            previous_metrics: Dict[str, Any]) -> Dict[str, str]:
-        """
-        Calculate vs Last Period comparisons for various metrics
-        """
-        try:
-            comparisons = {}
-
-            # Helper function to calculate change
-            def calculate_change(current, previous, format_type="number", suffix=""):
-                if current == 'N/A' or previous == 'N/A' or previous == 0:
-                    return "N/A"
-
-                try:
-                    current_val = float(current)
-                    previous_val = float(previous)
-
-                    if previous_val == 0:
-                        return "N/A"
-
-                    if format_type == "percent":
-                        change = current_val - previous_val
-                        return f"{'+' if change >= 0 else ''}{change:.1f}%"
-                    else:
-                        change = current_val - previous_val
-                        return f"{'+' if change >= 0 else ''}{change:.1f}{suffix}"
-                except (ValueError, TypeError):
-                    return "N/A"
-
-            # Task performance comparisons
-            task_current = current_metrics.get('task_performance', {})
-            task_previous = previous_metrics.get('task_performance', {})
-
-            comparisons['completion_rate'] = calculate_change(
-                task_current.get('completion_rate', 0),
-                task_previous.get('completion_rate', 0),
-                "percent"
-            )
-
-            comparisons['total_tasks'] = calculate_change(
-                task_current.get('total_tasks', 0),
-                task_previous.get('total_tasks', 0),
-                "number", " tasks"
-            )
-
-            comparisons['total_area_cleaned'] = calculate_change(
-                task_current.get('total_area_cleaned', 0),
-                task_previous.get('total_area_cleaned', 0),
-                "number", " sq ft"
-            )
-
-            # Fleet performance comparisons
-            fleet_current = current_metrics.get('fleet_performance', {})
-            fleet_previous = previous_metrics.get('fleet_performance', {})
-
-            comparisons['fleet_availability'] = 'N/A'
-
-            comparisons['running_hours'] = calculate_change(
-                fleet_current.get('total_running_hours', 0),
-                fleet_previous.get('total_running_hours', 0),
-                "number", " hrs"
-            )
-
-            # Resource utilization comparisons
-            resource_current = current_metrics.get('resource_utilization', {})
-            resource_previous = previous_metrics.get('resource_utilization', {})
-
-            comparisons['energy_consumption'] = calculate_change(
-                resource_current.get('total_energy_consumption_kwh', 0),
-                resource_previous.get('total_energy_consumption_kwh', 0),
-                "number", " kWh"
-            )
-
-            comparisons['water_consumption'] = calculate_change(
-                resource_current.get('total_water_consumption_floz', 0),
-                resource_previous.get('total_water_consumption_floz', 0),
-                "number", " fl oz"
-            )
-
-            # Charging performance comparisons
-            charging_current = current_metrics.get('charging_performance', {})
-            charging_previous = previous_metrics.get('charging_performance', {})
-
-            comparisons['charging_sessions'] = calculate_change(
-                charging_current.get('total_sessions', 0),
-                charging_previous.get('total_sessions', 0),
-                "number", " sessions"
-            )
-
-            comparisons['avg_charging_duration'] = calculate_change(
-                charging_current.get('avg_charging_duration_minutes', 0),
-                charging_previous.get('avg_charging_duration_minutes', 0),
-                "number", " min"
-            )
-
-            # Facility-specific comparisons (including efficiency)
-            facility_current = current_metrics.get('facility_performance', {}).get('facilities', {})
-            facility_previous = previous_metrics.get('facility_performance', {}).get('facilities', {})
-
-            # FIX: Get efficiency metrics for comparisons
-            current_facility_eff = current_metrics.get('facility_efficiency_metrics', {})
-            previous_facility_eff = previous_metrics.get('facility_efficiency_metrics', {})
-
-            comparisons['facility_comparisons'] = {}
-            for facility_name in facility_current.keys():
-                if facility_name in facility_previous:
-                    facility_comp = {
-                        'area_cleaned': calculate_change(
-                            facility_current[facility_name].get('area_cleaned', 0),
-                            facility_previous[facility_name].get('area_cleaned', 0),
-                            "number", " sq ft"
-                        ),
-                        'completion_rate': calculate_change(
-                            facility_current[facility_name].get('completion_rate', 0),
-                            facility_previous[facility_name].get('completion_rate', 0),
-                            "percent"
-                        ),
-                        'running_hours': calculate_change(
-                            facility_current[facility_name].get('running_hours', 0),
-                            facility_previous[facility_name].get('running_hours', 0),
-                            "number", " hrs"
-                        ),
-                        'coverage_efficiency': calculate_change(
-                            facility_current[facility_name].get('coverage_efficiency', 0),
-                            facility_previous[facility_name].get('coverage_efficiency', 0),
-                            "percent"
-                        ),
-                        'power_efficiency': calculate_change(
-                            facility_current[facility_name].get('power_efficiency', 0),
-                            facility_previous[facility_name].get('power_efficiency', 0),
-                            "number", " sq ft/kWh"
-                        )
-                    }
-
-                    # Add efficiency comparisons
-                    if facility_name in current_facility_eff and facility_name in previous_facility_eff:
-                        facility_comp['water_efficiency'] = calculate_change(
-                            current_facility_eff[facility_name].get('water_efficiency', 0),
-                            previous_facility_eff[facility_name].get('water_efficiency', 0),
-                            "number", " sq ft/fl oz"
-                        )
-                        facility_comp['time_efficiency'] = calculate_change(
-                            current_facility_eff[facility_name].get('time_efficiency', 0),
-                            previous_facility_eff[facility_name].get('time_efficiency', 0),
-                            "number", " sq ft/hr"
-                        )
-                    else:
-                        facility_comp['water_efficiency'] = 'N/A'
-                        facility_comp['time_efficiency'] = 'N/A'
-
-                    comparisons['facility_comparisons'][facility_name] = facility_comp
-                else:
-                    comparisons['facility_comparisons'][facility_name] = {
-                        'area_cleaned': 'N/A',
-                        'completion_rate': 'N/A',
-                        'running_hours': 'N/A',
-                        'coverage_efficiency': 'N/A',
-                        'power_efficiency': 'N/A',
-                        'water_efficiency': 'N/A',
-                        'time_efficiency': 'N/A'
-                    }
-
-            logger.info(f"Calculated {len(comparisons)} period comparisons including facility efficiency")
-            return comparisons
-
-        except Exception as e:
-            logger.error(f"Error calculating period comparisons: {e}")
-            return {}
 
     def _determine_robot_status_class(self, status: str, completion_rate: float, battery_level: float) -> str:
         """Determine CSS status class based on robot metrics"""

@@ -728,9 +728,7 @@ class DatabaseDataService:
 
     def calculate_comprehensive_metrics(self, report_data: Dict[str, pd.DataFrame],
                                        start_date: str, end_date: str) -> Dict[str, Any]:
-        """
-        Calculate comprehensive metrics using the calculator and enhanced data
-        """
+        """Calculate comprehensive metrics using the calculator and enhanced data - FIXED"""
         logger.info("Calculating comprehensive metrics for report template")
 
         try:
@@ -780,16 +778,34 @@ class DatabaseDataService:
                 facility_metrics = self.calculate_facility_specific_metrics(tasks_data, robot_locations)
                 metrics['facility_performance'] = {'facilities': facility_metrics}
 
-                # FIX: Calculate facility efficiency metrics
+                # CRITICAL: Calculate all facility-specific metrics for comparison
                 facility_efficiency = self.calculate_facility_efficiency_metrics(tasks_data, robot_locations)
                 metrics['facility_efficiency_metrics'] = facility_efficiency
-                logger.info(f"Added facility efficiency metrics: {list(facility_efficiency.keys())}")
+
+                # ADD: All the missing facility metrics that are needed for comparison
+                facility_task_metrics = self.calculate_facility_specific_task_metrics(tasks_data, robot_locations)
+                metrics['facility_task_metrics'] = facility_task_metrics
+
+                facility_charging_metrics = self.calculate_facility_specific_charging_metrics(charging_data, robot_locations)
+                metrics['facility_charging_metrics'] = facility_charging_metrics
+
+                facility_resource_metrics = self.calculate_facility_specific_resource_metrics(tasks_data, robot_locations)
+                metrics['facility_resource_metrics'] = facility_resource_metrics
+
+                facility_breakdown = self.metrics_calculator.calculate_facility_breakdown_metrics(tasks_data, robot_locations)
+                metrics['facility_breakdown_metrics'] = facility_breakdown
+
+                logger.info(f"Added all facility-specific metrics for comparison")
             else:
                 # Fallback to basic facility calculation
                 metrics['facility_performance'] = self.metrics_calculator.calculate_facility_performance_metrics(
                     tasks_data, robot_data
                 )
                 metrics['facility_efficiency_metrics'] = {}
+                metrics['facility_task_metrics'] = {}
+                metrics['facility_charging_metrics'] = {}
+                metrics['facility_resource_metrics'] = {}
+                metrics['facility_breakdown_metrics'] = {}
 
             # Individual robot metrics for detailed tables
             metrics['individual_robots'] = self.metrics_calculator.calculate_individual_robot_performance(
@@ -798,6 +814,13 @@ class DatabaseDataService:
 
             # Map coverage metrics
             metrics['map_coverage'] = self.calculate_map_coverage_metrics(tasks_data)
+
+            # CRITICAL: Add map performance by building for comparison
+            if not robot_locations.empty:
+                map_performance = self.metrics_calculator.calculate_map_performance_by_building(tasks_data, robot_locations)
+                metrics['map_performance_by_building'] = map_performance
+            else:
+                metrics['map_performance_by_building'] = {}
 
             # Enhanced trend data from actual records
             metrics['trend_data'] = self.calculate_weekly_trends(
@@ -809,7 +832,7 @@ class DatabaseDataService:
                 tasks_data, metrics['resource_utilization']
             )
 
-            logger.info("Comprehensive metrics calculation completed with facility efficiency")
+            logger.info("Comprehensive metrics calculation completed with all facility metrics")
             return metrics
 
         except Exception as e:
@@ -1155,6 +1178,10 @@ class DatabaseDataService:
             weekday_completion = self.metrics_calculator.calculate_weekday_completion_rates(tasks_data)
             current_metrics['weekday_completion'] = weekday_completion
 
+            previous_tasks_data = previous_data.get('cleaning_tasks', pd.DataFrame()) 
+            previous_avg_duration = self.metrics_calculator.calculate_average_task_duration(previous_tasks_data)
+            previous_metrics['task_performance']['avg_task_duration_minutes'] = previous_avg_duration
+
             # Calculate facility-specific detailed metrics
             if not robot_locations.empty:
                 # Calculate facility-specific detailed metrics
@@ -1170,6 +1197,10 @@ class DatabaseDataService:
                 # Calculate facility efficiency metrics
                 facility_efficiency = self.calculate_facility_efficiency_metrics(tasks_data, robot_locations)
                 current_metrics['facility_efficiency_metrics'] = facility_efficiency
+
+                # Calculate facility breakdown metrics with coverage by day
+                facility_breakdown = self.metrics_calculator.calculate_facility_breakdown_metrics(tasks_data, robot_locations)
+                current_metrics['facility_breakdown_metrics'] = facility_breakdown
 
                 # Calculate map performance by building
                 map_performance = self.metrics_calculator.calculate_map_performance_by_building(tasks_data, robot_locations)
@@ -1189,8 +1220,8 @@ class DatabaseDataService:
             if daily_trend_data and daily_trend_data.get('dates'):
                 current_metrics['trend_data'] = daily_trend_data
 
-            # FIX: Calculate period comparisons INCLUDING facility efficiency
-            period_comparisons = self.calculate_enhanced_period_comparisons(current_metrics, previous_metrics)
+            # FIX: Calculate period comparisons INCLUDING facility efficiency using enhanced calculator method
+            period_comparisons = self.metrics_calculator.calculate_period_comparison_metrics(current_metrics, previous_metrics)
             current_metrics['period_comparisons'] = period_comparisons
 
             # Add comparison metadata
@@ -1199,11 +1230,11 @@ class DatabaseDataService:
                 'previous_period': {'start': previous_start, 'end': previous_end},
                 'comparison_available': True
             }
+
             # Calculate daily financial trends for chart
             daily_financial_trends = self.calculate_daily_financial_trends(tasks_data, current_start, current_end)
             if daily_financial_trends and daily_financial_trends.get('dates'):
                 current_metrics['financial_trend_data'] = daily_financial_trends
-
 
             logger.info("Successfully calculated metrics with period comparison and facility efficiency comparisons")
             return current_metrics
@@ -1225,6 +1256,7 @@ class DatabaseDataService:
             current_metrics['facility_charging_metrics'] = {}
             current_metrics['facility_resource_metrics'] = {}
             current_metrics['facility_efficiency_metrics'] = {}
+            current_metrics['facility_breakdown_metrics'] = {}
             current_metrics['map_performance_by_building'] = {}
             current_metrics['weekday_completion'] = {}
             current_metrics['trend_data'] = {}

@@ -154,34 +154,38 @@ class ReportConfig:
             current_start = datetime.strptime(current_start_str, '%Y-%m-%d %H:%M:%S') if ' ' in current_start_str else datetime.strptime(current_start_str, '%Y-%m-%d')
             current_end = datetime.strptime(current_end_str, '%Y-%m-%d %H:%M:%S') if ' ' in current_end_str else datetime.strptime(current_end_str, '%Y-%m-%d')
 
+            # FIX: Calculate period length and ensure no overlap
             period_length = current_end - current_start
-            previous_start = current_start - period_length
-            previous_end = current_start
+            previous_end = current_start - timedelta(days=1)  # End 1 day before current starts
+            previous_start = previous_end - period_length + timedelta(days=1)  # Same length period
 
         elif self.time_range == 'last-7-days':
-            current_start = now - timedelta(days=7)
             current_end = now
-            previous_start = now - timedelta(days=14)
-            previous_end = now - timedelta(days=7)
+            current_start = now - timedelta(days=7)
+            # FIX: No overlap - previous period ends where current starts
+            previous_end = current_start - timedelta(days=1)
+            previous_start = previous_end - timedelta(days=6)  # 7-day period
 
         elif self.time_range == 'last-30-days':
-            current_start = now - timedelta(days=30)
             current_end = now
-            previous_start = now - timedelta(days=60)
-            previous_end = now - timedelta(days=30)
+            current_start = now - timedelta(days=30)
+            # FIX: No overlap - previous period ends where current starts
+            previous_end = current_start - timedelta(days=1)
+            previous_start = previous_end - timedelta(days=29)  # 30-day period
 
         elif self.time_range == 'last-90-days':
-            current_start = now - timedelta(days=90)
             current_end = now
-            previous_start = now - timedelta(days=180)
-            previous_end = now - timedelta(days=90)
+            current_start = now - timedelta(days=90)
+            # FIX: No overlap - previous period ends where current starts
+            previous_end = current_start - timedelta(days=1)
+            previous_start = previous_end - timedelta(days=89)  # 90-day period
 
         else:
             # Default to last 30 days
-            current_start = now - timedelta(days=30)
             current_end = now
-            previous_start = now - timedelta(days=60)
-            previous_end = now - timedelta(days=30)
+            current_start = now - timedelta(days=30)
+            previous_end = current_start - timedelta(days=1)
+            previous_start = previous_end - timedelta(days=29)
 
         current_period = (
             current_start.strftime('%Y-%m-%d 00:00:00'),

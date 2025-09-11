@@ -207,8 +207,16 @@ class ReportGenerator:
                 'comparison_records_processed': sum(len(data) if hasattr(data, '__len__') else 0
                                                   for data in previous_data.values()),
                 'metrics_calculated': list(comprehensive_metrics.keys()),
-                'template_type': 'comprehensive_with_comparison',
-                'report_version': '2.1'
+                'template_type': 'comprehensive_with_comparison_and_facility_breakdown',  # UPDATED
+                'report_version': '2.2',  # UPDATED
+                'new_features': [  # NEW
+                    'avg_daily_running_hours_per_robot',
+                    'days_with_tasks',
+                    'facility_coverage_by_day',
+                    'map_water_efficiency',
+                    'comprehensive_vs_last_period',
+                    'facility_breakdown_metrics'
+                ]
             }
 
             logger.info(f"Comprehensive report with comparison generated successfully in {execution_time:.2f} seconds")
@@ -289,60 +297,55 @@ class ReportGenerator:
             return []
 
     def _generate_comprehensive_report_content(self, comprehensive_metrics: Dict[str, Any],
-                                                 report_config: ReportConfig, start_date: str,
-                                                 end_date: str, target_robots: List[str]) -> Dict[str, Any]:
-            """
-            Generate structured report content from comprehensive metrics
+                                             report_config: ReportConfig, start_date: str,
+                                             end_date: str, target_robots: List[str]) -> Dict[str, Any]:
+        """
+        Generate structured report content from comprehensive metrics - UPDATED with all new metrics
+        """
+        logger.info(f"Generating comprehensive report content with detail level: {report_config.detail_level.value}")
 
-            Args:
-                comprehensive_metrics: All calculated metrics from database service
-                report_config: Report configuration
-                start_date: Report start date
-                end_date: Report end date
-                target_robots: List of target robot serial numbers
+        # Build comprehensive content structure matching the enhanced template
+        content = {
+            'title': self._generate_report_title(report_config),
+            'period': f"{start_date.split(' ')[0]} to {end_date.split(' ')[0]}",
+            'generation_time': datetime.now(),
+            'detail_level': report_config.detail_level,
+            'content_categories': report_config.content_categories,
+            'customer_id': report_config.customer_id,
 
-            Returns:
-                Structured content dictionary for template
-            """
-            logger.info(f"Generating comprehensive report content with detail level: {report_config.detail_level.value}")
+            # Core metrics - pass comprehensive_metrics directly
+            'fleet_performance': comprehensive_metrics.get('fleet_performance', {}),
+            'task_performance': comprehensive_metrics.get('task_performance', {}),
+            'charging_performance': comprehensive_metrics.get('charging_performance', {}),
+            'resource_utilization': comprehensive_metrics.get('resource_utilization', {}),
+            'event_analysis': comprehensive_metrics.get('event_analysis', {}),
+            'facility_performance': comprehensive_metrics.get('facility_performance', {}),
+            'cost_analysis': comprehensive_metrics.get('cost_analysis', {}),
+            'trend_data': comprehensive_metrics.get('trend_data', {}),
+            'map_coverage': comprehensive_metrics.get('map_coverage', []),
+            'period_comparisons': comprehensive_metrics.get('period_comparisons', {}),
+            'comparison_metadata': comprehensive_metrics.get('comparison_metadata', {}),
+            'individual_robots': comprehensive_metrics.get('individual_robots', []),
+            'weekday_completion': comprehensive_metrics.get('weekday_completion', {}),
 
-            # Build comprehensive content structure matching the enhanced template
-            content = {
-                'title': self._generate_report_title(report_config),
-                'period': f"{start_date.split(' ')[0]} to {end_date.split(' ')[0]}",
-                'generation_time': datetime.now(),
-                'detail_level': report_config.detail_level,
-                'content_categories': report_config.content_categories,
-                'customer_id': report_config.customer_id,
+            'facility_task_metrics': comprehensive_metrics.get('facility_task_metrics', {}),
+            'facility_charging_metrics': comprehensive_metrics.get('facility_charging_metrics', {}),
+            'facility_resource_metrics': comprehensive_metrics.get('facility_resource_metrics', {}),
+            'facility_efficiency_metrics': comprehensive_metrics.get('facility_efficiency_metrics', {}),
+            'facility_breakdown_metrics': comprehensive_metrics.get('facility_breakdown_metrics', {}),  # NEW - for coverage by day
+            'map_performance_by_building': comprehensive_metrics.get('map_performance_by_building', {}),
+            'event_location_mapping': comprehensive_metrics.get('event_location_mapping', {}),
+            'event_type_by_location': comprehensive_metrics.get('event_type_by_location', {}),
+            'financial_trend_data': comprehensive_metrics.get('financial_trend_data', {}),  # NEW - for financial charts
 
-                # FIX: Pass comprehensive_metrics directly instead of trying to reorganize
-                'fleet_performance': comprehensive_metrics.get('fleet_performance', {}),
-                'task_performance': comprehensive_metrics.get('task_performance', {}),
-                'charging_performance': comprehensive_metrics.get('charging_performance', {}),
-                'resource_utilization': comprehensive_metrics.get('resource_utilization', {}),
-                'event_analysis': comprehensive_metrics.get('event_analysis', {}),
-                'facility_performance': comprehensive_metrics.get('facility_performance', {}),
-                'cost_analysis': comprehensive_metrics.get('cost_analysis', {}),
-                'trend_data': comprehensive_metrics.get('trend_data', {}),
-                'map_coverage': comprehensive_metrics.get('map_coverage', []),
-                'period_comparisons': comprehensive_metrics.get('period_comparisons', {}),
-                'comparison_metadata': comprehensive_metrics.get('comparison_metadata', {}),
-                'individual_robots': comprehensive_metrics.get('individual_robots', []),
-                'weekday_completion': comprehensive_metrics.get('weekday_completion', {}),
-                'facility_task_metrics': comprehensive_metrics.get('facility_task_metrics', {}),
-                'facility_charging_metrics': comprehensive_metrics.get('facility_charging_metrics', {}),
-                'facility_resource_metrics': comprehensive_metrics.get('facility_resource_metrics', {}),
-                'facility_efficiency_metrics': comprehensive_metrics.get('facility_efficiency_metrics', {}),
-                'map_performance_by_building': comprehensive_metrics.get('map_performance_by_building', {}),
-                'event_location_mapping': comprehensive_metrics.get('event_location_mapping', {}),
+            'avg_task_duration_minutes': comprehensive_metrics.get('task_performance', {}).get('avg_task_duration_minutes', 0),
 
-                # Metadata
-                'robots_included': len(target_robots),
-                'target_robots': target_robots[:10],  # Include first 10 for display
-                'total_target_robots': len(target_robots),
-                'financial_trend_data': comprehensive_metrics.get('financial_trend_data', {})
-            }
-            return content
+            # Metadata
+            'robots_included': len(target_robots),
+            'target_robots': target_robots[:10],
+            'total_target_robots': len(target_robots)
+        }
+        return content
 
     def _build_enhanced_executive_summary(self, comprehensive_metrics: Dict[str, Any]) -> Dict[str, Any]:
         """Build enhanced executive summary from comprehensive metrics with real data"""

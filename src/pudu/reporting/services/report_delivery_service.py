@@ -1,4 +1,3 @@
-# src/pudu/reporting/services/report_delivery_service.py
 import logging
 from typing import Dict, List, Optional, Any
 from datetime import datetime
@@ -214,60 +213,60 @@ class ReportDeliveryService:
 
         # Text version
         body_text = f"""
-Robot Management Report
+        Robot Management Report
 
-Report Period: {period.get('start', '')} to {period.get('end', '')}
-Detail Level: {report_config.detail_level.value.title()}
-Robots Included: {robots_count}
-Records Processed: {records_processed}
-Generated: {generation_time}
+        Report Period: {period.get('start', '')} to {period.get('end', '')}
+        Detail Level: {report_config.detail_level.value.title()}
+        Robots Included: {robots_count}
+        Records Processed: {records_processed}
+        Generated: {generation_time}
 
-Content Categories:
-{chr(10).join(['- ' + cat.replace('-', ' ').title() for cat in report_config.content_categories])}
+        Content Categories:
+        {chr(10).join(['- ' + cat.replace('-', ' ').title() for cat in report_config.content_categories])}
 
-{'View online: ' + storage_url if storage_url else ''}
+        {'View online: ' + storage_url if storage_url else ''}
 
-This is an automated report from the Robot Management System.
+        This is an automated report from the Robot Management System.
         """.strip()
 
         # HTML version
         body_html = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <style>
-        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-        .header {{ background: #2c3e50; color: white; padding: 20px; text-align: center; }}
-        .content {{ padding: 20px; }}
-        .metric {{ margin: 10px 0; }}
-        .footer {{ background: #ecf0f1; padding: 15px; text-align: center; font-size: 0.9em; }}
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>Robot Management Report</h1>
-    </div>
-    <div class="content">
-        <p><strong>Your robot management report is ready!</strong></p>
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .header {{ background: #2c3e50; color: white; padding: 20px; text-align: center; }}
+                .content {{ padding: 20px; }}
+                .metric {{ margin: 10px 0; }}
+                .footer {{ background: #ecf0f1; padding: 15px; text-align: center; font-size: 0.9em; }}
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>Robot Management Report</h1>
+            </div>
+            <div class="content">
+                <p><strong>Your robot management report is ready!</strong></p>
 
-        <div class="metric"><strong>Report Period:</strong> {period.get('start', '')} to {period.get('end', '')}</div>
-        <div class="metric"><strong>Detail Level:</strong> {report_config.detail_level.value.title()}</div>
-        <div class="metric"><strong>Robots Included:</strong> {robots_count}</div>
-        <div class="metric"><strong>Records Processed:</strong> {records_processed}</div>
-        <div class="metric"><strong>Generated:</strong> {generation_time}</div>
+                <div class="metric"><strong>Report Period:</strong> {period.get('start', '')} to {period.get('end', '')}</div>
+                <div class="metric"><strong>Detail Level:</strong> {report_config.detail_level.value.title()}</div>
+                <div class="metric"><strong>Robots Included:</strong> {robots_count}</div>
+                <div class="metric"><strong>Records Processed:</strong> {records_processed}</div>
+                <div class="metric"><strong>Generated:</strong> {generation_time}</div>
 
-        <h3>Content Categories:</h3>
-        <ul>
-        {''.join([f'<li>{cat.replace("-", " ").title()}</li>' for cat in report_config.content_categories])}
-        </ul>
+                <h3>Content Categories:</h3>
+                <ul>
+                {''.join([f'<li>{cat.replace("-", " ").title()}</li>' for cat in report_config.content_categories])}
+                </ul>
 
-        {f'<p><a href="{storage_url}" style="background: #3498db; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">View Report Online</a></p>' if storage_url else ''}
-    </div>
-    <div class="footer">
-        <p>This is an automated report from the Robot Management System.</p>
-    </div>
-</body>
-</html>
+                {f'<p><a href="{storage_url}" style="background: #3498db; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">View Report Online</a></p>' if storage_url else ''}
+            </div>
+            <div class="footer">
+                <p>This is an automated report from the Robot Management System.</p>
+            </div>
+        </body>
+        </html>
         """.strip()
 
         return body_text, body_html
