@@ -14,9 +14,37 @@ class RobotPerformanceTemplate:
         self.chart_formatter = ChartDataFormatter()
 
     def generate_comprehensive_report(self, content: Dict[str, Any], config: ReportConfig) -> str:
-        """Generate comprehensive HTML report using real data"""
+        """Generate comprehensive HTML report using real data with conditional sections"""
         try:
             chart_js_data = self._generate_chart_data(content)
+            content_categories = config.content_categories
+
+            # Always include executive summary
+            sections = [self._generate_executive_summary(content)]
+
+            # Cleaning Performance section (combines fleet, facility, task performance)
+            if any(cat in content_categories for cat in ['executive-summary', 'fleet-management', 'facility-performance', 'task-performance', 'cleaning-performance']):
+                sections.extend([
+                    self._generate_fleet_section(content),
+                    self._generate_facility_section(content),
+                    self._generate_task_section(content)
+                ])
+
+            # Resource Utilization & Efficiency section
+            if 'resource-utilization' in content_categories:
+                sections.append(self._generate_resource_section(content))
+
+            # Financial Performance section
+            if 'financial-performance' in content_categories:
+                sections.append(self._generate_financial_section(content))
+
+            # Charging Sessions Performance section
+            if 'charging-performance' in content_categories:
+                sections.append(self._generate_charging_section(content))
+
+            # Always include conclusion
+            sections.append(self._generate_conclusion(content))
+            sections.append(self._generate_footer(content))
 
             html_content = f"""<!DOCTYPE html>
             <html lang="en">
@@ -311,16 +339,7 @@ class RobotPerformanceTemplate:
                 <div class="container">
                     <h1>Robot Performance Report</h1>
                     <p class="subtitle">{content.get('period', 'Latest Period')}</p>
-
-                    {self._generate_executive_summary(content)}
-                    {self._generate_fleet_section(content)}
-                    {self._generate_facility_section(content)}
-                    {self._generate_task_section(content)}
-                    {self._generate_resource_section(content)}
-                    {self._generate_financial_section(content)}
-                    {self._generate_charging_section(content)}
-                    {self._generate_conclusion(content)}
-                    {self._generate_footer(content)}
+                    {''.join(sections)}
                 </div>
                 {self._generate_javascript(chart_js_data)}
             </body>

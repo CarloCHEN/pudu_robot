@@ -699,25 +699,38 @@ class DatabaseDataService:
         report_data = {}
 
         try:
-            # Always fetch robot status for basic info
+            # Always fetch robot status and location data for basic info
             logger.info("Fetching robot status data...")
             report_data['robot_status'] = self.fetch_robot_status_data(target_robots)
 
-            # Always fetch location data for facility analysis
             logger.info("Fetching location data...")
             report_data['robot_locations'] = self.fetch_location_data(target_robots)
 
-            if 'cleaning-tasks' in content_categories or 'performance' in content_categories:
-                logger.info("Fetching cleaning tasks data...")
-                report_data['cleaning_tasks'] = self.fetch_cleaning_tasks_data(target_robots, start_date, end_date)
+            # Always Fetch cleaning and charging tasks data
+            report_data['cleaning_tasks'] = self.fetch_cleaning_tasks_data(target_robots, start_date, end_date)
+            report_data['charging_tasks'] = self.fetch_charging_data(target_robots, start_date, end_date)
 
-            if 'charging-tasks' in content_categories:
-                logger.info("Fetching charging data...")
-                report_data['charging_tasks'] = self.fetch_charging_data(target_robots, start_date, end_date)
+            # # Always fetch cleaning tasks for cleaning performance sections and resource/financial calculations
+            # cleaning_needed = any(cat in content_categories for cat in [
+            #     'resource-utilization', 'financial-performance', 'cleaning-performance'
+            # ])
+            # if cleaning_needed:
+            #     logger.info("Fetching cleaning tasks data...")
+            #     report_data['cleaning_tasks'] = self.fetch_cleaning_tasks_data(target_robots, start_date, end_date)
 
-            if any(cat in content_categories for cat in ['robot-status', 'performance']):
+            # # Only fetch charging data if charging performance is requested
+            # if 'charging-performance' in content_categories:
+            #     logger.info("Fetching charging data...")
+            #     report_data['charging_tasks'] = self.fetch_charging_data(target_robots, start_date, end_date)
+            # else:
+            #     report_data['charging_tasks'] = pd.DataFrame()  # Empty DataFrame
+
+            # Events data - keep for system health but don't delete the method
+            if any(cat in content_categories for cat in ['event-analysis']):
                 logger.info("Fetching events data...")
                 report_data['events'] = self.fetch_events_data(target_robots, start_date, end_date)
+            else:
+                report_data['events'] = pd.DataFrame()  # Empty DataFrame
 
             logger.info(f"Data fetching completed. Categories: {list(report_data.keys())}")
             return report_data
@@ -771,7 +784,7 @@ class DatabaseDataService:
             else:
                 metrics['event_location_mapping'] = {}
                 metrics['event_type_by_location'] = {}
-                logger.warning("No events or location data for event breakdown")
+                # logger.warning("No events or location data for event breakdown")
 
             # Enhanced facility performance metrics using location data
             if not robot_locations.empty:
@@ -1178,7 +1191,7 @@ class DatabaseDataService:
             weekday_completion = self.metrics_calculator.calculate_weekday_completion_rates(tasks_data)
             current_metrics['weekday_completion'] = weekday_completion
 
-            previous_tasks_data = previous_data.get('cleaning_tasks', pd.DataFrame()) 
+            previous_tasks_data = previous_data.get('cleaning_tasks', pd.DataFrame())
             previous_avg_duration = self.metrics_calculator.calculate_average_task_duration(previous_tasks_data)
             previous_metrics['task_performance']['avg_task_duration_minutes'] = previous_avg_duration
 
@@ -1213,7 +1226,7 @@ class DatabaseDataService:
                     logger.info(f"Added event_type_by_location with {len(event_type_by_location)} event types")
                 else:
                     current_metrics['event_type_by_location'] = {}
-                    logger.warning("No events data for event type breakdown")
+                    # logger.warning("No events data for event type breakdown")
 
             # Update trend data to use daily instead of weekly
             daily_trend_data = self.calculate_daily_trends(tasks_data, charging_data, current_start, current_end)

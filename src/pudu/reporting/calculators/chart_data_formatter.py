@@ -226,7 +226,7 @@ class ChartDataFormatter:
                 logger.info("Using proportional distribution fallback")
                 return self._format_proportional_breakdown(event_types, event_location_mapping)
 
-            logger.warning("No event data available - using default chart")
+            # logger.warning("No event data available - using default chart")
             return self._get_default_event_type_chart()
 
         except Exception as e:

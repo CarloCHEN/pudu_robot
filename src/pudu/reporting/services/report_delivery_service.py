@@ -1,12 +1,11 @@
 import logging
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime
-import boto3
 import json
+
+import aioboto3
 from botocore.exceptions import ClientError
 
-# Reuse existing notification infrastructure
-from pudu.notifications import NotificationService
 from ..core.report_config import ReportConfig, DeliveryMethod
 
 logger = logging.getLogger(__name__)
@@ -17,19 +16,20 @@ class ReportDeliveryService:
     def __init__(self, region: str = 'us-east-2'):
         """Initialize delivery service"""
         self.region = region
-        self.s3_client = boto3.client('s3', region_name=region)
-        self.ses_client = boto3.client('ses', region_name=region)
 
-        # Reuse existing notification service
-        self.notification_service = NotificationService()
+        # Configure S3 bucket based on region
+        if region == 'us-east-1':
+            self.reports_bucket = "monitor-reports-test-archive"
+        else:  # us-east-2 and default
+            self.reports_bucket = "monitor-reports-archive"
 
-        # S3 bucket for report storage (configurable)
-        self.reports_bucket = f"robot-reports-{region}"
+        # aioboto3 session for async operations
+        self.session = aioboto3.Session()
 
-        logger.info("Initialized ReportDeliveryService")
+        logger.info(f"Initialized ReportDeliveryService for region {region}, bucket: {self.reports_bucket}")
 
-    def deliver_report(self, report_html: str, metadata: Dict[str, Any],
-                      report_config: ReportConfig) -> Dict[str, Any]:
+    async def deliver_report(self, report_html: str, metadata: Dict[str, Any],
+                           report_config: ReportConfig) -> Dict[str, Any]:
         """
         Deliver report based on configuration
 
@@ -53,13 +53,13 @@ class ReportDeliveryService:
 
         try:
             # Always store report in S3 for backup/history
-            storage_result = self._store_report_in_s3(report_html, metadata, report_config)
+            storage_result = await self._store_report_in_s3(report_html, metadata, report_config)
             delivery_results.update(storage_result)
 
             # Deliver based on method
             if report_config.delivery == DeliveryMethod.EMAIL:
-                email_result = self._deliver_via_email(report_html, metadata, report_config,
-                                                     delivery_results.get('storage_url'))
+                email_result = await self._deliver_via_email(report_html, metadata, report_config,
+                                                           delivery_results.get('storage_url'))
                 delivery_results.update(email_result)
             else:
                 # In-app delivery (already stored in S3)
@@ -73,36 +73,47 @@ class ReportDeliveryService:
             delivery_results['error'] = str(e)
             return delivery_results
 
-    def _store_report_in_s3(self, report_html: str, metadata: Dict[str, Any],
-                           report_config: ReportConfig) -> Dict[str, Any]:
+    async def _store_report_in_s3(self, report_html: str, metadata: Dict[str, Any],
+                                 report_config: ReportConfig) -> Dict[str, Any]:
         """Store report in S3 for archival and in-app access"""
         try:
             # Generate S3 key with proper organization
             timestamp = datetime.now()
             s3_key = self._generate_report_s3_key(report_config.customer_id, metadata, timestamp)
 
-            # Store HTML report
-            self.s3_client.put_object(
-                Bucket=self.reports_bucket,
-                Key=s3_key,
-                Body=report_html.encode('utf-8'),
-                ContentType='text/html',
-                Metadata={
-                    'customer_id': report_config.customer_id,
-                    'generation_time': metadata.get('generation_time', ''),
-                    'detail_level': report_config.detail_level.value,
-                    'report_type': 'robot_performance'
-                }
-            )
+            async with self.session.client('s3', region_name=self.region) as s3_client:
+                # Store HTML report
+                await s3_client.put_object(
+                    Bucket=self.reports_bucket,
+                    Key=s3_key,
+                    Body=report_html.encode('utf-8'),
+                    ContentType='text/html',
+                    Metadata={
+                        'customer_id': report_config.customer_id,
+                        'generation_time': metadata.get('generation_time', ''),
+                        'detail_level': report_config.detail_level.value,
+                        'report_type': 'robot_performance',
+                        'api_version': '1.0.0'
+                    }
+                )
 
-            # Store metadata separately
-            metadata_key = s3_key.replace('.html', '_metadata.json')
-            self.s3_client.put_object(
-                Bucket=self.reports_bucket,
-                Key=metadata_key,
-                Body=json.dumps(metadata, indent=2).encode('utf-8'),
-                ContentType='application/json'
-            )
+                # Store metadata separately
+                metadata_key = s3_key.replace('.html', '_metadata.json')
+                enhanced_metadata = {
+                    **metadata,
+                    'storage_info': {
+                        'bucket': self.reports_bucket,
+                        'region': self.region,
+                        'stored_at': timestamp.isoformat()
+                    }
+                }
+
+                await s3_client.put_object(
+                    Bucket=self.reports_bucket,
+                    Key=metadata_key,
+                    Body=json.dumps(enhanced_metadata, indent=2).encode('utf-8'),
+                    ContentType='application/json'
+                )
 
             # Generate access URL
             storage_url = f"https://{self.reports_bucket}.s3.{self.region}.amazonaws.com/{s3_key}"
@@ -111,7 +122,9 @@ class ReportDeliveryService:
             return {
                 'success': True,
                 'storage_url': storage_url,
-                's3_key': s3_key
+                's3_key': s3_key,
+                'bucket': self.reports_bucket,
+                'region': self.region
             }
 
         except ClientError as e:
@@ -121,8 +134,8 @@ class ReportDeliveryService:
                 'error': f"S3 storage failed: {e}"
             }
 
-    def _deliver_via_email(self, report_html: str, metadata: Dict[str, Any],
-                          report_config: ReportConfig, storage_url: Optional[str] = None) -> Dict[str, Any]:
+    async def _deliver_via_email(self, report_html: str, metadata: Dict[str, Any],
+                               report_config: ReportConfig, storage_url: Optional[str] = None) -> Dict[str, Any]:
         """Deliver report via email"""
         try:
             # Prepare email content
@@ -131,34 +144,36 @@ class ReportDeliveryService:
 
             # Send to all recipients
             email_results = []
-            for recipient in report_config.email_recipients:
-                try:
-                    response = self.ses_client.send_email(
-                        Source='reports@robotmanagement.com',  # Configure this
-                        Destination={'ToAddresses': [recipient]},
-                        Message={
-                            'Subject': {'Data': subject},
-                            'Body': {
-                                'Text': {'Data': body_text},
-                                'Html': {'Data': body_html}
+
+            async with self.session.client('ses', region_name=self.region) as ses_client:
+                for recipient in report_config.email_recipients:
+                    try:
+                        response = await ses_client.send_email(
+                            Source='reports@robotmanagement.com',  # Configure this
+                            Destination={'ToAddresses': [recipient]},
+                            Message={
+                                'Subject': {'Data': subject},
+                                'Body': {
+                                    'Text': {'Data': body_text},
+                                    'Html': {'Data': body_html}
+                                }
                             }
-                        }
-                    )
+                        )
 
-                    email_results.append({
-                        'recipient': recipient,
-                        'success': True,
-                        'message_id': response['MessageId']
-                    })
-                    logger.info(f"Email sent to {recipient}: {response['MessageId']}")
+                        email_results.append({
+                            'recipient': recipient,
+                            'success': True,
+                            'message_id': response['MessageId']
+                        })
+                        logger.info(f"Email sent to {recipient}: {response['MessageId']}")
 
-                except ClientError as e:
-                    email_results.append({
-                        'recipient': recipient,
-                        'success': False,
-                        'error': str(e)
-                    })
-                    logger.error(f"Failed to send email to {recipient}: {e}")
+                    except ClientError as e:
+                        email_results.append({
+                            'recipient': recipient,
+                            'success': False,
+                            'error': str(e)
+                        })
+                        logger.error(f"Failed to send email to {recipient}: {e}")
 
             # Determine overall email success
             successful_emails = sum(1 for result in email_results if result['success'])
@@ -204,7 +219,7 @@ class ReportDeliveryService:
         return f"Robot Management Report{date_str} - {report_config.detail_level.value.title()} Analysis"
 
     def _generate_email_body(self, metadata: Dict[str, Any], report_config: ReportConfig,
-                           storage_url: Optional[str] = None) -> tuple[str, str]:
+                           storage_url: Optional[str] = None) -> Tuple[str, str]:
         """Generate email body (text and HTML)"""
         period = metadata.get('date_range', {})
         robots_count = metadata.get('robots_included', 0)
@@ -271,17 +286,18 @@ class ReportDeliveryService:
 
         return body_text, body_html
 
-    def get_report_history(self, customer_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+    async def get_report_history(self, customer_id: str, limit: int = 50) -> List[Dict[str, Any]]:
         """Get report history for a customer from S3"""
         try:
             # List objects for this customer
             prefix = f"reports/{customer_id}/"
 
-            response = self.s3_client.list_objects_v2(
-                Bucket=self.reports_bucket,
-                Prefix=prefix,
-                MaxKeys=limit
-            )
+            async with self.session.client('s3', region_name=self.region) as s3_client:
+                response = await s3_client.list_objects_v2(
+                    Bucket=self.reports_bucket,
+                    Prefix=prefix,
+                    MaxKeys=limit
+                )
 
             reports = []
             for obj in response.get('Contents', []):
@@ -307,7 +323,7 @@ class ReportDeliveryService:
             logger.error(f"Error getting report history: {e}")
             return []
 
-    def delete_report(self, customer_id: str, report_key: str) -> Dict[str, Any]:
+    async def delete_report(self, customer_id: str, report_key: str) -> Dict[str, Any]:
         """Delete a stored report"""
         try:
             # Verify the report belongs to the customer
@@ -317,15 +333,16 @@ class ReportDeliveryService:
                     'error': 'Unauthorized: Report does not belong to customer'
                 }
 
-            # Delete report and metadata
-            self.s3_client.delete_object(Bucket=self.reports_bucket, Key=report_key)
+            async with self.session.client('s3', region_name=self.region) as s3_client:
+                # Delete report and metadata
+                await s3_client.delete_object(Bucket=self.reports_bucket, Key=report_key)
 
-            # Delete metadata file
-            metadata_key = report_key.replace('.html', '_metadata.json')
-            try:
-                self.s3_client.delete_object(Bucket=self.reports_bucket, Key=metadata_key)
-            except ClientError:
-                pass  # Metadata file might not exist
+                # Delete metadata file
+                metadata_key = report_key.replace('.html', '_metadata.json')
+                try:
+                    await s3_client.delete_object(Bucket=self.reports_bucket, Key=metadata_key)
+                except ClientError:
+                    pass  # Metadata file might not exist
 
             logger.info(f"Deleted report: {report_key}")
             return {

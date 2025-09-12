@@ -285,6 +285,7 @@ class ReportGenerator:
     def _get_all_customer_robots(self, customer_id: str) -> List[str]:
         """Get all robots belonging to a customer"""
         try:
+            # TODO: Filter robots by customer_id
             # Use the resolver to get all robots and their database mappings
             all_robot_mapping = self.resolver.get_robot_database_mapping()
 
