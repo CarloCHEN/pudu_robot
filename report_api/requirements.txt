@@ -1,0 +1,31 @@
+# FastAPI and ASGI server
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+
+# HTTP client library
+requests==2.31.0
+
+# Async AWS SDK - compatible versions
+aioboto3==12.3.0
+# Remove specific botocore version to let aioboto3 choose compatible version
+
+# Data processing (from existing project)
+pandas==2.1.3
+numpy==1.24.3
+
+# Database connectivity (from existing project)
+PyMySQL==1.1.0
+sqlalchemy==2.0.23
+
+# Configuration and utilities
+pydantic==2.5.0
+python-multipart==0.0.6
+pyyaml==6.0.1
+
+# Additional utilities that might be needed by existing code
+python-dotenv==1.0.0
+jinja2==3.1.2
+
+# PDF generation
+playwright>=1.44.0
+matplotlib==3.8.0
