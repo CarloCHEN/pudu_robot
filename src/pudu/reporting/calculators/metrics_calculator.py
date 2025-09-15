@@ -51,17 +51,14 @@ class PerformanceMetricsCalculator:
             # Calculate average task duration in minutes
             avg_task_duration = 0
             if not tasks_data.empty and 'duration' in tasks_data.columns:
-                duration_minutes = []
+                durations_seconds = []
                 for duration in tasks_data['duration']:
                     if pd.notna(duration):
                         try:
-                            seconds = float(str(duration).strip())
-                            minutes = seconds / 60
-                            if minutes > 0:
-                                duration_minutes.append(minutes)
+                            durations_seconds.append(duration)
                         except:
                             continue
-                avg_task_duration = np.mean(duration_minutes) if duration_minutes else 0
+                avg_task_duration = np.mean(durations_seconds) / 60 if durations_seconds else 0
 
             # Calculate NEW: Avg Daily Running Hours per Robot
             avg_daily_running_hours = self.calculate_avg_daily_running_hours_per_robot(tasks_data, robot_data)
@@ -91,6 +88,56 @@ class PerformanceMetricsCalculator:
                 'avg_task_duration_minutes': 0.0,
                 'avg_daily_running_hours_per_robot': 0.0,
                 'days_with_tasks': 0
+            }
+
+    def calculate_days_with_tasks_and_period_length(self, tasks_data: pd.DataFrame,
+                                                      start_date: str, end_date: str) -> Dict[str, int]:
+        """Calculate both days with tasks and total period length for ratio display"""
+        try:
+            # Calculate days with tasks
+            days_with_tasks = self.calculate_days_with_tasks(tasks_data)
+
+            # Calculate period length
+            start_dt = datetime.strptime(start_date.split(' ')[0], '%Y-%m-%d')
+            end_dt = datetime.strptime(end_date.split(' ')[0], '%Y-%m-%d')
+            period_length = (end_dt - start_dt).days + 1
+
+            return {
+                'days_with_tasks': days_with_tasks,
+                'period_length': period_length,
+                'days_ratio': f"{days_with_tasks}/{period_length}"
+            }
+        except Exception as e:
+            logger.error(f"Error calculating days with tasks and period length: {e}")
+            return {
+                'days_with_tasks': 0,
+                'period_length': 0,
+                'days_ratio': "0/0"
+            }
+
+    def calculate_facility_days_with_tasks_and_period(self, facility_tasks: pd.DataFrame,
+                                                     start_date: str, end_date: str) -> Dict[str, Any]:
+        """Calculate facility-specific days with tasks and period length"""
+        try:
+            # Calculate days with tasks for this facility
+            facility_days = self.calculate_facility_days_with_tasks(facility_tasks)
+
+            # Calculate period length
+            start_dt = datetime.strptime(start_date.split(' ')[0], '%Y-%m-%d')
+            end_dt = datetime.strptime(end_date.split(' ')[0], '%Y-%m-%d')
+            period_length = (end_dt - start_dt).days + 1
+
+            return {
+                'days_with_tasks': facility_days,
+                'period_length': period_length,
+                'days_ratio': f"{facility_days}/{period_length}"
+            }
+        except Exception as e:
+            logger.error(f"Error calculating facility days with tasks and period: {e}")
+            return {
+                'days_with_tasks': 0,
+                'period_length': 0,
+                'days_ratio': "0/0"
             }
 
     def calculate_avg_daily_running_hours_per_robot(self, tasks_data: pd.DataFrame, robot_data: pd.DataFrame) -> float:
@@ -449,10 +496,10 @@ class PerformanceMetricsCalculator:
             logger.error(f"Error calculating facility coverage by day for {facility_name}: {e}")
             return {'highest_coverage_day': 'N/A', 'lowest_coverage_day': 'N/A'}
 
-    def calculate_facility_efficiency_metrics(self, tasks_data: pd.DataFrame, robot_locations: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
-        """
-        Calculate water efficiency and time efficiency for facilities
-        """
+    def calculate_facility_efficiency_metrics(self, tasks_data: pd.DataFrame,
+                                            robot_locations: pd.DataFrame,
+                                            start_date: str, end_date: str) -> Dict[str, Dict[str, Any]]:
+        """Calculate water efficiency and time efficiency for facilities with period length"""
         try:
             if robot_locations.empty or tasks_data.empty:
                 return {}
@@ -466,7 +513,7 @@ class PerformanceMetricsCalculator:
                 if facility_tasks.empty:
                     continue
 
-                # Area calculations - convert from square meters to square feet (1 m² = 10.764 sq ft)
+                # Area calculations - convert from square meters to square feet
                 total_area_sqm = facility_tasks['actual_area'].fillna(0).sum() if 'actual_area' in facility_tasks.columns else 0
                 total_area_sqft = total_area_sqm * 10.764
 
@@ -489,15 +536,19 @@ class PerformanceMetricsCalculator:
 
                 time_efficiency = total_area_sqft / total_time_hours if total_time_hours > 0 else 0
 
-                # NEW: Days with tasks for this facility
-                facility_days_with_tasks = self.calculate_facility_days_with_tasks(facility_tasks)
+                # NEW: Calculate days with tasks and period length for this facility
+                facility_days_info = self.calculate_facility_days_with_tasks_and_period(
+                    facility_tasks, start_date, end_date
+                )
 
                 facility_metrics[building_name] = {
                     'water_efficiency': round(water_efficiency, 1),  # sq ft per fl oz
                     'time_efficiency': round(time_efficiency, 1),   # sq ft per hour
                     'total_area_cleaned': round(total_area_sqft, 0),
                     'total_time_hours': round(total_time_hours, 1),
-                    'days_with_tasks': facility_days_with_tasks  # NEW
+                    'days_with_tasks': facility_days_info['days_with_tasks'],  # NEW
+                    'period_length': facility_days_info['period_length'],  # NEW
+                    'days_ratio': facility_days_info['days_ratio']  # NEW - format like "10/12"
                 }
 
             return facility_metrics
@@ -702,7 +753,7 @@ class PerformanceMetricsCalculator:
 
                                 # Parse REAL duration and add to total
                                 duration_str = str(charge.get('duration', ''))
-                                duration_minutes = self._parse_duration_to_minutes(duration_str)
+                                duration_minutes = self._parse_duration_str_to_minutes(duration_str)
                                 if duration_minutes > 0:
                                     daily_data[date_str]['charging_duration_total'] += duration_minutes
                                     daily_data[date_str]['charging_session_count'] += 1
@@ -1174,12 +1225,10 @@ class PerformanceMetricsCalculator:
                 # Average task duration
                 avg_duration = 0
                 if 'duration' in facility_tasks.columns:
-                    durations = []
+                    durations_seconds = []
                     for duration in facility_tasks['duration']:
-                        duration_mins = self._parse_duration_to_minutes(duration)
-                        if duration_mins > 0:
-                            durations.append(duration_mins)
-                    avg_duration = np.mean(durations) if durations else 0
+                        durations_seconds.append(duration)
+                    avg_duration = np.mean(durations_seconds) / 60 if durations_seconds else 0
 
                 # NEW: Coverage by day analysis
                 coverage_by_day = self.calculate_facility_coverage_by_day(tasks_data, robot_locations, building_name)
@@ -1716,29 +1765,43 @@ class PerformanceMetricsCalculator:
             logger.error(f"Error calculating period comparisons: {e}")
             return {}
 
-    def _parse_duration_to_hours(self, duration) -> float:
+    def _parse_duration_to_hours(self, duration: float) -> float:
         """Parse duration to hours - handles seconds from database"""
         if pd.isna(duration):
             return 0
-
         try:
-            # First try to parse as pure seconds (most common case from database)
-            seconds = float(str(duration).strip())
-            return seconds / 3600  # Convert seconds to hours
+            return duration / 3600  # Convert seconds to hours
         except (ValueError, AttributeError):
             return 0
 
-    def _parse_duration_to_minutes(self, duration) -> float:
-        """Parse duration to minutes - handles seconds from database"""
-        if pd.isna(duration):
-            return 0
-
+    def _parse_duration_str_to_minutes(self, duration_str: str) -> float:
+        """Parse duration string to minutes"""
         try:
-            # Parse as seconds and convert to minutes
-            seconds = float(str(duration).strip())
-            return seconds / 60  # Convert seconds to minutes
-        except (ValueError, AttributeError):
-            return 0
+            if pd.isna(duration_str) or not str(duration_str).strip():
+                return 0.0
+
+            duration_str = str(duration_str).strip()
+            hours = 0
+            minutes = 0
+
+            if 'h' in duration_str and 'min' in duration_str:
+                parts = duration_str.split('h')
+                hours = int(parts[0].strip())
+                min_part = parts[1].strip()
+                if min_part.endswith('min'):
+                    minutes = int(min_part.replace('min', '').strip())
+            elif 'min' in duration_str:
+                minutes = int(duration_str.replace('min', '').strip())
+            elif 'h' in duration_str:
+                hours = int(duration_str.replace('h', '').strip())
+            else:
+                # Try to parse as pure seconds and convert to minutes
+                seconds = float(duration_str)
+                minutes = seconds / 60
+
+            return hours * 60 + minutes
+        except:
+            return 0.0
 
     def calculate_weekend_schedule_completion(self, tasks_data: pd.DataFrame) -> float:
         """
@@ -1794,15 +1857,13 @@ class PerformanceMetricsCalculator:
             if tasks_data.empty or 'duration' not in tasks_data.columns:
                 return 0.0
 
-            durations_minutes = []
+            durations_seconds = []
             for duration in tasks_data['duration']:
                 if pd.notna(duration):
-                    duration_minutes = self._parse_duration_to_minutes(duration)
-                    if duration_minutes > 0:
-                        durations_minutes.append(duration_minutes)
+                    durations_seconds.append(duration)
 
-            avg_duration = np.mean(durations_minutes) if durations_minutes else 0.0
-            logger.info(f"Calculated average task duration: {avg_duration:.1f} minutes from {len(durations_minutes)} tasks")
+            avg_duration = np.mean(durations_seconds) / 60 if durations_seconds else 0.0
+            logger.info(f"Calculated average task duration: {avg_duration:.1f} minutes from {len(durations_seconds)} tasks")
             return round(avg_duration, 1)
 
         except Exception as e:

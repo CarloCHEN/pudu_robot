@@ -19,16 +19,16 @@ class RobotPerformanceTemplate:
             chart_js_data = self._generate_chart_data(content)
             content_categories = config.content_categories
 
-            # Always include executive summary
+            # Always include executive summary (now includes individual robot performance)
             sections = [self._generate_executive_summary(content)]
 
-            # Cleaning Performance section (combines fleet, facility, task performance)
+            # Task Performance section (now includes facility efficiency charts by location)
             if any(cat in content_categories for cat in ['executive-summary', 'fleet-management', 'facility-performance', 'task-performance', 'cleaning-performance']):
-                sections.extend([
-                    self._generate_fleet_section(content),
-                    self._generate_facility_section(content),
-                    self._generate_task_section(content)
-                ])
+                sections.append(self._generate_task_section(content))
+
+            # Facility-Specific Performance section (moved after task section)
+            if any(cat in content_categories for cat in ['facility-performance', 'cleaning-performance']):
+                sections.append(self._generate_facility_section(content))
 
             # Resource Utilization & Efficiency section
             if 'resource-utilization' in content_categories:
@@ -171,6 +171,120 @@ class RobotPerformanceTemplate:
                         box-shadow: 0 2px 10px rgba(0,0,0,0.1);
                     }}
 
+                    .location-efficiency-single-column {{
+                        display: flex;
+                        flex-direction: column;
+                        gap: 20px;
+                        margin: 30px 0;
+                    }}
+
+                    .location-efficiency-single-line {{
+                        background: #f8f9fa;
+                        border-radius: 8px;
+                        padding: 20px;
+                        border: 1px solid #e9ecef;
+                        margin: 15px 0;
+                    }}
+
+                    .location-single-line-content {{
+                        display: grid;
+                        grid-template-columns: 1fr 350px;
+                        gap: 40px; /* Increased from 30px to 40px for more space */
+                        align-items: flex-start;
+                    }}
+
+                    .location-chart-compact {{
+                        position: relative;
+                        height: 280px;
+                        background: white;
+                        border-radius: 8px;
+                        padding: 15px;
+                        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                        width: 100%;
+                        overflow: hidden;
+                        margin-right: 20px; /* Add right margin for extra space */
+                    }}
+
+                    .location-stats-compact {{
+                        display: flex;
+                        flex-direction: column;
+                        gap: 12px;
+                        min-width: 350px;
+                        max-width: 350px;
+                        padding-left: 15px; /* Add left padding for extra space */
+                        border-left: 1px solid #e9ecef; /* Optional: visual separator */
+                    }}
+
+                    .location-chart-compact canvas {{
+                        width: 100% !important;
+                        height: 220px !important;
+                        max-width: 100%;
+                        display: block;
+                    }}
+
+                    .location-chart-compact .chart-toggle-container {{
+                        margin-bottom: 10px;
+                        text-align: center;
+                    }}
+
+                    .location-chart-compact .chart-toggle-btn {{
+                        padding: 6px 12px;
+                        font-size: 0.8em;
+                    }}
+
+                    .location-stats-compact {{
+                        display: flex;
+                        flex-direction: column;
+                        gap: 12px;
+                        min-width: 350px;
+                        max-width: 350px;
+                    }}
+
+                    .stat-row {{
+                        display: flex;
+                        align-items: flex-start;
+                        gap: 10px;
+                        padding: 8px 0;
+                        border-bottom: 1px solid #e9ecef;
+                        flex-wrap: wrap;
+                    }}
+
+                    .stat-row:last-child {{
+                        border-bottom: none;
+                    }}
+
+                    .stat-label {{
+                        font-weight: 600;
+                        color: #495057;
+                        min-width: 90px;
+                        font-size: 0.9em;
+                        flex-shrink: 0;
+                    }}
+
+                    .stat-value {{
+                        font-weight: bold;
+                        color: #2c3e50;
+                        font-size: 0.95em;
+                        flex-shrink: 0;
+                    }}
+
+                    .stat-comparison {{
+                        font-size: 0.85em;
+                        font-style: italic;
+                        margin-left: 5px;
+                        flex-shrink: 0;
+                    }}
+
+                    .location-chart-container {{
+                        position: relative;
+                        height: 350px;
+                        margin: 20px 0;
+                        background: white;
+                        border-radius: 8px;
+                        padding: 15px;
+                        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                    }}
+
                     .chart-row {{
                         display: grid;
                         grid-template-columns: 1fr 1fr;
@@ -181,6 +295,20 @@ class RobotPerformanceTemplate:
                     .chart-small {{
                         position: relative;
                         height: 300px;
+                    }}
+
+                    .location-efficiency-grid {{
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+                        gap: 30px;
+                        margin: 30px 0;
+                    }}
+
+                    .location-efficiency-item {{
+                        background: #f8f9fa;
+                        border-radius: 8px;
+                        padding: 20px;
+                        border: 1px solid #e9ecef;
                     }}
 
                     table {{
@@ -321,8 +449,32 @@ class RobotPerformanceTemplate:
                     }}
 
                     @media (max-width: 768px) {{
-                        .chart-row, .two-column {{
+                        .chart-row, .two-column, .location-efficiency-grid, .location-single-line-content {{
                             grid-template-columns: 1fr;
+                        }}
+
+                        .location-chart-compact {{
+                            height: 220px;
+                            margin-bottom: 15px;
+                        }}
+
+                        .location-stats-compact {{
+                            min-width: unset;
+                            max-width: unset;
+                        }}
+
+                        .stat-label {{
+                            min-width: 80px;
+                            font-size: 0.85em;
+                        }}
+
+                        .stat-value {{
+                            font-size: 0.9em;
+                        }}
+
+                        .stat-comparison {{
+                            font-size: 0.8em;
+                            margin-left: 3px;
                         }}
 
                         .container {{
@@ -332,6 +484,23 @@ class RobotPerformanceTemplate:
                         .progress-bar {{
                             width: 40%;
                         }}
+                    }}
+
+                    @media (max-width: 1024px) and (min-width: 769px) {{
+                        .location-single-line-content {{
+                            grid-template-columns: 1fr 320px;
+                            gap: 20px;
+                        }}
+
+                        .location-stats-compact {{
+                            min-width: 320px;
+                            max-width: 320px;
+                        }}
+
+                        .stat-label {{
+                            min-width: 85px;
+                        }}
+                    }}
                     }}
                 </style>
             </head>
@@ -355,12 +524,13 @@ class RobotPerformanceTemplate:
             """
 
     def _generate_executive_summary(self, content: Dict[str, Any]) -> str:
-        """Generate executive summary section - REMOVED Robots Online"""
+        """Generate executive summary section with Individual Robot Performance merged in"""
         fleet_data = content.get('fleet_performance', {})
         task_data = content.get('task_performance', {})
         resource_data = content.get('resource_utilization', {})
         cost_data = content.get('cost_analysis', {})
         comparisons = content.get('period_comparisons', {})
+        individual_robots = content.get('individual_robots', [])
 
         period_desc = content.get('period', 'the reporting period')
 
@@ -386,6 +556,28 @@ class RobotPerformanceTemplate:
             else:
                 return '#6c757d'
 
+        # Get days with tasks ratio format
+        days_ratio = fleet_data.get('days_ratio', fleet_data.get('days_with_tasks', 0))
+
+        # Generate robot performance table with NEW COLUMNS
+        robot_rows = ""
+        if individual_robots:
+            for robot in individual_robots[:10]:
+                robot_rows += f"""
+                <tr>
+                    <td>{robot.get('robot_id', 'Unknown')}</td>
+                    <td>{robot.get('location', 'Unknown Location')}</td>
+                    <td>{robot.get('total_tasks', 0)}</td>
+                    <td>{robot.get('tasks_completed', 0)}</td>
+                    <td>{robot.get('total_area_cleaned', 0):,.0f} sq ft</td>
+                    <td>{robot.get('average_coverage', 0):.1f}%</td>
+                    <td>{robot.get('days_with_tasks', 0)}</td>
+                    <td>{robot.get('running_hours', 0)} hrs</td>
+                </tr>"""
+
+        if not robot_rows:
+            robot_rows = '<tr><td colspan="8">No robot data available</td></tr>'
+
         return f"""
         <section id="executive-summary">
             <h2>📊 Executive Summary</h2>
@@ -397,21 +589,16 @@ class RobotPerformanceTemplate:
 
             <div class="metrics-grid">
                 <div class="metric-card">
-                    <div class="metric-value tooltip">{format_value(cost_data.get('savings', 'N/A'), '', 'number')}
-                        <span class="tooltiptext">Total savings compared to manual cleaning based on robot running hours. Calculated using robot operational hours and standard labor cost.</span>
-                    </div>
-                    <div class="metric-label">Total Savings</div>
-                    <div style="font-size: 0.8em; margin-top: 5px; color: {get_comparison_color(comparisons.get('savings', 'N/A'))};">
-                        vs last period: {format_comparison(comparisons.get('savings', 'N/A'))}
-                    </div>
+                    <div class="metric-value">{fleet_data.get('total_robots', 0)}</div>
+                    <div class="metric-label">Total Robots</div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-value tooltip">{format_value(resource_data.get('total_energy_consumption_kwh', 0), ' kWh')}
-                        <span class="tooltiptext">Total energy consumption calculated from task data consumption field during the reporting period.</span>
+                    <div class="metric-value tooltip">{format_value(resource_data.get('total_area_cleaned_sqft', 0))}
+                        <span class="tooltiptext">Total area cleaned in square feet, converted from actual_area field in task data (originally in square meters).</span>
                     </div>
-                    <div class="metric-label">Energy Used</div>
-                    <div style="font-size: 0.8em; margin-top: 5px; color: {get_comparison_color(comparisons.get('energy_consumption', 'N/A'))};">
-                        vs last period: {format_comparison(comparisons.get('energy_consumption', 'N/A'))}
+                    <div class="metric-label">Sq Ft Cleaned</div>
+                    <div style="font-size: 0.8em; margin-top: 5px; color: {get_comparison_color(comparisons.get('total_area_cleaned', 'N/A'))};">
+                        vs last period: {format_comparison(comparisons.get('total_area_cleaned', 'N/A'))}
                     </div>
                 </div>
                 <div class="metric-card">
@@ -433,12 +620,30 @@ class RobotPerformanceTemplate:
                     </div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-value tooltip">{format_value(resource_data.get('total_area_cleaned_sqft', 0))}
-                        <span class="tooltiptext">Total area cleaned in square feet, converted from actual_area field in task data (originally in square meters).</span>
+                    <div class="metric-value tooltip">{fleet_data.get('avg_daily_running_hours_per_robot', 0):.1f}
+                        <span class="tooltiptext">Average daily running hours per robot calculated as the average of daily running hours of each robot on days when the robot had at least 1 task.</span>
                     </div>
-                    <div class="metric-label">Sq Ft Cleaned</div>
-                    <div style="font-size: 0.8em; margin-top: 5px; color: {get_comparison_color(comparisons.get('total_area_cleaned', 'N/A'))};">
-                        vs last period: {format_comparison(comparisons.get('total_area_cleaned', 'N/A'))}
+                    <div class="metric-label">Avg Daily Running Hours per Robot (hrs/robot)</div>
+                    <div style="font-size: 0.8em; margin-top: 5px; color: {get_comparison_color(comparisons.get('avg_daily_running_hours_per_robot', 'N/A'))};">
+                        vs last period: {format_comparison(comparisons.get('avg_daily_running_hours_per_robot', 'N/A'))}
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value tooltip">{days_ratio}
+                        <span class="tooltiptext">Days with tasks out of total reporting period days. Shows actual operational days vs total period length.</span>
+                    </div>
+                    <div class="metric-label">Days with Tasks</div>
+                    <div style="font-size: 0.8em; margin-top: 5px; color: {get_comparison_color(comparisons.get('days_with_tasks', 'N/A'))};">
+                        vs last period: {format_comparison(comparisons.get('days_with_tasks', 'N/A'))}
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value tooltip">{format_value(resource_data.get('total_energy_consumption_kwh', 0), ' kWh')}
+                        <span class="tooltiptext">Total energy consumption calculated from task data consumption field during the reporting period.</span>
+                    </div>
+                    <div class="metric-label">Energy Used</div>
+                    <div style="font-size: 0.8em; margin-top: 5px; color: {get_comparison_color(comparisons.get('energy_consumption', 'N/A'))};">
+                        vs last period: {format_comparison(comparisons.get('energy_consumption', 'N/A'))}
                     </div>
                 </div>
             </div>
@@ -450,95 +655,8 @@ class RobotPerformanceTemplate:
                 <li>{format_value(fleet_data.get('total_robots', 0))} robots actively deployed and monitored</li>
                 <li>{format_value(content.get('charging_performance', {}).get('total_sessions', 0))} charging sessions during the period</li>
             </ul>
-        </section>"""
 
-    def _generate_fleet_section(self, content: Dict[str, Any]) -> str:
-        """Generate fleet management section - REMOVED Robots Online, ADDED new metrics"""
-        fleet_data = content.get('fleet_performance', {})
-        individual_robots = content.get('individual_robots', [])
-        comparisons = content.get('period_comparisons', {})
-
-        total_running_hours = fleet_data.get('total_running_hours', 0)
-        total_robots = fleet_data.get('total_robots', 0)
-        avg_daily_running_hours = fleet_data.get('avg_daily_running_hours_per_robot', 0)
-        days_with_tasks = fleet_data.get('days_with_tasks', 0)
-
-        def format_comparison(value):
-            return value if value != 'N/A' else 'N/A'
-
-        def get_comparison_color(value):
-            if value == 'N/A' or not value:
-                return '#6c757d'
-            elif value.startswith('+'):
-                return '#28a745'
-            elif value.startswith('-'):
-                return '#dc3545'
-            else:
-                return '#6c757d'
-
-        # Generate robot performance table with NEW COLUMNS
-        robot_rows = ""
-        if individual_robots:
-            for robot in individual_robots[:10]:
-                robot_rows += f"""
-                <tr>
-                    <td>{robot.get('robot_id', 'Unknown')}</td>
-                    <td>{robot.get('location', 'Unknown Location')}</td>
-                    <td>{robot.get('total_tasks', 0)}</td>
-                    <td>{robot.get('tasks_completed', 0)}</td>
-                    <td>{robot.get('total_area_cleaned', 0):,.0f} sq ft</td>
-                    <td>{robot.get('average_coverage', 0):.1f}%</td>
-                    <td>{robot.get('days_with_tasks', 0)}</td>
-                    <td>{robot.get('running_hours', 0)} hrs</td>
-                </tr>"""
-
-        if not robot_rows:
-            robot_rows = '<tr><td colspan="8">No robot data available</td></tr>'
-
-        performance_summary = f"Fleet includes {total_robots} robots, accumulating {total_running_hours:,.1f} total running hours over {days_with_tasks} days with tasks."
-
-        return f"""
-        <section id="fleet-management">
-            <h2>🤖 Individual Robot Performance</h2>
-
-            <h3>System Performance Overview</h3>
-            <p>{performance_summary}</p>
-
-            <div class="metrics-grid">
-                <div class="metric-card">
-                    <div class="metric-value">{total_robots}</div>
-                    <div class="metric-label">Total Robots</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value tooltip">{total_running_hours:,.1f}
-                        <span class="tooltiptext">Total running hours calculated from task duration data (converted from seconds to hours) across all robots during the reporting period.</span>
-                    </div>
-                    <div class="metric-label">Total Running Hours</div>
-                    <div style="font-size: 0.8em; margin-top: 5px; color: {get_comparison_color(comparisons.get('running_hours', 'N/A'))};">
-                        vs last period: {format_comparison(comparisons.get('running_hours', 'N/A'))}
-                    </div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value tooltip">{avg_daily_running_hours:.1f}
-                        <span class="tooltiptext">Average daily running hours per robot calculated as the average of daily running hours of each robot on days when the robot had at least 1 task.</span>
-                    </div>
-                    <div class="metric-label">Avg Daily Running Hours per Robot (hrs/robot)</div>
-                    <div style="font-size: 0.8em; margin-top: 5px; color: {get_comparison_color(comparisons.get('avg_daily_running_hours_per_robot', 'N/A'))};">
-                        vs last period: {format_comparison(comparisons.get('avg_daily_running_hours_per_robot', 'N/A'))}
-                    </div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value tooltip">{days_with_tasks}
-                        <span class="tooltiptext">The actual number of days when any of the robots had at least 1 task during the reporting period.</span>
-                    </div>
-                    <div class="metric-label">Days with Tasks</div>
-                    <div style="font-size: 0.8em; margin-top: 5px; color: {get_comparison_color(comparisons.get('days_with_tasks', 'N/A'))};">
-                        vs last period: {format_comparison(comparisons.get('days_with_tasks', 'N/A'))}
-                    </div>
-                </div>
-            </div>
-
-            <h3>Individual Robot Performance</h3>
+            <h3>🤖 Individual Robot Performance</h3>
             <table>
                 <thead>
                     <tr>
@@ -556,6 +674,207 @@ class RobotPerformanceTemplate:
                     {robot_rows}
                 </tbody>
             </table>
+        </section>"""
+
+    def _generate_task_section(self, content: Dict[str, Any]) -> str:
+        """Generate task performance section with location-based efficiency charts and task patterns"""
+        task_data = content.get('task_performance', {})
+        facilities = content.get('facility_performance', {}).get('facilities', {})
+        comparisons = content.get('period_comparisons', {})
+        facility_comparisons = comparisons.get('facility_comparisons', {})
+        daily_location_efficiency = content.get('daily_location_efficiency', {})
+
+        # Get real calculated values
+        weekend_completion = task_data.get('weekend_schedule_completion', 0)
+        avg_duration = task_data.get('avg_task_duration_minutes', 0)
+
+        def format_comparison(value):
+            return value if value != 'N/A' else 'N/A'
+
+        def get_comparison_color(value):
+            if value == 'N/A' or not value:
+                return '#6c757d'
+            elif value.startswith('+'):
+                return '#28a745'
+            elif value.startswith('-'):
+                return '#dc3545'
+            else:
+                return '#6c757d'
+
+        # Generate location-based efficiency charts and task patterns
+        location_efficiency_section = ""
+        facility_task_metrics = content.get('facility_task_metrics', {})
+        facility_breakdown_metrics = content.get('facility_breakdown_metrics', {})
+        facility_efficiency = content.get('facility_efficiency_metrics', {})
+
+        if daily_location_efficiency:
+            location_efficiency_section = """
+            <h3>Task Efficiency by Location</h3>
+            <p>Daily task performance showing running hours and coverage efficiency patterns for each location. Each chart displays actual operational data to identify location-specific performance trends.</p>
+
+            <div class="location-efficiency-single-column">"""
+
+            for location_name, efficiency_data in daily_location_efficiency.items():
+                # Safe access to facility data with proper fallbacks
+                facility_comp = facility_comparisons.get(location_name, {}) if isinstance(facility_comparisons, dict) else {}
+                facility_task_data = facility_task_metrics.get(location_name, {}) if isinstance(facility_task_metrics, dict) else {}
+                facility_breakdown = facility_breakdown_metrics.get(location_name, {}) if isinstance(facility_breakdown_metrics, dict) else {}
+                facility_eff = facility_efficiency.get(location_name, {}) if isinstance(facility_efficiency, dict) else {}
+
+                # Use facility-specific duration if available, otherwise use global average
+                facility_avg_duration = facility_task_data.get('avg_duration_minutes', avg_duration) if facility_task_data else avg_duration
+                primary_mode = facility_task_data.get('primary_mode', 'Mixed tasks') if facility_task_data else 'Mixed tasks'
+
+                # Get coverage by day info
+                highest_coverage_day = facility_breakdown.get('highest_coverage_day', 'N/A') if facility_breakdown else 'N/A'
+                lowest_coverage_day = facility_breakdown.get('lowest_coverage_day', 'N/A') if facility_breakdown else 'N/A'
+
+                # Get the comparison data correctly
+                coverage_comparison_high = facility_comp.get('highest_coverage_day', 'N/A') if facility_comp else 'N/A'
+                coverage_comparison_low = facility_comp.get('lowest_coverage_day', 'N/A') if facility_comp else 'N/A'
+
+                # Get days ratio safely
+                days_ratio = facility_eff.get('days_ratio', 'N/A') if facility_eff else 'N/A'
+
+                location_efficiency_section += f"""
+                <div class="location-efficiency-single-line">
+                    <h4>{location_name}</h4>
+                    <div class="location-single-line-content">
+                        <div class="location-chart-compact">
+                            <div class="chart-toggle-container">
+                                <button class="chart-toggle-btn" onclick="toggleLocationView('{location_name.replace(' ', '_')}')" id="locationToggle_{location_name.replace(' ', '_')}">
+                                    View Weekly Trend
+                                </button>
+                            </div>
+                            <canvas id="taskEfficiencyChart_{location_name.replace(' ', '_')}"></canvas>
+                        </div>
+                        <div class="location-stats-compact">
+                            <div class="stat-row">
+                                <span class="stat-label">Task Mode:</span>
+                                <span class="stat-value">{primary_mode}</span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label">Avg Duration:</span>
+                                <span class="stat-value">{facility_avg_duration:.1f} min</span>
+                                <span class="stat-comparison" style="color: {get_comparison_color(facility_comp.get('avg_task_duration', 'N/A') if facility_comp else 'N/A')};">
+                                    (vs last: {format_comparison(facility_comp.get('avg_task_duration', 'N/A') if facility_comp else 'N/A')})
+                                </span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label">Days with Tasks:</span>
+                                <span class="stat-value">{days_ratio}</span>
+                                <span class="stat-comparison" style="color: {get_comparison_color(facility_comp.get('days_with_tasks', 'N/A') if facility_comp else 'N/A')};">
+                                    (vs last: {format_comparison(facility_comp.get('days_with_tasks', 'N/A') if facility_comp else 'N/A')})
+                                </span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label">Highest Coverage:</span>
+                                <span class="stat-value">{highest_coverage_day}</span>
+                                <span class="stat-comparison">(vs last: {coverage_comparison_high})</span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label">Lowest Coverage:</span>
+                                <span class="stat-value">{lowest_coverage_day}</span>
+                                <span class="stat-comparison">(vs last: {coverage_comparison_low})</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>"""
+
+            location_efficiency_section += """
+            </div>"""
+        else:
+            # Fallback if no location-specific efficiency data
+            facility_patterns = ""
+            for facility_name, metrics in facilities.items():
+                facility_comp = facility_comparisons.get(facility_name, {}) if isinstance(facility_comparisons, dict) else {}
+                facility_task_data = facility_task_metrics.get(facility_name, {}) if isinstance(facility_task_metrics, dict) else {}
+                facility_breakdown = facility_breakdown_metrics.get(facility_name, {}) if isinstance(facility_breakdown_metrics, dict) else {}
+
+                # Use facility-specific duration if available, otherwise use global average
+                facility_avg_duration = facility_task_data.get('avg_duration_minutes', avg_duration) if facility_task_data else avg_duration
+                primary_mode = facility_task_data.get('primary_mode', 'Mixed tasks') if facility_task_data else 'Mixed tasks'
+
+                # Get coverage by day info
+                highest_coverage_day = facility_breakdown.get('highest_coverage_day', 'N/A') if facility_breakdown else 'N/A'
+                lowest_coverage_day = facility_breakdown.get('lowest_coverage_day', 'N/A') if facility_breakdown else 'N/A'
+
+                # Get the comparison data correctly
+                coverage_comparison_high = facility_comp.get('highest_coverage_day', 'N/A') if facility_comp else 'N/A'
+                coverage_comparison_low = facility_comp.get('lowest_coverage_day', 'N/A') if facility_comp else 'N/A'
+
+                facility_patterns += f"""
+                <div>
+                    <h4>{facility_name} Task Patterns</h4>
+                    <ul>
+                        <li><strong>Task Mode:</strong> {primary_mode}</li>
+                        <li><strong>Average Task Duration:</strong> {facility_avg_duration:.1f} minutes (vs last period: <span style="color: {get_comparison_color(facility_comp.get('avg_task_duration', 'N/A') if facility_comp else 'N/A')};">{format_comparison(facility_comp.get('avg_task_duration', 'N/A') if facility_comp else 'N/A')}</span>)</li>
+                        <li><strong>Day with Highest Coverage:</strong> {highest_coverage_day} (vs last period: {coverage_comparison_high})</li>
+                        <li><strong>Day with Lowest Coverage:</strong> {lowest_coverage_day} (vs last period: {coverage_comparison_low})</li>
+                    </ul>
+                </div>"""
+
+            if not facility_patterns:
+                facility_patterns = f"""
+                <div>
+                    <h4>Overall Task Patterns</h4>
+                    <ul>
+                        <li><strong>Average Task Duration:</strong> {avg_duration:.1f} minutes (vs last period: <span style="color: {get_comparison_color(comparisons.get('avg_duration', 'N/A'))};">{format_comparison(comparisons.get('avg_duration', 'N/A'))}</span>)</li>
+                        <li><strong>Weekend schedule performance:</strong> {weekend_completion:.1f}% completion</li>
+                    </ul>
+                </div>"""
+
+            location_efficiency_section = f"""
+            <h3>Task Performance by Location</h3>
+            <div class="two-column">
+                {facility_patterns}
+            </div>"""
+
+        return f"""
+        <section id="task-performance">
+            <h2>📋 Task & Schedule Performance</h2>
+
+            <h3>Task Management Efficiency</h3>
+            <p>Task tracking across all facilities: {task_data.get('total_tasks', 0)} total tasks with {task_data.get('total_area_cleaned', 0):,.0f} sq ft total coverage and {avg_duration:.1f} minutes average task duration.</p>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Metric</th>
+                        <th>Total</th>
+                        <th>Completed</th>
+                        <th>In Progress</th>
+                        <th>Average Duration</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>All Facilities</strong></td>
+                        <td>{task_data.get('total_tasks', 0)}</td>
+                        <td>{task_data.get('completed_tasks', 0)}</td>
+                        <td>0</td>
+                        <td>
+                            <span class="tooltip">{avg_duration:.1f} min
+                                <span class="tooltiptext">Average task duration calculated from actual task durations in the database.</span>
+                            </span>
+                            <span style="color: {get_comparison_color(comparisons.get('avg_duration', 'N/A'))}; font-size: 0.8em; margin-left: 5px;">
+                                (vs last: {format_comparison(comparisons.get('avg_duration', 'N/A'))})
+                            </span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="chart-row">
+                <div class="chart-small">
+                    <canvas id="taskStatusChart"></canvas>
+                </div>
+                <div class="chart-small">
+                    <canvas id="taskModeChart"></canvas>
+                </div>
+            </div>
+
+            {location_efficiency_section}
         </section>"""
 
     def _generate_facility_section(self, content: Dict[str, Any]) -> str:
@@ -580,7 +899,7 @@ class RobotPerformanceTemplate:
             else:
                 return '#6c757d'
 
-        # Generate facility performance tables with REAL efficiency metrics
+        # Generate facility performance tables with REAL efficiency metrics - Time Efficiency moved above Power Efficiency
         facility_sections = ""
         for facility_name, metrics in facilities.items():
             facility_comp = facility_comparisons.get(facility_name, {})
@@ -594,7 +913,7 @@ class RobotPerformanceTemplate:
             facility_sections += f"""
             <div>
                 <h3>{facility_name}</h3>
-                <p>Performance metrics for {facility_name}: {total_tasks} total tasks, {metrics.get('area_cleaned', 0):,.0f} sq ft total area cleaned, {coverage_eff:.1f}% average coverage, {water_efficiency:.1f} sq ft/fl oz water efficiency, and {time_efficiency:.1f} sq ft/hour time efficiency.</p>
+                <p>Performance metrics for {facility_name}: {total_tasks} total tasks, {metrics.get('area_cleaned', 0):,.0f} sq ft total area cleaned, {coverage_eff:.1f}% average coverage, {time_efficiency:.1f} sq ft/hour time efficiency, and {water_efficiency:.1f} sq ft/fl oz water efficiency.</p>
 
                 <table>
                     <thead>
@@ -621,6 +940,11 @@ class RobotPerformanceTemplate:
                             <td style="color: {get_comparison_color(facility_comp.get('running_hours', 'N/A'))};">{format_comparison(facility_comp.get('running_hours', 'N/A'))}</td>
                         </tr>
                         <tr>
+                            <td>Time Efficiency</td>
+                            <td>{time_efficiency:.1f} sq ft/hr</td>
+                            <td style="color: {get_comparison_color(facility_comp.get('time_efficiency', 'N/A'))};">{format_comparison(facility_comp.get('time_efficiency', 'N/A'))}</td>
+                        </tr>
+                        <tr>
                             <td>Power Efficiency</td>
                             <td>{metrics.get('power_efficiency', 0):,.0f} sq ft/kWh</td>
                             <td style="color: {get_comparison_color(facility_comp.get('power_efficiency', 'N/A'))};">{format_comparison(facility_comp.get('power_efficiency', 'N/A'))}</td>
@@ -629,11 +953,6 @@ class RobotPerformanceTemplate:
                             <td>Water Efficiency</td>
                             <td>{water_efficiency:.1f} sq ft/fl oz</td>
                             <td style="color: {get_comparison_color(facility_comp.get('water_efficiency', 'N/A'))};">{format_comparison(facility_comp.get('water_efficiency', 'N/A'))}</td>
-                        </tr>
-                        <tr>
-                            <td>Time Efficiency</td>
-                            <td>{time_efficiency:.1f} sq ft/hr</td>
-                            <td style="color: {get_comparison_color(facility_comp.get('time_efficiency', 'N/A'))};">{format_comparison(facility_comp.get('time_efficiency', 'N/A'))}</td>
                         </tr>
                     </tbody>
                 </table>
@@ -696,17 +1015,17 @@ class RobotPerformanceTemplate:
                                     </div>
                                 </div>
                                 <div class="map-metric">
-                                    <div style="font-weight: bold;">{map_data.get('power_efficiency', 0):.0f}</div>
-                                    <div style="font-size: 0.8em; color: #6c757d;">Power Efficiency (sq ft/kWh)</div>
-                                    <div style="font-size: 0.7em; color: {get_comparison_color(map_comp.get('power_efficiency', 'N/A'))};">
-                                        vs last: {format_comparison(map_comp.get('power_efficiency', 'N/A'))}
-                                    </div>
-                                </div>
-                                <div class="map-metric">
                                     <div style="font-weight: bold;">{map_data.get('time_efficiency', 0):.0f}</div>
                                     <div style="font-size: 0.8em; color: #6c757d;">Time Efficiency (sq ft/hr)</div>
                                     <div style="font-size: 0.7em; color: {get_comparison_color(map_comp.get('time_efficiency', 'N/A'))};">
                                         vs last: {format_comparison(map_comp.get('time_efficiency', 'N/A'))}
+                                    </div>
+                                </div>
+                                <div class="map-metric">
+                                    <div style="font-weight: bold;">{map_data.get('power_efficiency', 0):.0f}</div>
+                                    <div style="font-size: 0.8em; color: #6c757d;">Power Efficiency (sq ft/kWh)</div>
+                                    <div style="font-size: 0.7em; color: {get_comparison_color(map_comp.get('power_efficiency', 'N/A'))};">
+                                        vs last: {format_comparison(map_comp.get('power_efficiency', 'N/A'))}
                                     </div>
                                 </div>
                                 <div class="map-metric">
@@ -743,276 +1062,6 @@ class RobotPerformanceTemplate:
             </div>
 
             {map_sections}
-        </section>"""
-
-    def _generate_task_section(self, content: Dict[str, Any]) -> str:
-        """Generate task performance section with updated efficiency analysis - FIXED"""
-        task_data = content.get('task_performance', {})
-        facilities = content.get('facility_performance', {}).get('facilities', {})
-        comparisons = content.get('period_comparisons', {})
-        facility_comparisons = comparisons.get('facility_comparisons', {})
-
-        # Get real calculated values
-        weekend_completion = task_data.get('weekend_schedule_completion', 0)
-        avg_duration = task_data.get('avg_task_duration_minutes', 0)
-
-        def format_comparison(value):
-            return value if value != 'N/A' else 'N/A'
-
-        def get_comparison_color(value):
-            if value == 'N/A' or not value:
-                return '#6c757d'
-            elif value.startswith('+'):
-                return '#28a745'
-            elif value.startswith('-'):
-                return '#dc3545'
-            else:
-                return '#6c757d'
-
-        # Calculate new metrics for facility patterns - UPDATED to remove unwanted fields
-        facility_patterns = ""
-        facility_task_metrics = content.get('facility_task_metrics', {})
-        facility_breakdown_metrics = content.get('facility_breakdown_metrics', {})
-
-        for facility_name, metrics in facilities.items():
-            facility_comp = facility_comparisons.get(facility_name, {})
-            facility_task_data = facility_task_metrics.get(facility_name, {})
-            facility_breakdown = facility_breakdown_metrics.get(facility_name, {})
-
-            # Use facility-specific duration if available, otherwise use global average
-            facility_avg_duration = facility_task_data.get('avg_duration_minutes', avg_duration)
-            primary_mode = facility_task_data.get('primary_mode', 'Mixed tasks')
-
-            # Get coverage by day info
-            highest_coverage_day = facility_breakdown.get('highest_coverage_day', 'N/A')
-            lowest_coverage_day = facility_breakdown.get('lowest_coverage_day', 'N/A')
-
-            # FIX: Get the comparison data correctly
-            coverage_comparison_high = facility_comp.get('highest_coverage_day', 'N/A')
-            coverage_comparison_low = facility_comp.get('lowest_coverage_day', 'N/A')
-
-            facility_patterns += f"""
-            <div>
-                <h4>{facility_name} Task Patterns</h4>
-                <ul>
-                    <li><strong>Task pattern:</strong> {primary_mode}</li>
-                    <li><strong>Average Task Duration:</strong> {facility_avg_duration:.1f} minutes (vs last period: <span style="color: {get_comparison_color(facility_comp.get('avg_task_duration', 'N/A'))};">{format_comparison(facility_comp.get('avg_task_duration', 'N/A'))}</span>)</li>
-                    <li><strong>Day with Highest Coverage:</strong> {highest_coverage_day} (vs last period: {coverage_comparison_high})</li>
-                    <li><strong>Day with Lowest Coverage:</strong> {lowest_coverage_day} (vs last period: {coverage_comparison_low})</li>
-                </ul>
-            </div>"""
-
-        if not facility_patterns:
-            facility_patterns = f"""
-            <div>
-                <h4>Overall Task Patterns</h4>
-                <ul>
-                    <li><strong>Average Task Duration:</strong> {avg_duration:.1f} minutes (vs last period: <span style="color: {get_comparison_color(comparisons.get('avg_duration', 'N/A'))};">{format_comparison(comparisons.get('avg_duration', 'N/A'))}</span>)</li>
-                    <li><strong>Weekend schedule performance:</strong> {weekend_completion:.1f}% completion</li>
-                </ul>
-            </div>"""
-
-        return f"""
-        <section id="task-performance">
-            <h2>📋 Task & Schedule Performance</h2>
-
-            <h3>Task Management Efficiency</h3>
-            <p>Task tracking across all facilities: {task_data.get('total_tasks', 0)} total tasks with {task_data.get('total_area_cleaned', 0):,.0f} sq ft total coverage and {avg_duration:.1f} minutes average task duration.</p>
-
-            <table>
-                <thead>
-                    <tr>
-                        <th>Metric</th>
-                        <th>Total</th>
-                        <th>Completed</th>
-                        <th>In Progress</th>
-                        <th>Average Duration</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td><strong>All Facilities</strong></td>
-                        <td>{task_data.get('total_tasks', 0)}</td>
-                        <td>{task_data.get('completed_tasks', 0)}</td>
-                        <td>0</td>
-                        <td>
-                            <span class="tooltip">{avg_duration:.1f} min
-                                <span class="tooltiptext">Average task duration calculated from actual task durations in the database.</span>
-                            </span>
-                            <span style="color: {get_comparison_color(comparisons.get('avg_duration', 'N/A'))}; font-size: 0.8em; margin-left: 5px;">
-                                (vs last: {format_comparison(comparisons.get('avg_duration', 'N/A'))})
-                            </span>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-
-            <div class="chart-row">
-                <div class="chart-small">
-                    <canvas id="taskStatusChart"></canvas>
-                </div>
-                <div class="chart-small">
-                    <canvas id="taskModeChart"></canvas>
-                </div>
-            </div>
-
-            <h3>Task Efficiency Analysis</h3>
-            <p>Daily task performance analysis showing running hours and coverage efficiency patterns over time.</p>
-
-            <div class="chart-container">
-                <div class="chart-toggle-container">
-                    <button class="chart-toggle-btn" onclick="toggleTaskEfficiencyView()" id="taskEfficiencyToggle">
-                        View Weekly Trend
-                    </button>
-                </div>
-                <canvas id="taskEfficiencyChart"></canvas>
-            </div>
-
-            <h3>Task Performance by Location</h3>
-            <div class="two-column">
-                {facility_patterns}
-            </div>
-        </section>"""
-
-    def _generate_charging_section(self, content: Dict[str, Any]) -> str:
-        """Generate charging performance section with daily charts and median values + vs Last Period"""
-        charging_data = content.get('charging_performance', {})
-        comparisons = content.get('period_comparisons', {})
-        facility_comparisons = comparisons.get('facility_comparisons', {})
-
-        def format_comparison(value):
-            return value if value != 'N/A' else 'N/A'
-
-        def get_comparison_color(value):
-            if value == 'N/A' or not value:
-                return '#6c757d'
-            elif value.startswith('+'):
-                return '#28a745'
-            elif value.startswith('-'):
-                return '#dc3545'
-            else:
-                return '#6c757d'
-
-        # Calculate charging patterns by location using facility-specific data
-        charging_by_location = ""
-        facility_charging_metrics = content.get('facility_charging_metrics', {})
-
-        if facility_charging_metrics:
-            charging_by_location = """
-            <h3>Charging Patterns by Location</h3>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Location</th>
-                        <th>Total Sessions</th>
-                        <th>Avg Duration</th>
-                        <th>Median Duration</th>
-                        <th>Avg Power Gain</th>
-                        <th>Median Power Gain</th>
-                    </tr>
-                </thead>
-                <tbody>"""
-
-            for facility_name, charging_metrics in facility_charging_metrics.items():
-                facility_comp = facility_comparisons.get(facility_name, {})
-                charging_by_location += f"""
-                    <tr>
-                        <td>{facility_name}</td>
-                        <td>{charging_metrics.get('total_sessions', 0)}
-                            <div style="font-size: 0.7em; color: {get_comparison_color(facility_comp.get('total_sessions', 'N/A'))};">
-                                vs last: {format_comparison(facility_comp.get('total_sessions', 'N/A'))}
-                            </div>
-                        </td>
-                        <td>{charging_metrics.get('avg_duration_minutes', 0):.1f} min
-                            <div style="font-size: 0.7em; color: {get_comparison_color(facility_comp.get('avg_charging_duration', 'N/A'))};">
-                                vs last: {format_comparison(facility_comp.get('avg_charging_duration', 'N/A'))}
-                            </div>
-                        </td>
-                        <td>{charging_metrics.get('median_duration_minutes', 0):.1f} min
-                            <div style="font-size: 0.7em; color: {get_comparison_color(facility_comp.get('median_charging_duration', 'N/A'))};">
-                                vs last: {format_comparison(facility_comp.get('median_charging_duration', 'N/A'))}
-                            </div>
-                        </td>
-                        <td>+{charging_metrics.get('avg_power_gain_percent', 0):.1f}%
-                            <div style="font-size: 0.7em; color: {get_comparison_color(facility_comp.get('avg_power_gain_facility', 'N/A'))};">
-                                vs last: {format_comparison(facility_comp.get('avg_power_gain_facility', 'N/A'))}
-                            </div>
-                        </td>
-                        <td>+{charging_metrics.get('median_power_gain_percent', 0):.1f}%
-                            <div style="font-size: 0.7em; color: {get_comparison_color(facility_comp.get('median_power_gain_facility', 'N/A'))};">
-                                vs last: {format_comparison(facility_comp.get('median_power_gain_facility', 'N/A'))}
-                            </div>
-                        </td>
-                    </tr>"""
-
-            charging_by_location += """
-                </tbody>
-            </table>"""
-        else:
-            charging_by_location = "<h3>Charging Patterns by Location</h3><p>Location-specific charging data not available</p>"
-
-        return f"""
-        <section id="charging-performance">
-            <h2>🔋 Charging Sessions Performance</h2>
-
-            <p>Charging patterns and battery management during the reporting period: {charging_data.get('total_sessions', 0)} total sessions, {charging_data.get('avg_charging_duration_minutes', 0):.1f} minutes average duration, and {charging_data.get('avg_power_gain_percent', 0):.1f}% average power gain per session.</p>
-
-            <div class="metrics-grid">
-                <div class="metric-card">
-                    <div class="metric-value">{charging_data.get('total_sessions', 0)}</div>
-                    <div class="metric-label">Total Charging Sessions</div>
-                    <div style="font-size: 0.8em; margin-top: 5px; color: {get_comparison_color(comparisons.get('charging_sessions', 'N/A'))};">
-                        vs last period: {format_comparison(comparisons.get('charging_sessions', 'N/A'))}
-                    </div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value tooltip">{charging_data.get('avg_charging_duration_minutes', 0):.1f} min
-                        <span class="tooltiptext">Average charging duration calculated from actual charging session data.</span>
-                    </div>
-                    <div class="metric-label">Avg Charging Duration</div>
-                    <div style="font-size: 0.8em; margin-top: 5px; color: {get_comparison_color(comparisons.get('avg_charging_duration', 'N/A'))};">
-                        vs last period: {format_comparison(comparisons.get('avg_charging_duration', 'N/A'))}
-                    </div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value tooltip">{charging_data.get('median_charging_duration_minutes', 0):.1f} min
-                        <span class="tooltiptext">Median charging duration from actual charging session data - represents typical session length.</span>
-                    </div>
-                    <div class="metric-label">Median Charging Duration</div>
-                    <div style="font-size: 0.8em; margin-top: 5px; color: {get_comparison_color(comparisons.get('median_charging_duration', 'N/A'))};">
-                        vs last period: {format_comparison(comparisons.get('median_charging_duration', 'N/A'))}
-                    </div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value tooltip">+{charging_data.get('avg_power_gain_percent', 0):.1f}%
-                        <span class="tooltiptext">Average power gain per charging session from database records.</span>
-                    </div>
-                    <div class="metric-label">Avg Power Gain per Session</div>
-                    <div style="font-size: 0.8em; margin-top: 5px; color: {get_comparison_color(comparisons.get('avg_power_gain', 'N/A'))};">
-                        vs last period: {format_comparison(comparisons.get('avg_power_gain', 'N/A'))}
-                    </div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value tooltip">+{charging_data.get('median_power_gain_percent', 0):.1f}%
-                        <span class="tooltiptext">Median power gain per charging session - represents typical power increase.</span>
-                    </div>
-                    <div class="metric-label">Median Power Gain per Session</div>
-                    <div style="font-size: 0.8em; margin-top: 5px; color: {get_comparison_color(comparisons.get('median_power_gain', 'N/A'))};">
-                        vs last period: {format_comparison(comparisons.get('median_power_gain', 'N/A'))}
-                    </div>
-                </div>
-            </div>
-
-            <div class="chart-container">
-                <div class="chart-toggle-container">
-                    <button class="chart-toggle-btn" onclick="toggleChargingView()" id="chargingToggle">
-                        View Weekly Trend
-                    </button>
-                </div>
-                <canvas id="chargingChart"></canvas>
-            </div>
-
-            {charging_by_location}
         </section>"""
 
     def _generate_resource_section(self, content: Dict[str, Any]) -> str:
@@ -1261,73 +1310,145 @@ class RobotPerformanceTemplate:
             </div>
         </section>"""
 
-    def _generate_event_section(self, content: Dict[str, Any]) -> str:
-        """Generate event analysis section with location mapping"""
-        event_data = content.get('event_analysis', {})
+    def _generate_charging_section(self, content: Dict[str, Any]) -> str:
+        """Generate charging performance section with daily charts and median values + vs Last Period"""
+        charging_data = content.get('charging_performance', {})
+        comparisons = content.get('period_comparisons', {})
+        facility_comparisons = comparisons.get('facility_comparisons', {})
 
-        # Generate location analysis using real event location mapping
-        location_analysis = ""
-        event_location_mapping = content.get('event_location_mapping', {})
+        def format_comparison(value):
+            return value if value != 'N/A' else 'N/A'
 
-        if event_location_mapping:
-            location_analysis = """
-            <h3>Event Analysis by Location</h3>
-            <div class="two-column">"""
+        def get_comparison_color(value):
+            if value == 'N/A' or not value:
+                return '#6c757d'
+            elif value.startswith('+'):
+                return '#28a745'
+            elif value.startswith('-'):
+                return '#dc3545'
+            else:
+                return '#6c757d'
 
-            for building_name, building_events in event_location_mapping.items():
-                if building_name != 'Unknown Building':  # Skip unknown buildings
-                    location_analysis += f"""
-                    <div>
-                        <h4>{building_name} Events</h4>
-                        <ul>
-                            <li><strong>Total Events:</strong> {building_events['total_events']} events</li>
-                            <li><strong>Critical Events:</strong> {building_events['critical_events']}</li>
-                            <li><strong>Error Events:</strong> {building_events['error_events']}</li>
-                            <li><strong>Warning Events:</strong> {building_events['warning_events']}</li>
-                            <li><strong>Events:</strong> {building_events['info_events']}</li>
-                        </ul>
-                    </div>"""
+        # Calculate charging patterns by location using facility-specific data
+        charging_by_location = ""
+        facility_charging_metrics = content.get('facility_charging_metrics', {})
 
-            location_analysis += """
-            </div>"""
+        if facility_charging_metrics:
+            charging_by_location = """
+            <h3>Charging Patterns by Location</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Location</th>
+                        <th>Total Sessions</th>
+                        <th>Avg Duration</th>
+                        <th>Median Duration</th>
+                        <th>Avg Power Gain</th>
+                        <th>Median Power Gain</th>
+                    </tr>
+                </thead>
+                <tbody>"""
+
+            for facility_name, charging_metrics in facility_charging_metrics.items():
+                facility_comp = facility_comparisons.get(facility_name, {})
+                charging_by_location += f"""
+                    <tr>
+                        <td>{facility_name}</td>
+                        <td>{charging_metrics.get('total_sessions', 0)}
+                            <div style="font-size: 0.7em; color: {get_comparison_color(facility_comp.get('total_sessions', 'N/A'))};">
+                                vs last: {format_comparison(facility_comp.get('total_sessions', 'N/A'))}
+                            </div>
+                        </td>
+                        <td>{charging_metrics.get('avg_duration_minutes', 0):.1f} min
+                            <div style="font-size: 0.7em; color: {get_comparison_color(facility_comp.get('avg_charging_duration', 'N/A'))};">
+                                vs last: {format_comparison(facility_comp.get('avg_charging_duration', 'N/A'))}
+                            </div>
+                        </td>
+                        <td>{charging_metrics.get('median_duration_minutes', 0):.1f} min
+                            <div style="font-size: 0.7em; color: {get_comparison_color(facility_comp.get('median_charging_duration', 'N/A'))};">
+                                vs last: {format_comparison(facility_comp.get('median_charging_duration', 'N/A'))}
+                            </div>
+                        </td>
+                        <td>+{charging_metrics.get('avg_power_gain_percent', 0):.1f}%
+                            <div style="font-size: 0.7em; color: {get_comparison_color(facility_comp.get('avg_power_gain_facility', 'N/A'))};">
+                                vs last: {format_comparison(facility_comp.get('avg_power_gain_facility', 'N/A'))}
+                            </div>
+                        </td>
+                        <td>+{charging_metrics.get('median_power_gain_percent', 0):.1f}%
+                            <div style="font-size: 0.7em; color: {get_comparison_color(facility_comp.get('median_power_gain_facility', 'N/A'))};">
+                                vs last: {format_comparison(facility_comp.get('median_power_gain_facility', 'N/A'))}
+                            </div>
+                        </td>
+                    </tr>"""
+
+            charging_by_location += """
+                </tbody>
+            </table>"""
         else:
-            location_analysis = """
-            <h3>Event Analysis by Location</h3>
-            <p>No location-specific event data available</p>"""
+            charging_by_location = "<h3>Charging Patterns by Location</h3><p>Location-specific charging data not available</p>"
 
         return f"""
-        <section id="event-analysis">
-            <h2>⚠️ Event Analysis & System Health</h2>
+        <section id="charging-performance">
+            <h2>🔋 Charging Sessions Performance</h2>
+
+            <p>Charging patterns and battery management during the reporting period: {charging_data.get('total_sessions', 0)} total sessions, {charging_data.get('avg_charging_duration_minutes', 0):.1f} minutes average duration, and {charging_data.get('avg_power_gain_percent', 0):.1f}% average power gain per session.</p>
 
             <div class="metrics-grid">
                 <div class="metric-card">
-                    <div class="metric-value">{event_data.get('total_events', 0)}</div>
-                    <div class="metric-label">Total Events</div>
+                    <div class="metric-value">{charging_data.get('total_sessions', 0)}</div>
+                    <div class="metric-label">Total Charging Sessions</div>
+                    <div style="font-size: 0.8em; margin-top: 5px; color: {get_comparison_color(comparisons.get('charging_sessions', 'N/A'))};">
+                        vs last period: {format_comparison(comparisons.get('charging_sessions', 'N/A'))}
+                    </div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-value">{event_data.get('critical_events', 0)}</div>
-                    <div class="metric-label">Critical Events</div>
+                    <div class="metric-value tooltip">{charging_data.get('avg_charging_duration_minutes', 0):.1f} min
+                        <span class="tooltiptext">Average charging duration calculated from actual charging session data.</span>
+                    </div>
+                    <div class="metric-label">Avg Charging Duration</div>
+                    <div style="font-size: 0.8em; margin-top: 5px; color: {get_comparison_color(comparisons.get('avg_charging_duration', 'N/A'))};">
+                        vs last period: {format_comparison(comparisons.get('avg_charging_duration', 'N/A'))}
+                    </div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-value">{event_data.get('error_events', 0)}</div>
-                    <div class="metric-label">Error Events</div>
+                    <div class="metric-value tooltip">{charging_data.get('median_charging_duration_minutes', 0):.1f} min
+                        <span class="tooltiptext">Median charging duration from actual charging session data - represents typical session length.</span>
+                    </div>
+                    <div class="metric-label">Median Charging Duration</div>
+                    <div style="font-size: 0.8em; margin-top: 5px; color: {get_comparison_color(comparisons.get('median_charging_duration', 'N/A'))};">
+                        vs last period: {format_comparison(comparisons.get('median_charging_duration', 'N/A'))}
+                    </div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-value">{event_data.get('warning_events', 0)}</div>
-                    <div class="metric-label">Warning Events</div>
+                    <div class="metric-value tooltip">+{charging_data.get('avg_power_gain_percent', 0):.1f}%
+                        <span class="tooltiptext">Average power gain per charging session from database records.</span>
+                    </div>
+                    <div class="metric-label">Avg Power Gain per Session</div>
+                    <div style="font-size: 0.8em; margin-top: 5px; color: {get_comparison_color(comparisons.get('avg_power_gain', 'N/A'))};">
+                        vs last period: {format_comparison(comparisons.get('avg_power_gain', 'N/A'))}
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value tooltip">+{charging_data.get('median_power_gain_percent', 0):.1f}%
+                        <span class="tooltiptext">Median power gain per charging session - represents typical power increase.</span>
+                    </div>
+                    <div class="metric-label">Median Power Gain per Session</div>
+                    <div style="font-size: 0.8em; margin-top: 5px; color: {get_comparison_color(comparisons.get('median_power_gain', 'N/A'))};">
+                        vs last period: {format_comparison(comparisons.get('median_power_gain', 'N/A'))}
+                    </div>
                 </div>
             </div>
 
-            <div class="chart-row">
-                <div class="chart-small">
-                    <canvas id="eventTypeChart"></canvas>
+            <div class="chart-container">
+                <div class="chart-toggle-container">
+                    <button class="chart-toggle-btn" onclick="toggleChargingView()" id="chargingToggle">
+                        View Weekly Trend
+                    </button>
                 </div>
-                <div class="chart-small">
-                    <canvas id="eventLevelChart"></canvas>
-                </div>
+                <canvas id="chargingChart"></canvas>
             </div>
 
-            {location_analysis}
+            {charging_by_location}
         </section>"""
 
     def _generate_conclusion(self, content: Dict[str, Any]) -> str:
@@ -1391,6 +1512,12 @@ class RobotPerformanceTemplate:
             financial_trend_data = content.get('financial_trend_data', {})
             if financial_trend_data:
                 chart_data['financial_trend_data'] = financial_trend_data
+
+            # Add location efficiency data for location-specific charts
+            daily_location_efficiency = content.get('daily_location_efficiency', {})
+            if daily_location_efficiency:
+                chart_data['daily_location_efficiency'] = daily_location_efficiency
+
             return self._convert_numpy_types(chart_data)
         except Exception as e:
             logger.error(f"Chart data error: {e}")
@@ -1414,11 +1541,12 @@ class RobotPerformanceTemplate:
             return obj
 
     def _generate_javascript(self, chart_data: Dict[str, Any]) -> str:
-        """Generate JavaScript for charts using real data with daily charts and weekly toggle"""
+        """Generate JavaScript for charts using real data with daily charts, weekly toggle, and location-specific charts"""
         # Get trend data for daily charts
         trend_data = chart_data.get('trend_data', {})
         dates = trend_data.get('dates', [])
         financial_trend_data = chart_data.get('financial_trend_data', {})
+        daily_location_efficiency = chart_data.get('daily_location_efficiency', {})
 
         return f"""
     <script>
@@ -1432,6 +1560,9 @@ class RobotPerformanceTemplate:
             hours_saved: {json.dumps(financial_trend_data.get('hours_saved_trend', []))},
             savings_data: {json.dumps(financial_trend_data.get('savings_trend', []))}
         }};
+
+        // Store location efficiency data
+        let locationEfficiencyData = {json.dumps(daily_location_efficiency)};
 
         // Store chart instances
         let chartInstances = {{}};
@@ -1463,32 +1594,58 @@ class RobotPerformanceTemplate:
             return {{ labels: dayNames, data: averages }};
         }}
 
-        // Toggle functions for each chart
-        function toggleTaskEfficiencyView() {{
-            const btn = document.getElementById('taskEfficiencyToggle');
-            const isWeekly = btn.textContent === 'View Daily Trend';
-
-            if (isWeekly) {{
-                // Switch back to daily
-                btn.textContent = 'View Weekly Trend';
-                btn.classList.remove('active');
-                const runningHours = originalData.energy_data.map(x => x * 0.5); // Approximate conversion
-                const coverage = originalData.water_data.map(x => Math.min(x / 10, 100)); // Approximate coverage
-                createTaskEfficiencyChart(originalData.dates, runningHours, coverage);
-            }} else {{
-                // Switch to weekly
-                btn.textContent = 'View Daily Trend';
-                btn.classList.add('active');
-
-                const runningHours = originalData.energy_data.map(x => x * 0.5);
-                const coverage = originalData.water_data.map(x => Math.min(x / 10, 100));
-                const weeklyHours = aggregateByDayOfWeek(originalData.dates, runningHours);
-                const weeklyCoverage = aggregateByDayOfWeek(originalData.dates, coverage);
-
-                createTaskEfficiencyChart(weeklyHours.labels, weeklyHours.data, weeklyCoverage.data);
-            }}
+        // Common chart options for interactivity
+        function getInteractiveChartOptions(yAxisTitle, y1AxisTitle) {{
+            return {{
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {{
+                    intersect: false,
+                    mode: 'index'
+                }},
+                plugins: {{
+                    tooltip: {{
+                        enabled: true,
+                        mode: 'index',
+                        intersect: false,
+                        backgroundColor: 'rgba(0,0,0,0.8)',
+                        titleColor: 'white',
+                        bodyColor: 'white',
+                        borderColor: 'rgba(255,255,255,0.2)',
+                        borderWidth: 1
+                    }},
+                    legend: {{
+                        display: true,
+                        position: 'top'
+                    }}
+                }},
+                scales: {{
+                    y: {{
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
+                        title: {{
+                            display: true,
+                            text: yAxisTitle
+                        }}
+                    }},
+                    y1: {{
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        title: {{
+                            display: true,
+                            text: y1AxisTitle
+                        }},
+                        grid: {{
+                            drawOnChartArea: false,
+                        }},
+                    }}
+                }}
+            }};
         }}
 
+        // Toggle functions for global charts
         function toggleChargingView() {{
             const btn = document.getElementById('chargingToggle');
             const isWeekly = btn.textContent === 'View Daily Trend';
@@ -1546,70 +1703,39 @@ class RobotPerformanceTemplate:
             }}
         }}
 
-        // Chart creation functions
-        function createTaskEfficiencyChart(labels, runningHours, coverage) {{
-            if (chartInstances.taskEfficiency) {{
-                chartInstances.taskEfficiency.destroy();
+        // Toggle function for location-specific charts
+        function toggleLocationView(locationName) {{
+            const btn = document.getElementById(`locationToggle_${{locationName}}`);
+            if (!btn) {{
+                console.error(`Button not found: locationToggle_${{locationName}}`);
+                return;
             }}
 
-            const ctx = document.getElementById('taskEfficiencyChart');
-            if (ctx) {{
-                chartInstances.taskEfficiency = new Chart(ctx, {{
-                    type: 'bar',
-                    data: {{
-                        labels: labels.length > 0 ? labels : ['No Data'],
-                        datasets: [{{
-                            label: 'Running Hours',
-                            data: runningHours.length > 0 ? runningHours : [0],
-                            backgroundColor: '#3498db',
-                            yAxisID: 'y'
-                        }}, {{
-                            label: 'Coverage %',
-                            data: coverage.length > 0 ? coverage : [0],
-                            type: 'line',
-                            borderColor: '#e74c3c',
-                            backgroundColor: 'rgba(231, 76, 60, 0.1)',
-                            tension: 0.4,
-                            yAxisID: 'y1'
-                        }}]
-                    }},
-                    options: {{
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {{
-                            title: {{
-                                display: true,
-                                text: 'Task Efficiency - Running Hours & Coverage'
-                            }}
-                        }},
-                        scales: {{
-                            y: {{
-                                type: 'linear',
-                                display: true,
-                                position: 'left',
-                                title: {{
-                                    display: true,
-                                    text: 'Running Hours'
-                                }}
-                            }},
-                            y1: {{
-                                type: 'linear',
-                                display: true,
-                                position: 'right',
-                                title: {{
-                                    display: true,
-                                    text: 'Coverage %'
-                                }},
-                                grid: {{
-                                    drawOnChartArea: false,
-                                }},
-                            }}
-                        }}
-                    }}
-                }});
+            const isWeekly = btn.textContent === 'View Daily Trend';
+            const actualLocationName = locationName.replace(/_/g, ' ');
+            const locationData = locationEfficiencyData[actualLocationName];
+
+            if (!locationData || !locationData.dates || !locationData.running_hours || !locationData.coverage_percentages) {{
+                console.error(`Invalid data for location: ${{actualLocationName}}`, locationData);
+                return;
+            }}
+
+            if (isWeekly) {{
+                btn.textContent = 'View Weekly Trend';
+                btn.classList.remove('active');
+                createLocationChart(locationName, locationData.dates, locationData.running_hours, locationData.coverage_percentages);
+            }} else {{
+                btn.textContent = 'View Daily Trend';
+                btn.classList.add('active');
+
+                const weeklyHours = aggregateByDayOfWeek(locationData.dates, locationData.running_hours);
+                const weeklyCoverage = aggregateByDayOfWeek(locationData.dates, locationData.coverage_percentages);
+
+                createLocationChart(locationName, weeklyHours.labels, weeklyHours.data, weeklyCoverage.data);
             }}
         }}
 
+        // Chart creation functions with full interactivity
         function createChargingChart(labels, sessions, durations) {{
             if (chartInstances.charging) {{
                 chartInstances.charging.destroy();
@@ -1624,7 +1750,9 @@ class RobotPerformanceTemplate:
                         datasets: [{{
                             label: 'Charging Sessions',
                             data: sessions.length > 0 ? sessions : [0],
-                            backgroundColor: '#17a2b8',
+                            backgroundColor: 'rgba(23, 162, 184, 0.6)',
+                            borderColor: 'rgba(23, 162, 184, 1)',
+                            borderWidth: 1,
                             yAxisID: 'y'
                         }}, {{
                             label: 'Avg Duration (min)',
@@ -1633,42 +1761,14 @@ class RobotPerformanceTemplate:
                             borderColor: '#e74c3c',
                             backgroundColor: 'rgba(231, 76, 60, 0.1)',
                             tension: 0.4,
-                            yAxisID: 'y1'
+                            yAxisID: 'y1',
+                            pointBackgroundColor: '#e74c3c',
+                            pointBorderColor: '#e74c3c',
+                            pointRadius: 4,
+                            pointHoverRadius: 6
                         }}]
                     }},
-                    options: {{
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {{
-                            title: {{
-                                display: true,
-                                text: 'Daily Charging Performance'
-                            }}
-                        }},
-                        scales: {{
-                            y: {{
-                                type: 'linear',
-                                display: true,
-                                position: 'left',
-                                title: {{
-                                    display: true,
-                                    text: 'Sessions'
-                                }}
-                            }},
-                            y1: {{
-                                type: 'linear',
-                                display: true,
-                                position: 'right',
-                                title: {{
-                                    display: true,
-                                    text: 'Duration (min)'
-                                }},
-                                grid: {{
-                                    drawOnChartArea: false,
-                                }},
-                            }}
-                        }}
-                    }}
+                    options: getInteractiveChartOptions('Sessions', 'Duration (min)')
                 }});
             }}
         }}
@@ -1687,48 +1787,20 @@ class RobotPerformanceTemplate:
                         datasets: [{{
                             label: 'Energy (kWh)',
                             data: energy.length > 0 ? energy : [0],
-                            backgroundColor: '#e74c3c',
+                            backgroundColor: 'rgba(231, 76, 60, 0.6)',
+                            borderColor: 'rgba(231, 76, 60, 1)',
+                            borderWidth: 1,
                             yAxisID: 'y'
                         }}, {{
                             label: 'Water (fl oz)',
                             data: water.length > 0 ? water : [0],
-                            backgroundColor: '#3498db',
+                            backgroundColor: 'rgba(52, 152, 219, 0.6)',
+                            borderColor: 'rgba(52, 152, 219, 1)',
+                            borderWidth: 1,
                             yAxisID: 'y1'
                         }}]
                     }},
-                    options: {{
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {{
-                            title: {{
-                                display: true,
-                                text: 'Daily Resource Usage'
-                            }}
-                        }},
-                        scales: {{
-                            y: {{
-                                type: 'linear',
-                                display: true,
-                                position: 'left',
-                                title: {{
-                                    display: true,
-                                    text: 'Energy (kWh)'
-                                }}
-                            }},
-                            y1: {{
-                                type: 'linear',
-                                display: true,
-                                position: 'right',
-                                title: {{
-                                    display: true,
-                                    text: 'Water (fl oz)'
-                                }},
-                                grid: {{
-                                    drawOnChartArea: false,
-                                }},
-                            }}
-                        }}
-                    }}
+                    options: getInteractiveChartOptions('Energy (kWh)', 'Water (fl oz)')
                 }});
             }}
         }}
@@ -1747,53 +1819,91 @@ class RobotPerformanceTemplate:
                         datasets: [{{
                             label: 'Hours Saved',
                             data: hours.length > 0 ? hours : [0],
-                            backgroundColor: '#28a745',
+                            backgroundColor: 'rgba(40, 167, 69, 0.6)',
+                            borderColor: 'rgba(40, 167, 69, 1)',
+                            borderWidth: 1,
                             yAxisID: 'y'
                         }}, {{
                             label: 'Savings ($)',
                             data: savings.length > 0 ? savings : [0],
-                            backgroundColor: '#17a2b8',
+                            backgroundColor: 'rgba(23, 162, 184, 0.6)',
+                            borderColor: 'rgba(23, 162, 184, 1)',
+                            borderWidth: 1,
                             yAxisID: 'y1'
                         }}]
                     }},
-                    options: {{
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {{
-                            title: {{
-                                display: true,
-                                text: 'Daily Financial Performance'
-                            }}
-                        }},
-                        scales: {{
-                            y: {{
-                                type: 'linear',
-                                display: true,
-                                position: 'left',
-                                title: {{
-                                    display: true,
-                                    text: 'Hours Saved'
-                                }}
-                            }},
-                            y1: {{
-                                type: 'linear',
-                                display: true,
-                                position: 'right',
-                                title: {{
-                                    display: true,
-                                    text: 'Savings ($)'
-                                }},
-                                grid: {{
-                                    drawOnChartArea: false,
-                                }},
-                            }}
-                        }}
-                    }}
+                    options: getInteractiveChartOptions('Hours Saved', 'Savings ($)')
                 }});
             }}
         }}
 
-        // Task Status Chart (static)
+        function createLocationChart(locationName, labels, runningHours, coverage) {{
+            const chartKey = `taskEfficiency_${{locationName}}`;
+
+            if (chartInstances[chartKey]) {{
+                chartInstances[chartKey].destroy();
+                delete chartInstances[chartKey];
+            }}
+
+            const ctx = document.getElementById(`taskEfficiencyChart_${{locationName}}`);
+            if (!ctx) {{
+                console.error(`Canvas not found: taskEfficiencyChart_${{locationName}}`);
+                return;
+            }}
+
+            const validLabels = labels && labels.length > 0 ? labels : ['No Data'];
+            const validHours = runningHours && runningHours.length > 0 ? runningHours : [0];
+            const validCoverage = coverage && coverage.length > 0 ? coverage : [0];
+
+            chartInstances[chartKey] = new Chart(ctx, {{
+                type: 'bar',
+                data: {{
+                    labels: validLabels,
+                    datasets: [{{
+                        label: 'Running Hours',
+                        data: validHours,
+                        backgroundColor: 'rgba(52, 152, 219, 0.6)',
+                        borderColor: 'rgba(52, 152, 219, 1)',
+                        borderWidth: 1,
+                        yAxisID: 'y'
+                    }}, {{
+                        label: 'Coverage %',
+                        data: validCoverage,
+                        type: 'line',
+                        borderColor: '#e74c3c',
+                        backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                        tension: 0.4,
+                        yAxisID: 'y1',
+                        pointBackgroundColor: '#e74c3c',
+                        pointBorderColor: '#e74c3c',
+                        pointRadius: 4,
+                        pointHoverRadius: 6
+                    }}]
+                }},
+                options: getInteractiveChartOptions('Running Hours', 'Coverage %')
+            }});
+        }}
+
+        function createLocationTaskEfficiencyCharts() {{
+            if (!locationEfficiencyData || Object.keys(locationEfficiencyData).length === 0) {{
+                console.log('No locationEfficiencyData available');
+                return;
+            }}
+
+            Object.keys(locationEfficiencyData).forEach(locationName => {{
+                const locationData = locationEfficiencyData[locationName];
+                const safeName = locationName.replace(/\s+/g, '_');
+
+                if (locationData && locationData.dates && locationData.running_hours && locationData.coverage_percentages) {{
+                    console.log(`Creating interactive chart for: ${{locationName}} (ID: ${{safeName}})`);
+                    createLocationChart(safeName, locationData.dates, locationData.running_hours, locationData.coverage_percentages);
+                }} else {{
+                    console.error(`Invalid data structure for location: ${{locationName}}`, locationData);
+                }}
+            }});
+        }}
+
+        // Static charts with interactivity
         const taskStatusCtx = document.getElementById('taskStatusChart');
         if (taskStatusCtx) {{
             const taskStatusData = {json.dumps(chart_data.get('taskStatusChart', {}))};
@@ -1804,7 +1914,8 @@ class RobotPerformanceTemplate:
                     datasets: [{{
                         data: taskStatusData.data || [0, 0, 0],
                         backgroundColor: taskStatusData.backgroundColor || ['#28a745', '#ffc107', '#dc3545'],
-                        borderWidth: 2
+                        borderWidth: 2,
+                        borderColor: '#fff'
                     }}]
                 }},
                 options: {{
@@ -1814,13 +1925,22 @@ class RobotPerformanceTemplate:
                         title: {{
                             display: true,
                             text: 'Task Status Distribution'
+                        }},
+                        tooltip: {{
+                            enabled: true,
+                            backgroundColor: 'rgba(0,0,0,0.8)',
+                            titleColor: 'white',
+                            bodyColor: 'white'
+                        }},
+                        legend: {{
+                            display: true,
+                            position: 'bottom'
                         }}
                     }}
                 }}
             }});
         }}
 
-        // Task Mode Chart (static)
         const taskModeCtx = document.getElementById('taskModeChart');
         if (taskModeCtx) {{
             const taskModeData = {json.dumps(chart_data.get('taskModeChart', {}))};
@@ -1830,7 +1950,9 @@ class RobotPerformanceTemplate:
                     labels: taskModeData.labels || ['No Data'],
                     datasets: [{{
                         data: taskModeData.data || [1],
-                        backgroundColor: taskModeData.backgroundColor || ['#6c757d']
+                        backgroundColor: taskModeData.backgroundColor || ['#6c757d'],
+                        borderWidth: 2,
+                        borderColor: '#fff'
                     }}]
                 }},
                 options: {{
@@ -1840,27 +1962,36 @@ class RobotPerformanceTemplate:
                         title: {{
                             display: true,
                             text: 'Task Mode Distribution'
+                        }},
+                        tooltip: {{
+                            enabled: true,
+                            backgroundColor: 'rgba(0,0,0,0.8)',
+                            titleColor: 'white',
+                            bodyColor: 'white'
+                        }},
+                        legend: {{
+                            display: true,
+                            position: 'bottom'
                         }}
                     }}
                 }}
             }});
         }}
 
-        // Initialize all time series charts with daily data when page loads
+        // Initialize all charts when page loads
         document.addEventListener('DOMContentLoaded', function() {{
-            // Task Efficiency Chart
-            const runningHours = originalData.energy_data.map(x => x * 0.5); // Approximate conversion
-            const coverage = originalData.water_data.map(x => Math.min(x / 10, 100)); // Approximate coverage
-            createTaskEfficiencyChart(originalData.dates, runningHours, coverage);
+            console.log('Initializing all charts...');
+            console.log('LocationEfficiencyData:', locationEfficiencyData);
 
-            // Charging Chart
+            // Global trend charts
             createChargingChart(originalData.dates, originalData.charging_sessions, originalData.charging_durations);
-
-            // Resource Chart
             createResourceChart(originalData.dates, originalData.energy_data, originalData.water_data);
-
-            // Financial Chart
             createFinancialChart(originalData.dates, originalData.hours_saved, originalData.savings_data);
+
+            // Location-specific charts
+            createLocationTaskEfficiencyCharts();
+
+            console.log('All charts initialized');
         }});
     </script>"""
 

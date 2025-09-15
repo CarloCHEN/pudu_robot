@@ -333,12 +333,13 @@ class ReportGenerator:
             'facility_charging_metrics': comprehensive_metrics.get('facility_charging_metrics', {}),
             'facility_resource_metrics': comprehensive_metrics.get('facility_resource_metrics', {}),
             'facility_efficiency_metrics': comprehensive_metrics.get('facility_efficiency_metrics', {}),
-            'facility_breakdown_metrics': comprehensive_metrics.get('facility_breakdown_metrics', {}),  # NEW - for coverage by day
+            'facility_breakdown_metrics': comprehensive_metrics.get('facility_breakdown_metrics', {}),  # for coverage by day
             'map_performance_by_building': comprehensive_metrics.get('map_performance_by_building', {}),
             'event_location_mapping': comprehensive_metrics.get('event_location_mapping', {}),
             'event_type_by_location': comprehensive_metrics.get('event_type_by_location', {}),
-            'financial_trend_data': comprehensive_metrics.get('financial_trend_data', {}),  # NEW - for financial charts
+            'financial_trend_data': comprehensive_metrics.get('financial_trend_data', {}),  # for financial charts
 
+            'daily_location_efficiency': comprehensive_metrics.get('daily_location_efficiency', {}),  # for location-specific task efficiency charts
             'avg_task_duration_minutes': comprehensive_metrics.get('task_performance', {}).get('avg_task_duration_minutes', 0),
 
             # Metadata

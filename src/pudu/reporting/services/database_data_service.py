@@ -87,6 +87,115 @@ class DatabaseDataService:
             logger.error(f"Error in fetch_robot_status_data: {e}")
             return pd.DataFrame()
 
+    def calculate_daily_task_efficiency_by_location(self, tasks_data: pd.DataFrame,
+                                                       robot_locations: pd.DataFrame,
+                                                       start_date: str, end_date: str) -> Dict[str, Dict[str, List]]:
+            """
+            Calculate daily task efficiency data (running hours and coverage) for each location
+
+            Args:
+                tasks_data: Task performance data
+                robot_locations: Robot location mapping
+                start_date: Start date for range
+                end_date: End date for range
+
+            Returns:
+                Dict mapping location names to daily efficiency data
+            """
+            try:
+                if robot_locations.empty or tasks_data.empty:
+                    return {}
+
+                start_dt = datetime.strptime(start_date.split(' ')[0], '%Y-%m-%d')
+                end_dt = datetime.strptime(end_date.split(' ')[0], '%Y-%m-%d')
+
+                # Create date range
+                date_range = []
+                current_date = start_dt
+                while current_date <= end_dt:
+                    date_range.append(current_date)
+                    current_date += timedelta(days=1)
+
+                location_efficiency = {}
+
+                # Group by building/facility
+                for building_name in robot_locations['building_name'].dropna().unique():
+                    facility_robots = robot_locations[robot_locations['building_name'] == building_name]['robot_sn'].tolist()
+                    facility_tasks = tasks_data[tasks_data['robot_sn'].isin(facility_robots)]
+
+                    if facility_tasks.empty:
+                        continue
+
+                    # Initialize daily data for this location
+                    daily_data = {date.strftime('%m/%d'): {
+                        'running_hours': 0,
+                        'actual_area': 0,
+                        'planned_area': 0
+                    } for date in date_range}
+
+                    # Process tasks for this location
+                    if not facility_tasks.empty and 'start_time' in facility_tasks.columns:
+                        for _, task in facility_tasks.iterrows():
+                            try:
+                                task_date = pd.to_datetime(task['start_time']).date()
+                                if start_dt.date() <= task_date <= end_dt.date():
+                                    date_str = task_date.strftime('%m/%d')
+                                    if date_str in daily_data:
+                                        # Calculate running hours from duration (seconds)
+                                        duration = task.get('duration', 0)
+                                        if pd.notna(duration):
+                                            try:
+                                                seconds = float(str(duration).strip())
+                                                hours = seconds / 3600
+                                                if hours > 0:
+                                                    daily_data[date_str]['running_hours'] += hours
+                                            except:
+                                                continue
+
+                                        # Calculate area data
+                                        actual_area = float(task.get('actual_area', 0) or 0)
+                                        planned_area = float(task.get('plan_area', 0) or 0)
+
+                                        daily_data[date_str]['actual_area'] += actual_area
+                                        daily_data[date_str]['planned_area'] += planned_area
+                            except:
+                                continue
+
+                    # Convert to chart format and calculate coverage
+                    dates = list(daily_data.keys())
+                    running_hours = [daily_data[date]['running_hours'] for date in dates]
+
+                    # Calculate daily coverage percentage
+                    coverage_percentages = []
+                    for date in dates:
+                        actual = daily_data[date]['actual_area']
+                        planned = daily_data[date]['planned_area']
+                        coverage = (actual / planned * 100) if planned > 0 else 0
+                        coverage_percentages.append(min(coverage, 100))  # Cap at 100%
+
+                    location_efficiency[building_name] = {
+                        'dates': dates,
+                        'running_hours': [round(h, 2) for h in running_hours],
+                        'coverage_percentages': [round(c, 1) for c in coverage_percentages]
+                    }
+
+                logger.info(f"Calculated daily task efficiency for {len(location_efficiency)} locations")
+                return location_efficiency
+
+            except Exception as e:
+                logger.error(f"Error calculating daily task efficiency by location: {e}")
+                return {}
+
+    def calculate_reporting_period_length(self, start_date: str, end_date: str) -> int:
+        """Calculate the length of the reporting period in days"""
+        try:
+            start_dt = datetime.strptime(start_date.split(' ')[0], '%Y-%m-%d')
+            end_dt = datetime.strptime(end_date.split(' ')[0], '%Y-%m-%d')
+            return (end_dt - start_dt).days + 1
+        except Exception as e:
+            logger.error(f"Error calculating reporting period length: {e}")
+            return 0
+
     def fetch_cleaning_tasks_data(self, target_robots: List[str], start_date: str, end_date: str) -> pd.DataFrame:
         """
         Fetch historical cleaning tasks data from databases
@@ -792,7 +901,7 @@ class DatabaseDataService:
                 metrics['facility_performance'] = {'facilities': facility_metrics}
 
                 # CRITICAL: Calculate all facility-specific metrics for comparison
-                facility_efficiency = self.calculate_facility_efficiency_metrics(tasks_data, robot_locations)
+                facility_efficiency = self.metrics_calculator.calculate_facility_efficiency_metrics(tasks_data, robot_locations, start_date, end_date)
                 metrics['facility_efficiency_metrics'] = facility_efficiency
 
                 # ADD: All the missing facility metrics that are needed for comparison
@@ -905,7 +1014,7 @@ class DatabaseDataService:
 
                             # Parse duration
                             duration_str = str(charge.get('duration', ''))
-                            duration_minutes = self._parse_duration_to_minutes(duration_str)
+                            duration_minutes = self.metrics_calculator._parse_duration_str_to_minutes(duration_str)
                             if duration_minutes > 0:
                                 daily_data[date_str]['charging_duration_total'] += duration_minutes
                                 daily_data[date_str]['charging_count'] += 1
@@ -936,87 +1045,6 @@ class DatabaseDataService:
 
         except Exception as e:
             logger.error(f"Error calculating daily trends: {e}")
-            return {}
-
-    def _parse_duration_to_minutes(self, duration_str) -> float:
-        """Parse duration string to minutes"""
-        try:
-            if pd.isna(duration_str) or not str(duration_str).strip():
-                return 0.0
-
-            duration_str = str(duration_str).strip()
-            hours = 0
-            minutes = 0
-
-            if 'h' in duration_str and 'min' in duration_str:
-                parts = duration_str.split('h')
-                hours = int(parts[0].strip())
-                min_part = parts[1].strip()
-                if min_part.endswith('min'):
-                    minutes = int(min_part.replace('min', '').strip())
-            elif 'min' in duration_str:
-                minutes = int(duration_str.replace('min', '').strip())
-            elif 'h' in duration_str:
-                hours = int(duration_str.replace('h', '').strip())
-            else:
-                # Try to parse as pure seconds and convert to minutes
-                seconds = float(duration_str)
-                minutes = seconds / 60
-
-            return hours * 60 + minutes
-        except:
-            return 0.0
-
-    def calculate_facility_efficiency_metrics(self, tasks_data: pd.DataFrame,
-                                            robot_locations: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
-        """Calculate water efficiency and time efficiency for facilities"""
-        try:
-            if robot_locations.empty or tasks_data.empty:
-                return {}
-
-            facility_metrics = {}
-
-            for building_name in robot_locations['building_name'].dropna().unique():
-                facility_robots = robot_locations[robot_locations['building_name'] == building_name]['robot_sn'].tolist()
-                facility_tasks = tasks_data[tasks_data['robot_sn'].isin(facility_robots)]
-
-                if facility_tasks.empty:
-                    continue
-
-                # Area calculations - convert from square meters to square feet
-                total_area_sqm = facility_tasks['actual_area'].fillna(0).sum() if 'actual_area' in facility_tasks.columns else 0
-                total_area_sqft = total_area_sqm * 10.764
-
-                # Water efficiency (area per unit water)
-                water_consumption = facility_tasks['water_consumption'].fillna(0).sum() if 'water_consumption' in facility_tasks.columns else 0
-                water_efficiency = total_area_sqft / water_consumption if water_consumption > 0 else 0
-
-                # Time efficiency (area per unit hour) - use duration directly in seconds
-                total_time_hours = 0
-                if 'duration' in facility_tasks.columns:
-                    for duration in facility_tasks['duration']:
-                        if pd.notna(duration):
-                            try:
-                                seconds = float(str(duration).strip())
-                                hours = seconds / 3600
-                                if hours > 0:
-                                    total_time_hours += hours
-                            except:
-                                continue
-
-                time_efficiency = total_area_sqft / total_time_hours if total_time_hours > 0 else 0
-
-                facility_metrics[building_name] = {
-                    'water_efficiency': round(water_efficiency, 1),  # sq ft per fl oz
-                    'time_efficiency': round(time_efficiency, 1),   # sq ft per hour
-                    'total_area_cleaned': round(total_area_sqft, 0),
-                    'total_time_hours': round(total_time_hours, 1)
-                }
-
-            return facility_metrics
-
-        except Exception as e:
-            logger.error(f"Error calculating facility efficiency metrics: {e}")
             return {}
 
     def calculate_event_type_by_location(self, events_data: pd.DataFrame,
@@ -1191,6 +1219,19 @@ class DatabaseDataService:
             weekday_completion = self.metrics_calculator.calculate_weekday_completion_rates(tasks_data)
             current_metrics['weekday_completion'] = weekday_completion
 
+            # NEW: Calculate days with tasks with period length ratio
+            days_info = self.metrics_calculator.calculate_days_with_tasks_and_period_length(
+                tasks_data, current_start, current_end
+            )
+            current_metrics['fleet_performance'].update(days_info)
+
+            # NEW: Calculate daily task efficiency by location for charts
+            if not robot_locations.empty:
+                daily_location_efficiency = self.calculate_daily_task_efficiency_by_location(
+                    tasks_data, robot_locations, current_start, current_end
+                )
+                current_metrics['daily_location_efficiency'] = daily_location_efficiency
+
             previous_tasks_data = previous_data.get('cleaning_tasks', pd.DataFrame())
             previous_avg_duration = self.metrics_calculator.calculate_average_task_duration(previous_tasks_data)
             previous_metrics['task_performance']['avg_task_duration_minutes'] = previous_avg_duration
@@ -1208,7 +1249,9 @@ class DatabaseDataService:
                 current_metrics['facility_resource_metrics'] = facility_resource_metrics
 
                 # Calculate facility efficiency metrics
-                facility_efficiency = self.calculate_facility_efficiency_metrics(tasks_data, robot_locations)
+                facility_efficiency = self.metrics_calculator.calculate_facility_efficiency_metrics(
+                    tasks_data, robot_locations, current_start, current_end
+                )
                 current_metrics['facility_efficiency_metrics'] = facility_efficiency
 
                 # Calculate facility breakdown metrics with coverage by day
@@ -1226,7 +1269,6 @@ class DatabaseDataService:
                     logger.info(f"Added event_type_by_location with {len(event_type_by_location)} event types")
                 else:
                     current_metrics['event_type_by_location'] = {}
-                    # logger.warning("No events data for event type breakdown")
 
             # Update trend data to use daily instead of weekly
             daily_trend_data = self.calculate_daily_trends(tasks_data, charging_data, current_start, current_end)
@@ -1275,6 +1317,7 @@ class DatabaseDataService:
             current_metrics['trend_data'] = {}
             current_metrics['event_type_by_location'] = {}
             current_metrics['financial_trend_data'] = {}
+            current_metrics['daily_location_efficiency'] = {}
             return current_metrics
 
     def calculate_facility_specific_task_metrics(self, tasks_data: pd.DataFrame,
@@ -1306,14 +1349,12 @@ class DatabaseDataService:
                     continue
 
                 # Calculate facility-specific average duration
-                durations_minutes = []
+                durations_seconds = []
                 if 'duration' in facility_tasks.columns:
                     for duration in facility_tasks['duration']:
-                        duration_minutes = self.metrics_calculator._parse_duration_to_minutes(duration)
-                        if duration_minutes > 0:
-                            durations_minutes.append(duration_minutes)
+                        durations_seconds.append(duration)
 
-                avg_duration = np.mean(durations_minutes) if durations_minutes else 0
+                avg_duration = np.mean(durations_seconds) / 60 if durations_seconds else 0
 
                 # Calculate other metrics
                 total_tasks = len(facility_tasks)
