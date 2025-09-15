@@ -29,7 +29,7 @@ class ReportDeliveryService:
         logger.info(f"Initialized ReportDeliveryService for region {region}, bucket: {self.reports_bucket}")
 
     async def deliver_report(self, report_html: str, metadata: Dict[str, Any],
-                           report_config: ReportConfig) -> Dict[str, Any]:
+                            report_config: ReportConfig) -> Dict[str, Any]:
         """
         Deliver report based on configuration
 

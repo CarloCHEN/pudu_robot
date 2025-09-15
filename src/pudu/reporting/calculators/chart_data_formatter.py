@@ -1,6 +1,6 @@
 import logging
-from typing import Dict, List, Optional, Any
-import json
+from typing import Dict, Any
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -10,6 +10,352 @@ class ChartDataFormatter:
     def __init__(self):
         """Initialize the chart data formatter"""
         pass
+
+    def generate_pdf_chart_images(self, content: Dict[str, Any]) -> Dict[str, str]:
+        """Generate chart images matching the original HTML charts exactly"""
+        try:
+            import matplotlib.pyplot as plt
+            import numpy as np
+            import base64
+            from io import BytesIO
+
+            charts = {}
+
+            # Set matplotlib style to match web charts
+            plt.rcParams.update({
+                'figure.facecolor': 'white',
+                'axes.facecolor': 'white',
+                'axes.edgecolor': '#dee2e6',
+                'axes.linewidth': 0.8,
+                'xtick.color': '#666',
+                'ytick.color': '#666',
+                'text.color': '#333',
+                'font.size': 10
+            })
+
+            # Get trend data for weekly aggregation
+            trend_data = content.get('trend_data', {})
+            dates = trend_data.get('dates', [])
+
+            # 1. Task Status Pie Chart (matches taskStatusChart)
+            task_data = content.get('task_performance', {})
+            if task_data:
+                completed = task_data.get('completed_tasks', 0)
+                cancelled = task_data.get('cancelled_tasks', 0)
+                interrupted = task_data.get('interrupted_tasks', 0)
+
+                if completed > 0 or cancelled > 0 or interrupted > 0:
+                    fig, ax = plt.subplots(figsize=(6, 6))
+
+                    labels = ['Completed', 'Cancelled', 'Interrupted']
+                    sizes = [completed, cancelled, interrupted]
+                    colors = ['#28a745', '#ffc107', '#dc3545']  # Match HTML colors
+
+                    # Filter out zero values
+                    filtered_data = [(label, size, color) for label, size, color in zip(labels, sizes, colors) if size > 0]
+                    if filtered_data:
+                        labels, sizes, colors = zip(*filtered_data)
+
+                        wedges, texts, autotexts = ax.pie(sizes, labels=labels, colors=colors,
+                                                         autopct='%1.1f%%', startangle=90,
+                                                         textprops={'fontsize': 11, 'color': '#333'})
+
+                        # Style the text
+                        for autotext in autotexts:
+                            autotext.set_color('white')
+                            autotext.set_fontweight('bold')
+
+                    ax.set_title('Task Status Distribution', fontsize=14, fontweight='bold', pad=20)
+
+                    # Save chart
+                    buffer = BytesIO()
+                    plt.savefig(buffer, format='png', dpi=150, bbox_inches=None,
+                               facecolor='white', edgecolor='none')
+                    buffer.seek(0)
+                    chart_img = base64.b64encode(buffer.getvalue()).decode()
+                    charts['task_status_chart'] = f"data:image/png;base64,{chart_img}"
+                    plt.close()
+
+            # 2. Task Mode Distribution Pie Chart (matches taskModeChart)
+            # Get task mode data from facility metrics
+            facility_task_metrics = content.get('facility_task_metrics', {})
+            mode_counts = {}
+
+            for facility, metrics in facility_task_metrics.items():
+                mode = metrics.get('primary_mode', 'Mixed tasks')
+                mode_counts[mode] = mode_counts.get(mode, 0) + metrics.get('total_tasks', 0)
+
+            if mode_counts:
+                fig, ax = plt.subplots(figsize=(6, 6))
+
+                labels = list(mode_counts.keys())
+                sizes = list(mode_counts.values())
+                colors = ['#3498db', '#9b59b6', '#e67e22', '#1abc9c', '#34495e'][:len(labels)]
+
+                wedges, texts, autotexts = ax.pie(sizes, labels=labels, colors=colors,
+                                                 autopct='%1.1f%%', startangle=45,
+                                                 textprops={'fontsize': 11, 'color': '#333'})
+
+                for autotext in autotexts:
+                    autotext.set_color('white')
+                    autotext.set_fontweight('bold')
+
+                ax.set_title('Task Mode Distribution', fontsize=14, fontweight='bold', pad=20)
+
+                buffer = BytesIO()
+                plt.savefig(buffer, format='png', dpi=150, bbox_inches=None,
+                           facecolor='white', edgecolor='none')
+                buffer.seek(0)
+                chart_img = base64.b64encode(buffer.getvalue()).decode()
+                charts['task_mode_chart'] = f"data:image/png;base64,{chart_img}"
+                plt.close()
+
+            # 3. Charging Performance Chart (weekly trend - matches chargingChart)
+            if dates and trend_data.get('charging_sessions_trend') and trend_data.get('charging_duration_trend'):
+                weekly_sessions = self._aggregate_by_weekday(dates, trend_data.get('charging_sessions_trend', []))
+                weekly_durations = self._aggregate_by_weekday(dates, trend_data.get('charging_duration_trend', []))
+
+                if weekly_sessions['data'] and weekly_durations['data']:
+                    fig, ax1 = plt.subplots(figsize=(12, 6))
+
+                    x = np.arange(len(weekly_sessions['labels']))
+                    width = 0.8
+
+                    # Sessions bars
+                    bars = ax1.bar(x, weekly_sessions['data'], width,
+                                  color=(23/255, 162/255, 184/255, 0.6),
+                                  edgecolor=(23/255, 162/255, 184/255, 0.6),
+                                  linewidth=1, label='Charging Sessions')
+
+                    ax1.set_xlabel('Day of Week', fontsize=12)
+                    ax1.set_ylabel('Sessions', fontsize=12, color='#17a2b8')
+                    ax1.set_title('Weekly Charging Performance', fontsize=14, fontweight='bold', pad=20)
+                    ax1.set_xticks(x)
+                    ax1.set_xticklabels(weekly_sessions['labels'])
+                    ax1.tick_params(axis='y', labelcolor='#17a2b8')
+
+                    # Duration line
+                    ax2 = ax1.twinx()
+                    line = ax2.plot(x, weekly_durations['data'], color='#e74c3c',
+                                   linewidth=3, marker='o', markersize=6,
+                                   markerfacecolor='#e74c3c', markeredgecolor='#e74c3c',
+                                   label='Avg Duration (min)')
+
+                    ax2.set_ylabel('Duration (min)', fontsize=12, color='#e74c3c')
+                    ax2.tick_params(axis='y', labelcolor='#e74c3c')
+
+                    # Legends
+                    ax1.legend(loc='upper left')
+                    ax2.legend(loc='upper right')
+
+                    plt.tight_layout()
+
+                    buffer = BytesIO()
+                    plt.savefig(buffer, format='png', dpi=150, bbox_inches='tight',
+                               facecolor='white', edgecolor='none')
+                    buffer.seek(0)
+                    chart_img = base64.b64encode(buffer.getvalue()).decode()
+                    charts['charging_chart'] = f"data:image/png;base64,{chart_img}"
+                    plt.close()
+
+            # 4. Resource Usage Chart (weekly trend - matches resourceChart)
+            if dates and trend_data.get('energy_consumption_trend') and trend_data.get('water_usage_trend'):
+                weekly_energy = self._aggregate_by_weekday(dates, trend_data.get('energy_consumption_trend', []))
+                weekly_water = self._aggregate_by_weekday(dates, trend_data.get('water_usage_trend', []))
+
+                if weekly_energy['data'] and weekly_water['data']:
+                    fig, ax1 = plt.subplots(figsize=(12, 6))
+
+                    x = np.arange(len(weekly_energy['labels']))
+                    width = 0.35
+
+                    # Energy bars
+                    bars1 = ax1.bar(x - width/2, weekly_energy['data'], width,
+                                   color=(231/255, 76/255, 60/255, 0.6),
+                                   edgecolor=(231/255, 76/255, 60/255, 0.6),
+                                   linewidth=1, label='Energy (kWh)')
+
+                    ax1.set_xlabel('Day of Week', fontsize=12)
+                    ax1.set_ylabel('Energy (kWh)', fontsize=12, color='#e74c3c')
+                    ax1.set_title('Weekly Resource Utilization', fontsize=14, fontweight='bold', pad=20)
+                    ax1.set_xticks(x)
+                    ax1.set_xticklabels(weekly_energy['labels'])
+                    ax1.tick_params(axis='y', labelcolor='#e74c3c')
+
+                    # Water bars
+                    ax2 = ax1.twinx()
+                    bars2 = ax2.bar(x + width/2, weekly_water['data'], width,
+                                   color=(52/255, 152/255, 219/255, 0.6),
+                                   edgecolor=(52/255, 152/255, 219/255, 0.6),
+                                   linewidth=1, label='Water (fl oz)')
+
+                    ax2.set_ylabel('Water (fl oz)', fontsize=12, color='#3498db')
+                    ax2.tick_params(axis='y', labelcolor='#3498db')
+
+                    # Legends
+                    ax1.legend(loc='upper left')
+                    ax2.legend(loc='upper right')
+
+                    plt.tight_layout()
+
+                    buffer = BytesIO()
+                    plt.savefig(buffer, format='png', dpi=150, bbox_inches='tight',
+                               facecolor='white', edgecolor='none')
+                    buffer.seek(0)
+                    chart_img = base64.b64encode(buffer.getvalue()).decode()
+                    charts['resource_chart'] = f"data:image/png;base64,{chart_img}"
+                    plt.close()
+
+            # 5. Financial Trend Chart (weekly trend - matches financialChart)
+            financial_trend_data = content.get('financial_trend_data', {})
+            if dates and financial_trend_data.get('hours_saved_trend') and financial_trend_data.get('savings_trend'):
+                weekly_hours = self._aggregate_by_weekday(dates, financial_trend_data.get('hours_saved_trend', []))
+                weekly_savings = self._aggregate_by_weekday(dates, financial_trend_data.get('savings_trend', []))
+
+                if weekly_hours['data'] and weekly_savings['data']:
+                    fig, ax1 = plt.subplots(figsize=(12, 6))
+
+                    x = np.arange(len(weekly_hours['labels']))
+                    width = 0.35
+
+                    # Hours saved bars
+                    bars1 = ax1.bar(x - width/2, weekly_hours['data'], width,
+                                   color=(40/255, 167/255, 69/255, 0.6),
+                                   edgecolor=(40/255, 167/255, 69/255, 0.6),
+                                   linewidth=1, label='Hours Saved')
+
+                    ax1.set_xlabel('Day of Week', fontsize=12)
+                    ax1.set_ylabel('Hours Saved', fontsize=12, color='#28a745')
+                    ax1.set_title('Weekly Financial Performance', fontsize=14, fontweight='bold', pad=20)
+                    ax1.set_xticks(x)
+                    ax1.set_xticklabels(weekly_hours['labels'])
+                    ax1.tick_params(axis='y', labelcolor='#28a745')
+
+                    # Savings bars
+                    ax2 = ax1.twinx()
+                    bars2 = ax2.bar(x + width/2, weekly_savings['data'], width,
+                                   color=(23/255, 162/255, 184/255, 0.6),
+                                   edgecolor=(23/255, 162/255, 184/255, 0.6),
+                                   linewidth=1, label='Savings ($)')
+
+                    ax2.set_ylabel('Savings ($)', fontsize=12, color='#17a2b8')
+                    ax2.tick_params(axis='y', labelcolor='#17a2b8')
+
+                    # Legends
+                    ax1.legend(loc='upper left')
+                    ax2.legend(loc='upper right')
+
+                    plt.tight_layout()
+
+                    buffer = BytesIO()
+                    plt.savefig(buffer, format='png', dpi=150, bbox_inches='tight',
+                               facecolor='white', edgecolor='none')
+                    buffer.seek(0)
+                    chart_img = base64.b64encode(buffer.getvalue()).decode()
+                    charts['financial_chart'] = f"data:image/png;base64,{chart_img}"
+                    plt.close()
+
+            # 6. Location-specific task efficiency charts (weekly trend for each location)
+            daily_location_efficiency = content.get('daily_location_efficiency', {})
+            charts[f'location_chart'] = {}
+            for location_name, efficiency_data in daily_location_efficiency.items():
+                if efficiency_data.get('dates') and efficiency_data.get('running_hours') and efficiency_data.get('coverage_percentages'):
+                    weekly_hours = self._aggregate_by_weekday(efficiency_data['dates'], efficiency_data['running_hours'])
+                    weekly_coverage = self._aggregate_by_weekday(efficiency_data['dates'], efficiency_data['coverage_percentages'])
+
+                    if weekly_hours['data'] and weekly_coverage['data']:
+                        fig, ax1 = plt.subplots(figsize=(10, 5))
+
+                        x = np.arange(len(weekly_hours['labels']))
+                        width = 0.8
+
+                        # Running hours bars
+                        bars = ax1.bar(x, weekly_hours['data'], width,
+                                       color=(52/255, 152/255, 219/255, 0.6),
+                                       edgecolor=(52/255, 152/255, 219/255, 0.6),
+                                       linewidth=1, label='Running Hours')
+
+                        ax1.set_xlabel('Day of Week', fontsize=11)
+                        ax1.set_ylabel('Running Hours', fontsize=11, color='#3498db')
+                        ax1.set_ylim(bottom=0)
+                        ax1.set_title(f'{location_name} - Weekly Performance', fontsize=12, fontweight='bold')
+                        ax1.set_xticks(x)
+                        ax1.set_xticklabels(weekly_hours['labels'])
+                        ax1.tick_params(axis='y', labelcolor='#3498db')
+
+                        # Coverage line
+                        ax2 = ax1.twinx()
+                        line = ax2.plot(x, weekly_coverage['data'], color='#e74c3c',
+                                       linewidth=2, marker='o', markersize=5,
+                                       markerfacecolor='#e74c3c', markeredgecolor='#e74c3c',
+                                       label='Coverage %')
+
+                        ax2.set_ylabel('Coverage %', fontsize=11, color='#e74c3c')
+                        ax2.set_ylim(bottom=0)
+                        ax2.tick_params(axis='y', labelcolor='#e74c3c')
+
+                        # Legends
+                        ax1.legend(loc='upper left')
+                        ax2.legend(loc='upper right')
+
+                        plt.tight_layout()
+
+                        buffer = BytesIO()
+                        plt.savefig(buffer, format='png', dpi=150, bbox_inches='tight',
+                                   facecolor='white', edgecolor='none')
+                        buffer.seek(0)
+                        chart_img = base64.b64encode(buffer.getvalue()).decode()
+                        charts[f'location_chart'][location_name] = f"data:image/png;base64,{chart_img}"
+                        plt.close()
+
+            return charts
+
+        except ImportError:
+            logger.warning("matplotlib not available - charts will not be generated for PDF")
+            return {}
+        except Exception as e:
+            logger.error(f"Error generating chart images: {e}", exc_info=True)
+            return {}
+
+    def _aggregate_by_weekday(self, dates, values):
+        """Aggregate data by day of week (Monday to Sunday)"""
+        try:
+            day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+            day_totals = [0.0] * 7
+            day_counts = [0] * 7
+
+            for i, date_str in enumerate(dates):
+                if i < len(values) and values[i] is not None:
+                    try:
+                        # Parse date (assuming MM/DD format)
+                        if '/' in date_str:
+                            month, day = map(int, date_str.split('/'))
+                            year = datetime.now().year
+                            date_obj = datetime(year, month, day)
+                            day_of_week = date_obj.weekday()  # 0=Monday, 6=Sunday
+
+                            day_totals[day_of_week] += float(values[i])
+                            day_counts[day_of_week] += 1
+                    except (ValueError, IndexError):
+                        continue
+
+            # Calculate averages
+            averages = []
+            for i in range(7):
+                if day_counts[i] > 0:
+                    avg = round(day_totals[i] / day_counts[i], 2)
+                    averages.append(avg)
+                else:
+                    averages.append(0.0)
+
+            return {
+                'labels': day_names,
+                'data': averages
+            }
+
+        except Exception as e:
+            logger.error(f"Error in weekday aggregation: {e}")
+            return {'labels': [], 'data': []}
 
     def format_task_status_chart(self, task_metrics: Dict[str, Any]) -> Dict[str, Any]:
         """

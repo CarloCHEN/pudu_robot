@@ -191,6 +191,7 @@ class RobotDatabaseResolver:
     def close(self):
         """Close database connection"""
         try:
-            self.main_db.close()
+            if self.main_db:
+                self.main_db.close()
         except Exception as e:
             logger.warning(f"Error closing main database connection: {e}")

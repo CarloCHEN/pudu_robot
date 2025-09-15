@@ -7,9 +7,9 @@ from enum import Enum
 logger = logging.getLogger(__name__)
 
 class ReportDetailLevel(Enum):
-    SUMMARY = "summary"
+    OVERVIEW = "overview"
     DETAILED = "detailed"
-    COMPREHENSIVE = "comprehensive"
+    IN_DEPTH = "in-depth"
 
 class DeliveryMethod(Enum):
     IN_APP = "in-app"
@@ -46,6 +46,10 @@ class ReportConfig:
         self.detail_level = ReportDetailLevel(self.form_data.get('detailLevel', 'detailed'))
         self.delivery = DeliveryMethod(self.form_data.get('delivery', 'in-app'))
         self.schedule = ScheduleFrequency(self.form_data.get('schedule', 'immediate'))
+        self.report_name = self.form_data.get('reportName', 'Report')
+
+        # Output format
+        self.output_format = self.form_data.get('outputFormat', 'html')
 
         # Email configuration
         self.email_recipients = self.form_data.get('emailRecipients', [])

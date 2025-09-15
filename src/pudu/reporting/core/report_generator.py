@@ -5,29 +5,50 @@ from typing import Dict, List, Optional, Any
 import pandas as pd
 from pudu.configs.database_config_loader import DynamicDatabaseConfig
 from pudu.services.robot_database_resolver import RobotDatabaseResolver
-from ..templates.robot_performance_template import RobotPerformanceTemplate
+from ..templates.robot_html_template import RobotPerformanceTemplate
+from ..templates.robot_pdf_template import RobotPDFTemplate
 from ..services.database_data_service import DatabaseDataService
 from .report_config import ReportConfig, ReportDetailLevel
+from ..calculators.chart_data_formatter import ChartDataFormatter
 
 logger = logging.getLogger(__name__)
 
 class ReportGenerator:
-    """Enhanced report generation service that creates comprehensive HTML reports"""
+    """Enhanced report generation service that creates comprehensive HTML and PDF reports"""
 
     def __init__(self, config_path: str = "database_config.yaml", output_dir: str = "reports"):
-        """Initialize report generator with database infrastructure"""
+        """Initialize report generator with database infrastructure and both HTML/PDF capability"""
         self.config_path = config_path
         self.output_dir = output_dir
         self.config = DynamicDatabaseConfig(config_path)
         self.resolver = RobotDatabaseResolver(self.config.main_database_name)
+        self.chart_formatter = ChartDataFormatter()
 
         # Initialize enhanced database data service
         self.data_service = DatabaseDataService(self.config)
 
+        # Initialize both HTML and PDF templates
+        self.html_template = RobotPerformanceTemplate()
+        self.pdf_template = RobotPDFTemplate()
+
+        # Initialize weasyprint for PDF generation
+        self._init_pdf_capability()
+
         # Create output directory if it doesn't exist
         self._ensure_output_directory()
 
-        logger.info("Initialized ReportGenerator with enhanced database data service")
+        logger.info("Initialized ReportGenerator with enhanced database data service and dual HTML/PDF capability")
+
+    def _init_pdf_capability(self):
+        """Initialize PDF generation capability"""
+        try:
+            from playwright.sync_api import sync_playwright
+            self.pdf_enabled = True
+            logger.info("Successfully initialized Playwright for PDF generation")
+        except ImportError:
+            logger.warning("Playwright not found. PDF generation disabled.")
+            logger.warning("Install with: pip install playwright && playwright install chromium")
+            self.pdf_enabled = False
 
     def _ensure_output_directory(self):
         """Ensure the output directory exists"""
@@ -74,7 +95,7 @@ class ReportGenerator:
                 f.write(html_content)
 
             file_size = os.path.getsize(file_path)
-            logger.info(f"Successfully saved report to {file_path} (Size: {file_size:,} bytes)")
+            logger.info(f"Successfully saved HTML report to {file_path} (Size: {file_size:,} bytes)")
 
             return file_path
 
@@ -82,49 +103,210 @@ class ReportGenerator:
             logger.error(f"Failed to save HTML report: {e}")
             raise Exception(f"Failed to save HTML report: {e}")
 
+    def save_report_pdf(self, html_content: str, filename: Optional[str] = None,
+                   customer_id: Optional[str] = None) -> str:
+        """
+        Save PDF report from HTML content to a local file using Playwright
+
+        Args:
+            html_content: The HTML content to convert to PDF
+            filename: Optional custom filename. If not provided, generates one automatically
+            customer_id: Customer ID for filename generation
+
+        Returns:
+            str: Full path to the saved PDF file
+
+        Raises:
+            Exception: If PDF generation or saving fails
+        """
+        if not self.pdf_enabled:
+            raise Exception("PDF generation not available. Install playwright: pip install playwright")
+
+        try:
+            # Generate filename if not provided
+            if filename is None:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                customer_suffix = f"_{customer_id}" if customer_id else ""
+                filename = f"robot_report{customer_suffix}_{timestamp}.pdf"
+
+            # Ensure filename has .pdf extension
+            if not filename.endswith('.pdf'):
+                filename += '.pdf'
+
+            # Create full file path
+            file_path = os.path.join(self.output_dir, filename)
+
+            # Convert HTML to PDF using Playwright
+            logger.info("Converting HTML to PDF using Playwright...")
+            from playwright.sync_api import sync_playwright
+
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                page = browser.new_page()
+
+                # Set content and wait for it to load
+                page.set_content(html_content, wait_until='networkidle')
+
+                # Generate PDF with options
+                page.pdf(
+                    path=file_path,
+                    format='A4',
+                    margin={
+                        'top': '0.75in',
+                        'right': '0.75in',
+                        'bottom': '0.75in',
+                        'left': '0.75in'
+                    },
+                    print_background=True
+                )
+
+                browser.close()
+
+            file_size = os.path.getsize(file_path)
+            logger.info(f"Successfully saved PDF report to {file_path} (Size: {file_size:,} bytes)")
+
+            return file_path
+
+        except Exception as e:
+            logger.error(f"Failed to save PDF report: {e}")
+            raise Exception(f"Failed to save PDF report: {e}")
+
     def generate_and_save_report(self, report_config: ReportConfig,
-                               save_html: bool = True,
+                               save_file: bool = True,
                                custom_filename: Optional[str] = None) -> Dict[str, Any]:
         """
-        Generate report and optionally save HTML to file
+        Generate report and optionally save to file in specified format
 
         Args:
             report_config: Report configuration from user input
-            save_html: Whether to save HTML to file (default: True)
-            custom_filename: Custom filename for saved HTML
+            output_format: Output format ("html" or "pdf")
+            save_file: Whether to save to file (default: True)
+            custom_filename: Custom filename for saved file
 
         Returns:
             Dict containing generated report data, metadata, and file path if saved
         """
-        # Generate the report
+        output_format = report_config.output_format.lower()
+        # Validate output format
+        if output_format.lower() not in ["html", "pdf"]:
+            raise ValueError("output_format must be 'html' or 'pdf'")
+
+        # Check PDF capability
+        if output_format.lower() == "pdf" and not self.pdf_enabled:
+            raise Exception("PDF generation not available. Install playwright: pip install playwright")
+
+        # Generate the report data (same for both formats)
         result = self.generate_report(report_config)
 
-        # Save HTML to file if requested and generation was successful
-        if save_html and result['success'] and result['report_html']:
+        if not result['success']:
+            return result
+
+        report_html = result['report_html']
+
+        # Save file if requested and generation was successful
+        if save_file and report_html:
             try:
-                file_path = self.save_report_html(
-                    result['report_html'],
-                    custom_filename,
-                    report_config.customer_id
-                )
+                if output_format.lower() == "html":
+                    file_path = self.save_report_html(
+                        report_html,
+                        custom_filename,
+                        report_config.customer_id
+                    )
+                else:  # PDF
+                    file_path = self.save_report_pdf(
+                        report_html,
+                        custom_filename,
+                        report_config.customer_id
+                    )
+
                 result['saved_file_path'] = file_path
                 result['metadata']['saved_to_file'] = True
                 result['metadata']['file_path'] = file_path
+                result['metadata']['output_format'] = output_format.upper()
 
-                logger.info(f"Report saved to: {file_path}")
+                logger.info(f"{output_format.upper()} report saved to: {file_path}")
 
             except Exception as e:
-                logger.error(f"Failed to save HTML file: {e}")
+                logger.error(f"Failed to save {output_format.upper()} file: {e}")
                 result['save_error'] = str(e)
                 result['metadata']['saved_to_file'] = False
         else:
             result['metadata']['saved_to_file'] = False
 
+        # Update result with format-specific content
+        if output_format.lower() == "pdf":
+            result['pdf_html'] = report_html
+
+        result['metadata']['output_format'] = output_format.upper()
         return result
+
+    def generate_both_formats(self, report_config: ReportConfig,
+                            html_filename: Optional[str] = None,
+                            pdf_filename: Optional[str] = None,
+                            save_files: bool = True) -> Dict[str, Any]:
+        """
+        Generate both HTML and PDF reports with the same data
+
+        Args:
+            report_config: Report configuration
+            html_filename: Optional custom filename for HTML
+            pdf_filename: Optional custom filename for PDF
+            save_files: Whether to save files to disk
+
+        Returns:
+            Dict containing results for both formats
+        """
+        logger.info(f"Starting dual report generation (HTML + PDF) for customer {report_config.customer_id}")
+
+        try:
+            report_config.output_format = 'html'
+            # Generate HTML report
+            html_result = self.generate_and_save_report(
+                report_config,
+                save_file=save_files,
+                custom_filename=html_filename
+            )
+
+            # Generate PDF report
+            report_config.output_format = 'pdf'
+            pdf_result = self.generate_and_save_report(
+                report_config,
+                save_file=save_files,
+                custom_filename=pdf_filename
+            )
+
+            return {
+                'success': html_result['success'] and pdf_result['success'],
+                'html_result': html_result,
+                'pdf_result': pdf_result,
+                'metadata': {
+                    'customer_id': report_config.customer_id,
+                    'generation_time': datetime.now().isoformat(),
+                    'formats_generated': ['HTML', 'PDF'] if html_result['success'] and pdf_result['success'] else
+                                       (['HTML'] if html_result['success'] else []) +
+                                       (['PDF'] if pdf_result['success'] else []),
+                    'html_file_path': html_result.get('saved_file_path'),
+                    'pdf_file_path': pdf_result.get('saved_file_path')
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"Dual report generation failed: {e}", exc_info=True)
+            return {
+                'success': False,
+                'error': str(e),
+                'html_result': {'success': False},
+                'pdf_result': {'success': False},
+                'metadata': {
+                    'customer_id': report_config.customer_id,
+                    'error_occurred': True
+                }
+            }
 
     def generate_report(self, report_config: ReportConfig) -> Dict[str, Any]:
         """
         Generate comprehensive report based on configuration using database queries with period comparison
+        (This is the original HTML generation method - UNTOUCHED)
 
         Args:
             report_config: Report configuration from user input
@@ -184,10 +366,12 @@ class ReportGenerator:
                 comprehensive_metrics, report_config, current_start, current_end, target_robots
             )
 
-            # Create HTML report using enhanced template
-            logger.info("Generating HTML report using comprehensive template...")
-            template = RobotPerformanceTemplate()
-            report_html = template.generate_comprehensive_report(report_content, report_config)
+            # Create HTML or PDF report using template
+            logger.info("Generating HTML or PDF report using comprehensive template...")
+            if 'html' in report_config.output_format.lower():
+                report_html = self.html_template.generate_comprehensive_report(report_content, report_config)
+            else:
+                report_html = self.pdf_template.generate_comprehensive_pdf_content(report_content, report_config)
 
             # Calculate execution time and prepare metadata
             execution_time = (datetime.now() - start_time).total_seconds()
@@ -437,12 +621,16 @@ class ReportGenerator:
 
     def _generate_report_title(self, report_config: ReportConfig) -> str:
         """Generate appropriate report title"""
-        if report_config.detail_level == ReportDetailLevel.SUMMARY:
-            return "Robot Management Executive Summary"
-        elif report_config.detail_level == ReportDetailLevel.COMPREHENSIVE:
-            return "Comprehensive Robot Performance Analysis"
+        if report_config.report_name:
+            return report_config.report_name
+        elif report_config.detail_level == ReportDetailLevel.OVERVIEW:
+            return "Overview Robot Performance Report"
+        elif report_config.detail_level == ReportDetailLevel.DETAILED:
+            return "Detailed Robot Performance Report"
+        elif report_config.detail_level == ReportDetailLevel.IN_DEPTH:
+            return "In-Depth Robot Performance Report"
         else:
-            return "Robotic Cleaning Fleet Performance Report"
+            return "Robot Performance Report"
 
     def close(self):
         """Clean up resources"""
@@ -458,9 +646,16 @@ if __name__ == "__main__":
     # Example configuration for testing comprehensive reports
     test_form_data = {
         'service': 'robot-management',
-        'contentCategories': ['robot-status', 'cleaning-tasks', 'charging-tasks', 'performance', 'cost'],
-        'timeRange': 'last-30-days',
-        'detailLevel': 'comprehensive',
+        'contentCategories': ['charging-performance', 'cleaning-performance', 'resource-utilization', 'financial-performance'],
+        'timeRange': 'custom',
+        "location": {
+            "country": "us",
+            "state": "fl",
+            "city": "gainesville"
+        },
+        'customStartDate': '2025-08-20',
+        'customEndDate': '2025-09-09',
+        'detailLevel': 'detailed',
         'delivery': 'in-app',
         'schedule': 'immediate'
     }
@@ -471,23 +666,36 @@ if __name__ == "__main__":
     generator = ReportGenerator(output_dir="generated_reports")
 
     try:
-        # Generate and save comprehensive report
-        result = generator.generate_and_save_report(config, save_html=True)
-
-        if result['success']:
-            print(f"Comprehensive report generation result: {result['success']}")
-            print(f"Report metadata: {result['metadata']}")
-            if result.get('saved_file_path'):
-                print(f"Comprehensive report saved to: {result['saved_file_path']}")
-
-            # Print summary of calculated metrics
-            if 'comprehensive_metrics' in result:
-                metrics = result['comprehensive_metrics']
-                print(f"Calculated metrics categories: {list(metrics.keys())}")
+        # Test HTML generation
+        print("=== Testing HTML Generation ===")
+        html_result = generator.generate_and_save_report(config, output_format="html", save_file=True)
+        if html_result['success']:
+            print(f"HTML report saved to: {html_result.get('saved_file_path')}")
         else:
-            print(f"Error: {result['error']}")
+            print(f"HTML generation error: {html_result['error']}")
+
+        # Test PDF generation
+        print("\n=== Testing PDF Generation ===")
+        if generator.pdf_enabled:
+            pdf_result = generator.generate_and_save_report(config, output_format="pdf", save_file=True)
+            if pdf_result['success']:
+                print(f"PDF report saved to: {pdf_result.get('saved_file_path')}")
+            else:
+                print(f"PDF generation error: {pdf_result['error']}")
+        else:
+            print("PDF generation not available (weasyprint not installed)")
+
+        # Test dual format generation
+        print("\n=== Testing Dual Format Generation ===")
+        if generator.pdf_enabled:
+            dual_result = generator.generate_both_formats(config, save_files=True)
+            if dual_result['success']:
+                print(f"HTML saved to: {dual_result['metadata'].get('html_file_path')}")
+                print(f"PDF saved to: {dual_result['metadata'].get('pdf_file_path')}")
+            else:
+                print(f"Dual generation error: {dual_result.get('error')}")
 
     except Exception as e:
-        print(f"Error during comprehensive report generation: {e}")
+        print(f"Error during testing: {e}")
     finally:
         generator.close()

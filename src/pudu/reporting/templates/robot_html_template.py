@@ -2,7 +2,7 @@ from typing import Dict, Any
 from datetime import datetime
 import json
 import logging
-from ..core.report_config import ReportConfig, ReportDetailLevel
+from ..core.report_config import ReportConfig
 from ..calculators.chart_data_formatter import ChartDataFormatter
 
 logger = logging.getLogger(__name__)
@@ -51,7 +51,7 @@ class RobotPerformanceTemplate:
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Robot Performance Report - {content.get('period', 'Latest Period')}</title>
+                <title>{content.get('title', 'Robot Performance Report')} - {content.get('period', 'Latest Period')}</title>
                 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
                 <style>
                     body {{
@@ -968,7 +968,7 @@ class RobotPerformanceTemplate:
             <h3>Map-Specific Performance</h3>
             <div class="tooltip" style="margin-bottom: 15px;">
                 <span style="color: #3498db; text-decoration: underline dotted;">How these figures are calculated</span>
-                <span class="tooltiptext">Coverage: (actual area / planned area) × 100. Area Cleaned: sum of actual_area converted to sq ft. Running Hours: sum of task durations converted from seconds. Power Efficiency: area cleaned / energy consumption. Time Efficiency: area cleaned / running hours. Water Efficiency: area cleaned / water consumption. Days with Tasks: unique dates when tasks occurred.</span>
+                <span class="tooltiptext">Coverage: (actual area / planned area) × 100. Area Cleaned: sum of actual cleaned area converted to sq ft. Running Hours: sum of task durations converted from seconds. Power Efficiency: area cleaned / energy consumption. Time Efficiency: area cleaned / running hours. Water Efficiency: area cleaned / water consumption. Days with Tasks: unique dates when tasks occurred.</span>
             </div>"""
 
             for building_name, maps in map_performance_by_building.items():
@@ -1154,6 +1154,8 @@ class RobotPerformanceTemplate:
         return f"""
         <section id="resource-utilization">
             <h2>⚡ Resource Utilization & Efficiency</h2>
+            <h3>Resource Performance</h3>
+            <p>Resource utilization: {resource_data.get('total_energy_consumption_kwh', 0):.2f} kWh total energy consumption, {resource_data.get('total_water_consumption_floz', 0):.0f} fl oz total water usage, {resource_data.get('area_per_kwh', 0):.0f} sq ft per kWh energy efficiency, and {resource_data.get('area_per_gallon', 0):.0f} sq ft per gallon water efficiency.</p>
 
             <div class="chart-container">
                 <div class="chart-toggle-container">
@@ -1163,9 +1165,6 @@ class RobotPerformanceTemplate:
                 </div>
                 <canvas id="resourceChart"></canvas>
             </div>
-
-            <h3>Resource Performance</h3>
-            <p>Resource utilization: {resource_data.get('total_energy_consumption_kwh', 0):.2f} kWh total energy consumption, {resource_data.get('total_water_consumption_floz', 0):.0f} fl oz total water usage, {resource_data.get('area_per_kwh', 0):.0f} sq ft per kWh energy efficiency, and {resource_data.get('area_per_gallon', 0):.0f} sq ft per gallon water efficiency.</p>
 
             {facility_breakdown}
         </section>"""
@@ -1487,7 +1486,7 @@ class RobotPerformanceTemplate:
 
         return f"""
         <footer style="margin-top: 50px; padding-top: 20px; border-top: 2px solid #e9ecef; text-align: center; color: #7f8c8d;">
-            <p><strong>Robot Performance Report</strong><br>
+            <p><strong>{content.get('title', 'Robot Performance Report')}</strong><br>
             Period: {content.get('period', 'N/A')}<br>
             Robots Included: {robots_count}<br>
             Generated: {generation_time.strftime('%B %d, %Y at %I:%M %p') if hasattr(generation_time, 'strftime') else str(generation_time)}</p>
