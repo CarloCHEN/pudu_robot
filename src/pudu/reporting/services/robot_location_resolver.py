@@ -109,9 +109,8 @@ class RobotLocationResolver:
                     if location_criteria.get('city'):
                         where_conditions.append(f"city = '{location_criteria['city'].upper()}'")
                     if location_criteria.get('building'):
-                        # Building can match by building_name or building_computer_name
                         building_val = location_criteria['building']
-                        where_conditions.append(f"(building_name LIKE '%{building_val}%' OR building_computer_name = '{building_val}')")
+                        where_conditions.append(f"(building_name LIKE '%{building_val}%' OR building_name = '{building_val}')")
 
                     where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
 

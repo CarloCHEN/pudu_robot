@@ -335,12 +335,13 @@ curl -X POST http://54.163.54.190:8000/api/reports/generate \
       "location": {
         "country": "us",
         "state": "fl",
-        "city": "gainesville"
+        "city": "gainesville",
+        "building": "Building 43 Marston Science Library"
       },
       "contentCategories": ["charging-performance", "cleaning-performance", "resource-utilization", "financial-performance"],
       "mainkey": "123",
       "reportName": "UF Report",
-      "outputFormat": "pdf",
+      "outputFormat": "html",
       "timeRange": "custom",
       "customStartDate": "2025-09-01",
       "customEndDate": "2025-09-12",
