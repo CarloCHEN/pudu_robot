@@ -326,10 +326,10 @@ curl -X POST http://localhost:8000/api/reports/generate \
   }'
 
 # Cloud testing
-curl -X POST http://98.80.146.146:8000/api/reports/generate \
+curl -X POST http://54.163.54.190:8000/api/reports/generate \
   -H "Content-Type: application/json" \
   -d '{
-    "customer_id": "test-customer",
+    "customer_id": "UF2",
     "form_data": {
       "service": "robot-management",
       "location": {
@@ -338,15 +338,16 @@ curl -X POST http://98.80.146.146:8000/api/reports/generate \
         "city": "gainesville"
       },
       "contentCategories": ["charging-performance", "cleaning-performance", "resource-utilization", "financial-performance"],
+      "mainkey": "123",
+      "reportName": "UF Report",
+      "outputFormat": "pdf",
       "timeRange": "custom",
       "customStartDate": "2025-09-01",
       "customEndDate": "2025-09-12",
-      "detailLevel": "detailed",
-      "delivery": "in-app",
-      "schedule": "immediate"
+      "detailLevel": "detailed"
     }
   }'
-# email
+# email - pending
 curl -X POST http://34.238.51.145:8000/api/reports/generate \
   -H "Content-Type: application/json" \
   -d '{

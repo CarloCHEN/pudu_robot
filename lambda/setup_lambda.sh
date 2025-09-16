@@ -16,7 +16,7 @@ case $ENVIRONMENT in
 
     # Multiple transform databases and buckets for us-east-1
     # Only university_of_florida supports transformations
-    export TRANSFORM_DBS=("university_of_florida")
+    export TRANSFORM_DBS=("foxx_irvine_office")
 
     # But all databases have S3 buckets
     export ALL_DBS=("university_of_florida" "nexus_iq_office" "foxx_irvine_office")

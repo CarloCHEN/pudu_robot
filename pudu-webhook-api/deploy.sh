@@ -31,7 +31,7 @@ if [ -z "$TAG" ]; then
     TAG="latest"
 fi
 
-echo "🚀 Deploying to region: $AWS_REGION"
+echo "🚀 Deploying Webhook API to region: $AWS_REGION"
 echo "📦 Using AWS Account: $AWS_ACCOUNT_ID"
 echo "🏷️  Registry Name: $REGISTRY_NAME"
 echo "🔖 Tag: $TAG"
@@ -39,8 +39,9 @@ echo "🔖 Tag: $TAG"
 echo "🔐 Logging in to ECR in $AWS_REGION"
 aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 
-echo "🏗️ Building image"
-docker build --no-cache --platform=linux/amd64 -t $REGISTRY_NAME -f pudu-webhook-api/Dockerfile .
+echo "🏗️ Building Webhook API image"
+# Build from the current directory (pudu-webhook-api) but use parent context for full project access
+docker build --no-cache --platform=linux/amd64 -t $REGISTRY_NAME -f Dockerfile ..
 
 echo "🏷️ Tagging image for $AWS_REGION"
 docker tag $REGISTRY_NAME:$TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$REGISTRY_NAME:$TAG
@@ -48,5 +49,12 @@ docker tag $REGISTRY_NAME:$TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 echo "📤 Pushing image to ECR in $AWS_REGION"
 docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$REGISTRY_NAME:$TAG
 
-echo "✅ Deployment complete!"
+echo "✅ Webhook API deployment complete!"
 echo "📍 Image pushed to: $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$REGISTRY_NAME:$TAG"
+echo ""
+echo "🔧 To test the API locally:"
+echo "   docker run -p 8000:8000 --env-file .env $REGISTRY_NAME:$TAG"
+echo ""
+echo "📋 API endpoints:"
+echo "   POST /api/pudu/webhook - Process robot callbacks"
+echo "   GET  /api/pudu/webhook/health - Health check"

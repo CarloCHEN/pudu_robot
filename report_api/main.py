@@ -51,6 +51,7 @@ class ReportGenerationRequest(BaseModel):
                     "detailLevel": "detailed",
                     "delivery": "in-app",
                     "schedule": "immediate",
+                    "outputFormat": "html",  # NEW: "html" or "pdf"
                     "location": {
                         "country": "US",
                         "state": "Ohio",
@@ -155,9 +156,42 @@ async def generate_report_async(request_id: str, customer_id: str, form_data: Di
             })
             return
 
-        # Generate report (this is still sync, but runs in background)
-        logger.info(f"Generating report for customer {customer_id}")
-        generation_result = report_generator.generate_report(report_config)
+        # Check if PDF generation is requested and available
+        output_format = form_data.get('outputFormat', 'html').lower()
+        if output_format == 'pdf' and not report_generator.pdf_enabled:
+            logger.warning(f"PDF generation requested but not available. Defaulting to HTML for request {request_id}")
+            output_format = 'html'
+            # Update the form data to reflect the fallback
+            form_data['outputFormat'] = 'html'
+            # Update request status to show the fallback
+            request_status_store[request_id]["fallback_to_html"] = True
+            request_status_store[request_id]["original_format_requested"] = "pdf"
+
+        # Generate report based on output format
+        logger.info(f"Generating {output_format.upper()} report for customer {customer_id}")
+
+        if output_format == 'pdf':
+            # Generate PDF report
+            generation_result = report_generator.generate_report(report_config)
+
+            if generation_result['success']:
+                # For PDF, we need to convert HTML to PDF content
+                try:
+                    pdf_content = await report_generator._html_to_pdf_content_async(generation_result['report_html'])
+                    generation_result['report_content'] = pdf_content
+                    generation_result['content_type'] = 'application/pdf'
+                    generation_result['file_extension'] = '.pdf'
+                except Exception as e:
+                    logger.error(f"PDF conversion failed: {e}")
+                    generation_result['success'] = False
+                    generation_result['error'] = f"PDF conversion failed: {e}"
+        else:
+            # Generate HTML report (default)
+            generation_result = report_generator.generate_report(report_config)
+            if generation_result['success']:
+                generation_result['report_content'] = generation_result['report_html'].encode('utf-8')
+                generation_result['content_type'] = 'text/html'
+                generation_result['file_extension'] = '.html'
 
         if not generation_result['success']:
             request_status_store[request_id].update({
@@ -168,23 +202,37 @@ async def generate_report_async(request_id: str, customer_id: str, form_data: Di
             return
 
         # Deliver report (async)
-        logger.info(f"Delivering report for request {request_id}")
+        logger.info(f"Delivering {output_format.upper()} report for request {request_id}")
         delivery_result = await delivery_service.deliver_report(
-            generation_result['report_html'],
+            generation_result['report_content'],
             generation_result['metadata'],
-            report_config
+            report_config,
+            content_type=generation_result['content_type'],
+            file_extension=generation_result['file_extension']
         )
 
         if delivery_result['success']:
-            request_status_store[request_id].update({
+            # Prepare success response
+            success_update = {
                 "status": "completed",
                 "report_url": delivery_result['storage_url'],
                 "s3_key": delivery_result.get('s3_key'),
                 "metadata": generation_result['metadata'],
                 "delivery_result": delivery_result,
+                "output_format": output_format.upper(),
                 "updated_at": datetime.now().isoformat()
-            })
-            logger.info(f"Report generation completed for request {request_id}")
+            }
+
+            # Add fallback information if PDF was requested but HTML was delivered
+            if request_status_store[request_id].get("fallback_to_html"):
+                success_update["format_fallback"] = {
+                    "requested": "PDF",
+                    "delivered": "HTML",
+                    "reason": "PDF generation not available (Playwright not installed)"
+                }
+
+            request_status_store[request_id].update(success_update)
+            logger.info(f"{output_format.upper()} report generation completed for request {request_id}")
         else:
             request_status_store[request_id].update({
                 "status": "failed",
@@ -207,6 +255,15 @@ async def generate_report(request: ReportGenerationRequest, background_tasks: Ba
         # Generate unique request ID
         request_id = str(uuid.uuid4())
 
+        # Check if PDF was requested but not available
+        requested_format = request.form_data.get('outputFormat', 'html').upper()
+        actual_format = requested_format
+        fallback_message = ""
+
+        if requested_format == 'PDF' and not report_generator.pdf_enabled:
+            actual_format = 'HTML'
+            fallback_message = " (PDF requested but not available - defaulting to HTML)"
+
         # Initialize request status
         request_status_store[request_id] = {
             "customer_id": request.customer_id,
@@ -214,7 +271,9 @@ async def generate_report(request: ReportGenerationRequest, background_tasks: Ba
             "created_at": datetime.now().isoformat(),
             "updated_at": datetime.now().isoformat(),
             "report_url": None,
-            "error": None
+            "error": None,
+            "output_format": actual_format,
+            "requested_format": requested_format
         }
 
         # Add background task for report generation
@@ -225,12 +284,12 @@ async def generate_report(request: ReportGenerationRequest, background_tasks: Ba
             request.form_data
         )
 
-        logger.info(f"Queued report generation for customer {request.customer_id}, request {request_id}")
+        logger.info(f"Queued {actual_format} report generation for customer {request.customer_id}, request {request_id}")
 
         return ReportGenerationResponse(
             success=True,
             request_id=request_id,
-            message="Report generation started",
+            message=f"{actual_format} report generation started{fallback_message}",
             status="queued"
         )
 
@@ -265,12 +324,16 @@ async def get_report_status(request_id: str):
 @app.get("/api/reports/health")
 async def health_check():
     """Health check endpoint"""
+    pdf_status = "available" if (report_generator and report_generator.pdf_enabled) else "unavailable"
     return {
         "success": True,
         "service": "Robot Management Async Report API",
         "timestamp": datetime.now().isoformat(),
         "version": "1.0.0",
-        "aws_region": os.getenv('AWS_REGION', 'us-east-2')
+        "aws_region": os.getenv('AWS_REGION', 'us-east-2'),
+        "pdf_enabled": report_generator.pdf_enabled if report_generator else False,
+        "pdf_status": pdf_status,
+        "supported_formats": ["html"] + (["pdf"] if (report_generator and report_generator.pdf_enabled) else [])
     }
 
 @app.get("/api/reports/history/{customer_id}")
@@ -312,6 +375,23 @@ async def delete_report(customer_id: str, report_key: str):
     except Exception as e:
         logger.error(f"Error deleting report: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/reports/capabilities")
+async def get_capabilities():
+    """Get API capabilities including PDF support status"""
+    return {
+        "success": True,
+        "capabilities": {
+            "html_reports": True,
+            "pdf_reports": report_generator.pdf_enabled if report_generator else False,
+            "supported_formats": ["html"] + (["pdf"] if (report_generator and report_generator.pdf_enabled) else []),
+            "pdf_requirements": {
+                "playwright": report_generator.pdf_enabled if report_generator else False,
+                "install_command": "pip install playwright && playwright install chromium"
+            }
+        },
+        "timestamp": datetime.now().isoformat()
+    }
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))

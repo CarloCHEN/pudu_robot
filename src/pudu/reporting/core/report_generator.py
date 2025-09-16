@@ -42,7 +42,7 @@ class ReportGenerator:
     def _init_pdf_capability(self):
         """Initialize PDF generation capability"""
         try:
-            from playwright.sync_api import sync_playwright
+            from playwright.async_api import async_playwright
             self.pdf_enabled = True
             logger.info("Successfully initialized Playwright for PDF generation")
         except ImportError:
@@ -59,6 +59,40 @@ class ReportGenerator:
         except Exception as e:
             logger.error(f"Failed to create output directory {self.output_dir}: {e}")
             raise
+
+    async def _html_to_pdf_content_async(self, html_content: str) -> bytes:
+        """Convert HTML content to PDF bytes using Playwright (async)"""
+        if not self.pdf_enabled:
+            raise Exception("PDF generation not available. Install playwright: pip install playwright")
+
+        try:
+            from playwright.async_api import async_playwright
+
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                page = await browser.new_page()
+
+                # Set content and wait for it to load
+                await page.set_content(html_content, wait_until='networkidle')
+
+                # Generate PDF as bytes
+                pdf_bytes = await page.pdf(
+                    format='A4',
+                    margin={
+                        'top': '0.75in',
+                        'right': '0.75in',
+                        'bottom': '0.75in',
+                        'left': '0.75in'
+                    },
+                    print_background=True
+                )
+
+                await browser.close()
+                return pdf_bytes
+
+        except Exception as e:
+            logger.error(f"Failed to convert HTML to PDF: {e}")
+            raise Exception(f"Failed to convert HTML to PDF: {e}")
 
     def save_report_html(self, html_content: str, filename: Optional[str] = None,
                         customer_id: Optional[str] = None) -> str:
@@ -233,10 +267,6 @@ class ReportGenerator:
         else:
             result['metadata']['saved_to_file'] = False
 
-        # Update result with format-specific content
-        if output_format.lower() == "pdf":
-            result['pdf_html'] = report_html
-
         result['metadata']['output_format'] = output_format.upper()
         return result
 
@@ -368,9 +398,9 @@ class ReportGenerator:
 
             # Create HTML or PDF report using template
             logger.info("Generating HTML or PDF report using comprehensive template...")
-            if 'html' in report_config.output_format.lower():
+            if 'html' in report_config.output_format.lower(): # html
                 report_html = self.html_template.generate_comprehensive_report(report_content, report_config)
-            else:
+            else: # pdf
                 report_html = self.pdf_template.generate_comprehensive_pdf_content(report_content, report_config)
 
             # Calculate execution time and prepare metadata

@@ -11,6 +11,10 @@ class ReportDetailLevel(Enum):
     DETAILED = "detailed"
     IN_DEPTH = "in-depth"
 
+class OutputFormat(Enum):
+    HTML = "html"
+    PDF = "pdf"
+
 class DeliveryMethod(Enum):
     IN_APP = "in-app"
     EMAIL = "email"
@@ -35,10 +39,12 @@ class ReportConfig:
         self.service = self.form_data.get('service', 'robot-management')
         self.content_categories = self.form_data.get('contentCategories', [])
 
+        # Database primary key
+        self.mainkey = self.form_data.get('mainkey', '')
+
         # Hardware Selection
         self.location = self._parse_location()
         self.robot = self._parse_robot()
-        self.robot_types = self.form_data.get('robotTypes', [])
 
         # Report Configuration
         self.time_range = self.form_data.get('timeRange', 'last-30-days')
@@ -83,6 +89,12 @@ class ReportConfig:
                 'start_date': self.form_data.get('customStartDate'),
                 'end_date': self.form_data.get('customEndDate')
             }
+        # if custom start date and end date are provided, use them
+        elif self.form_data.get('customStartDate') and self.form_data.get('customEndDate'):
+            return {
+                'start_date': self.form_data.get('customStartDate'),
+                'end_date': self.form_data.get('customEndDate')
+            }
         return None
 
     def get_date_range(self, include_comparison_period: bool = False) -> Tuple[str, str]:
@@ -111,21 +123,21 @@ class ReportConfig:
 
             return start_date, end_date
 
-        elif self.time_range == 'last-7-days':
+        elif self.time_range == 'last-7-days' or self.time_range == 'last_7_days' or '7' in self.time_range:
             days = 7
             if include_comparison_period:
                 days = 14  # Include previous 7 days for comparison
             start_date = (now - timedelta(days=days)).strftime('%Y-%m-%d 00:00:00')
             end_date = now.strftime('%Y-%m-%d 23:59:59')
 
-        elif self.time_range == 'last-30-days':
+        elif self.time_range == 'last-30-days' or self.time_range == 'last_30_days' or '30' in self.time_range:
             days = 30
             if include_comparison_period:
                 days = 60  # Include previous 30 days for comparison
             start_date = (now - timedelta(days=days)).strftime('%Y-%m-%d 00:00:00')
             end_date = now.strftime('%Y-%m-%d 23:59:59')
 
-        elif self.time_range == 'last-90-days':
+        elif self.time_range == 'last-90-days' or self.time_range == 'last_90_days' or '90' in self.time_range:
             days = 90
             if include_comparison_period:
                 days = 180  # Include previous 90 days for comparison
@@ -163,21 +175,21 @@ class ReportConfig:
             previous_end = current_start - timedelta(days=1)  # End 1 day before current starts
             previous_start = previous_end - period_length + timedelta(days=1)  # Same length period
 
-        elif self.time_range == 'last-7-days':
+        elif self.time_range == 'last-7-days' or self.time_range == 'last_7_days' or '7' in self.time_range:
             current_end = now
             current_start = now - timedelta(days=7)
             # FIX: No overlap - previous period ends where current starts
             previous_end = current_start - timedelta(days=1)
             previous_start = previous_end - timedelta(days=6)  # 7-day period
 
-        elif self.time_range == 'last-30-days':
+        elif self.time_range == 'last-30-days' or self.time_range == 'last_30_days' or '30' in self.time_range:
             current_end = now
             current_start = now - timedelta(days=30)
             # FIX: No overlap - previous period ends where current starts
             previous_end = current_start - timedelta(days=1)
             previous_start = previous_end - timedelta(days=29)  # 30-day period
 
-        elif self.time_range == 'last-90-days':
+        elif self.time_range == 'last-90-days' or self.time_range == 'last_90_days' or '90' in self.time_range:
             current_end = now
             current_start = now - timedelta(days=90)
             # FIX: No overlap - previous period ends where current starts

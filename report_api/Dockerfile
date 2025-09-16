@@ -1,11 +1,12 @@
-# Use Python 3.9 slim image
-FROM python:3.9-slim
+FROM mcr.microsoft.com/playwright:v1.48.0-jammy
 
 # Set working directory
 WORKDIR /app
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
+    python3\
+    python3-pip \
     gcc \
     g++ \
     && rm -rf /var/lib/apt/lists/*
@@ -50,4 +51,4 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
 EXPOSE 8000
 
 # Command to run the application
-CMD ["python", "main.py"]
+CMD ["python3", "main.py"]
