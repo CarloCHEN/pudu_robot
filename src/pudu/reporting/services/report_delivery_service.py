@@ -44,7 +44,7 @@ class ReportDeliveryService:
         Returns:
             Dict with delivery results
         """
-        logger.info(f"Delivering {content_type} report for customer {report_config.customer_id} via {report_config.delivery.value}")
+        logger.info(f"Delivering {content_type} report for project {report_config.database_name} via {report_config.delivery.value}")
 
         delivery_results = {
             'success': False,
@@ -90,7 +90,7 @@ class ReportDeliveryService:
             # Generate S3 key with proper organization
             timestamp = datetime.now()
             s3_key = self._generate_report_s3_key(
-                report_config.customer_id, metadata, timestamp, file_extension
+                report_config.database_name, metadata, timestamp, file_extension
             )
 
             # Prepare content for upload
@@ -107,7 +107,7 @@ class ReportDeliveryService:
                     Body=body,
                     ContentType=content_type,
                     Metadata={
-                        'customer_id': report_config.customer_id,
+                        'database_name': report_config.database_name,
                         'generation_time': metadata.get('generation_time', ''),
                         'detail_level': report_config.detail_level.value,
                         'report_type': 'robot_performance',
@@ -170,7 +170,7 @@ class ReportDeliveryService:
             attachments = []
             if content_type == 'application/pdf' and isinstance(report_content, bytes):
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                filename = f"robot_report_{report_config.customer_id}_{timestamp}.pdf"
+                filename = f"robot_report_{report_config.database_name}_{timestamp}.pdf"
                 attachments.append({
                     'filename': filename,
                     'content': report_content,
@@ -294,16 +294,16 @@ class ReportDeliveryService:
 
         return msg.as_bytes()
 
-    def _generate_report_s3_key(self, customer_id: str, metadata: Dict[str, Any],
+    def _generate_report_s3_key(self, database_name: str, metadata: Dict[str, Any],
                                timestamp: datetime, file_extension: str = '.html') -> str:
         """Generate organized S3 key for report storage"""
-        # Organization: reports/{customer_id}/{year}/{month}/{timestamp}_report.{ext}
+        # Organization: reports/{database_name}/{year}/{month}/{timestamp}_report.{ext}
         year = timestamp.year
         month = timestamp.month
         timestamp_str = timestamp.strftime('%Y%m%d_%H%M%S')
 
         file_type = file_extension.replace('.', '')
-        return f"reports/{customer_id}/{year:04d}/{month:02d}/{timestamp_str}_robot_performance_report.{file_type}"
+        return f"reports/{database_name}/{year:04d}/{month:02d}/{timestamp_str}_robot_performance_report.{file_type}"
 
     def _generate_email_subject(self, metadata: Dict[str, Any], report_config: ReportConfig,
                                content_type: str = 'text/html') -> str:
@@ -402,11 +402,11 @@ class ReportDeliveryService:
 
         return body_text, body_html
 
-    async def get_report_history(self, customer_id: str, limit: int = 50) -> List[Dict[str, Any]]:
-        """Get report history for a customer from S3"""
+    async def get_report_history(self, database_name: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """Get report history for a project from S3"""
         try:
             # List objects for this customer
-            prefix = f"reports/{customer_id}/"
+            prefix = f"reports/{database_name}/"
 
             async with self.session.client('s3', region_name=self.region) as s3_client:
                 response = await s3_client.list_objects_v2(
@@ -449,11 +449,11 @@ class ReportDeliveryService:
             logger.error(f"Error getting report history: {e}")
             return []
 
-    async def delete_report(self, customer_id: str, report_key: str) -> Dict[str, Any]:
+    async def delete_report(self, database_name: str, report_key: str) -> Dict[str, Any]:
         """Delete a stored report"""
         try:
             # Verify the report belongs to the customer
-            if not report_key.startswith(f"reports/{customer_id}/"):
+            if not report_key.startswith(f"reports/{database_name}/"):
                 return {
                     'success': False,
                     'error': 'Unauthorized: Report does not belong to customer'

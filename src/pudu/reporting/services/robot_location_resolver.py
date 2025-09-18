@@ -1,10 +1,11 @@
-# src/pudu/reporting/services/robot_location_resolver.py
 import logging
 from typing import Dict, List, Optional, Any, Union
 from pudu.rds.rdsTable import RDSTable
 from pudu.configs.database_config_loader import DynamicDatabaseConfig
 
 logger = logging.getLogger(__name__)
+
+reuse_connection = False
 
 class RobotLocationResolver:
     """Service to resolve robots based on location criteria (building, city, state, country) and robot names/SNs"""
@@ -196,7 +197,7 @@ class RobotLocationResolver:
                         table_name=config['table_name'],
                         fields=config.get('fields'),
                         primary_keys=config['primary_keys'],
-                        reuse_connection=True
+                        reuse_connection=reuse_connection
                     )
 
                     # Build WHERE clause based on provided criteria
@@ -291,7 +292,7 @@ class RobotLocationResolver:
                         table_name=config['table_name'],
                         fields=config.get('fields'),
                         primary_keys=config['primary_keys'],
-                        reuse_connection=True
+                        reuse_connection=reuse_connection
                     )
 
                     # Query robots by location_id (which matches building_id)
@@ -338,7 +339,7 @@ class RobotLocationResolver:
                         table_name=config['table_name'],
                         fields=config.get('fields'),
                         primary_keys=config['primary_keys'],
-                        reuse_connection=True
+                        reuse_connection=reuse_connection
                     )
 
                     query = f"""
@@ -378,7 +379,7 @@ class RobotLocationResolver:
                         table_name=config['table_name'],
                         fields=config.get('fields'),
                         primary_keys=config['primary_keys'],
-                        reuse_connection=True
+                        reuse_connection=reuse_connection
                     )
 
                     query = f"""
@@ -435,7 +436,7 @@ class RobotLocationResolver:
                         table_name=config['table_name'],
                         fields=config.get('fields'),
                         primary_keys=config['primary_keys'],
-                        reuse_connection=True
+                        reuse_connection=reuse_connection
                     )
 
                     query = f"""

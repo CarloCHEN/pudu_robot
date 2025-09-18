@@ -43,7 +43,7 @@ Parses HTML form data into structured configuration:
 ### 2. Report Generator (`report_generator.py`)
 Core report generation logic:
 - Reuses existing `App` infrastructure for data fetching
-- Dynamic robot resolution based on customer configuration
+- Dynamic robot resolution based on project configuration
 - Parallel API data fetching for performance
 - Modular content generation based on selected categories
 
@@ -79,9 +79,9 @@ Serverless report processing:
 Flask-based API endpoints:
 - `POST /api/reports/generate` - Immediate report generation
 - `POST /api/reports/schedule` - Create/update scheduled reports
-- `GET /api/reports/schedules/<customer_id>` - Get customer schedules
+- `GET /api/reports/schedules/<database_name>` - Get customer schedules
 - `DELETE /api/reports/schedules/<schedule_id>` - Cancel schedule
-- `GET /api/reports/history/<customer_id>` - Get report history
+- `GET /api/reports/history/<database_name>` - Get report history
 
 ## Database Schema
 
@@ -134,7 +134,7 @@ schedule_result = scheduler.create_or_update_schedule('customer-123', config)
 curl -X POST http://api.example.com/api/reports/generate \
   -H "Content-Type: application/json" \
   -d '{
-    "customer_id": "customer-123",
+    "database_name": "customer-123",
     "form_data": {
       "service": "robot-management",
       "contentCategories": ["robot-status"],
@@ -149,7 +149,7 @@ curl -X POST http://api.example.com/api/reports/generate \
 curl -X POST http://api.example.com/api/reports/schedule \
   -H "Content-Type: application/json" \
   -d '{
-    "customer_id": "customer-123",
+    "database_name": "customer-123",
     "form_data": {
       "service": "robot-management",
       "contentCategories": ["robot-status", "cleaning-tasks"],

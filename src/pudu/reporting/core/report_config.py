@@ -28,8 +28,8 @@ class ScheduleFrequency(Enum):
 class ReportConfig:
     """Configuration class for report generation based on HTML form data"""
 
-    def __init__(self, form_data: Dict[str, Any], customer_id: str):
-        self.customer_id = customer_id
+    def __init__(self, form_data: Dict[str, Any], database_name: str):
+        self.database_name = database_name
         self.form_data = form_data
         self._parse_configuration()
 
@@ -40,7 +40,7 @@ class ReportConfig:
         self.content_categories = self.form_data.get('contentCategories', ["charging-performance", "cleaning-performance", "resource-utilization", "financial-performance"])
 
         # Database primary key
-        self.mainkey = self.form_data.get('mainkey', '')
+        self.mainKey = self.form_data.get('mainKey', '')
 
         # Hardware Selection - Enhanced for multiple selections
         self.location = self._parse_location()
@@ -344,7 +344,7 @@ class ReportConfig:
     def to_dict(self) -> Dict[str, Any]:
         """Convert configuration to dictionary for storage/transmission"""
         return {
-            'customer_id': self.customer_id,
+            'database_name': self.database_name,
             'service': self.service,
             'content_categories': self.content_categories,
             'location': self.location,
@@ -366,8 +366,8 @@ class ReportConfig:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'ReportConfig':
         """Create ReportConfig from dictionary"""
-        customer_id = data.pop('customer_id')
-        return cls(data, customer_id)
+        database_name = data.pop('database_name')
+        return cls(data, database_name)
 
     @classmethod
     def from_json(cls, json_str: str) -> 'ReportConfig':
@@ -377,13 +377,13 @@ class ReportConfig:
 
     def __str__(self) -> str:
         """String representation for debugging"""
-        return f"ReportConfig(customer={self.customer_id}, detail={self.detail_level.value}, schedule={self.schedule.value})"
+        return f"ReportConfig(customer={self.database_name}, detail={self.detail_level.value}, schedule={self.schedule.value})"
 
     def validate(self) -> List[str]:
         """Validate configuration and return list of errors"""
         errors = []
 
-        if not self.customer_id:
+        if not self.database_name:
             errors.append("Customer ID is required")
 
         if not self.content_categories:

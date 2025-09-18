@@ -38,7 +38,7 @@ if __name__ == "__main__":
             "state": "fl",
             "city": "gainesville"
         },
-        'mainkey': '123',
+        'mainKey': '123',
         'outputFormat': 'pdf', # html, pdf
         'reportName': 'UF Report', # user provided report name
         'timeRange': 'custom', # last-30-days, last-7-days, last-3-days, custom

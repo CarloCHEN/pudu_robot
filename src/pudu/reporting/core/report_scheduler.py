@@ -50,19 +50,19 @@ class ReportScheduler:
             logger.error(f"Failed to initialize schedule table: {e}")
             self.schedule_table = None
 
-    def create_or_update_schedule(self, customer_id: str, report_config: ReportConfig) -> Dict[str, Any]:
+    def create_or_update_schedule(self, database_name: str, report_config: ReportConfig) -> Dict[str, Any]:
         """
         Create or update a scheduled report
 
         Args:
-            customer_id: Customer identifier
+            database_name: Project identifier
             report_config: Report configuration
 
         Returns:
             Dict with success status and details
         """
         try:
-            logger.info(f"Creating/updating report schedule for customer {customer_id}")
+            logger.info(f"Creating/updating report schedule for project {database_name}")
 
             if report_config.schedule == ScheduleFrequency.IMMEDIATE:
                 # For immediate reports, no scheduling needed
@@ -72,31 +72,31 @@ class ReportScheduler:
                     'message': 'Immediate report - no scheduling required'
                 }
 
-            # Check if customer already has a schedule for this type
-            existing_schedule = self._get_existing_schedule(customer_id, report_config)
+            # Check if project already has a schedule for this type
+            existing_schedule = self._get_existing_schedule(database_name, report_config)
 
             if existing_schedule:
                 return self._update_existing_schedule(existing_schedule, report_config)
             else:
-                return self._create_new_schedule(customer_id, report_config)
+                return self._create_new_schedule(database_name, report_config)
 
         except Exception as e:
-            logger.error(f"Error creating/updating schedule for customer {customer_id}: {e}")
+            logger.error(f"Error creating/updating schedule for project {database_name}: {e}")
             return {
                 'success': False,
                 'error': str(e),
                 'schedule_id': None
             }
 
-    def _get_existing_schedule(self, customer_id: str, report_config: ReportConfig) -> Optional[Dict]:
-        """Check for existing schedule for this customer and report type"""
+    def _get_existing_schedule(self, database_name: str, report_config: ReportConfig) -> Optional[Dict]:
+        """Check for existing schedule for this project and report type"""
         try:
             if not self.schedule_table:
                 return None
 
             query = f"""
                 SELECT * FROM mnt_report_schedules
-                WHERE customer_id = '{customer_id}'
+                WHERE database_name = '{database_name}'
                 AND status = 'active'
                 AND JSON_EXTRACT(report_config, '$.service') = '{report_config.service}'
                 LIMIT 1
@@ -109,11 +109,11 @@ class ReportScheduler:
             logger.error(f"Error checking existing schedule: {e}")
             return None
 
-    def _create_new_schedule(self, customer_id: str, report_config: ReportConfig) -> Dict[str, Any]:
+    def _create_new_schedule(self, database_name: str, report_config: ReportConfig) -> Dict[str, Any]:
         """Create a new scheduled report"""
         try:
             # Generate unique rule name
-            rule_name = f"report-{customer_id}-{report_config.schedule.value}-{int(datetime.now().timestamp())}"
+            rule_name = f"report-{database_name}-{report_config.schedule.value}-{int(datetime.now().timestamp())}"
 
             # Get schedule expression
             schedule_expression = report_config.get_eventbridge_schedule_expression()
@@ -121,14 +121,14 @@ class ReportScheduler:
                 raise ValueError(f"No schedule expression available for {report_config.schedule.value}")
 
             # Create EventBridge rule
-            rule_arn = self._create_eventbridge_rule(rule_name, schedule_expression, customer_id, report_config)
+            rule_arn = self._create_eventbridge_rule(rule_name, schedule_expression, database_name, report_config)
 
             # Calculate next run time
             next_run_time = self._calculate_next_run_time(report_config.schedule)
 
             # Save to database
             schedule_data = {
-                'customer_id': customer_id,
+                'database_name': database_name,
                 'report_config': report_config.to_json(),
                 'schedule_frequency': report_config.schedule.value,
                 'eventbridge_rule_name': rule_name,
@@ -165,7 +165,7 @@ class ReportScheduler:
 
             # Update EventBridge rule
             schedule_expression = report_config.get_eventbridge_schedule_expression()
-            self._update_eventbridge_rule(rule_name, schedule_expression, report_config.customer_id, report_config)
+            self._update_eventbridge_rule(rule_name, schedule_expression, report_config.database_name, report_config)
 
             # Update database record
             next_run_time = self._calculate_next_run_time(report_config.schedule)
@@ -201,14 +201,14 @@ class ReportScheduler:
             }
 
     def _create_eventbridge_rule(self, rule_name: str, schedule_expression: str,
-                                customer_id: str, report_config: ReportConfig) -> str:
+                                database_name: str, report_config: ReportConfig) -> str:
         """Create EventBridge rule for scheduled reports"""
         try:
             # Create the rule
             response = self.events_client.put_rule(
                 Name=rule_name,
                 ScheduleExpression=schedule_expression,
-                Description=f"Scheduled report for customer {customer_id}",
+                Description=f"Scheduled report for project {database_name}",
                 State='ENABLED'
             )
 
@@ -217,7 +217,7 @@ class ReportScheduler:
             # Add Lambda target if function ARN is available
             if self.lambda_function_arn:
                 target_input = {
-                    'customer_id': customer_id,
+                    'database_name': database_name,
                     'report_config': report_config.to_dict(),
                     'trigger_source': 'scheduled'
                 }
@@ -242,21 +242,21 @@ class ReportScheduler:
             raise
 
     def _update_eventbridge_rule(self, rule_name: str, schedule_expression: str,
-                                customer_id: str, report_config: ReportConfig):
+                                database_name: str, report_config: ReportConfig):
         """Update existing EventBridge rule"""
         try:
             # Update the rule
             self.events_client.put_rule(
                 Name=rule_name,
                 ScheduleExpression=schedule_expression,
-                Description=f"Scheduled report for customer {customer_id} (updated)",
+                Description=f"Scheduled report for project {database_name} (updated)",
                 State='ENABLED'
             )
 
             # Update target input
             if self.lambda_function_arn:
                 target_input = {
-                    'customer_id': customer_id,
+                    'database_name': database_name,
                     'report_config': report_config.to_dict(),
                     'trigger_source': 'scheduled'
                 }
@@ -276,7 +276,7 @@ class ReportScheduler:
             logger.error(f"Error updating EventBridge rule: {e}")
             raise
 
-    def delete_schedule(self, customer_id: str, schedule_id: str) -> Dict[str, Any]:
+    def delete_schedule(self, database_name: str, schedule_id: str) -> Dict[str, Any]:
         """Delete a scheduled report"""
         try:
             # Remove EventBridge rule
@@ -291,7 +291,7 @@ class ReportScheduler:
 
             # Update database record status
             if self.schedule_table:
-                filters = {'eventbridge_rule_name': schedule_id, 'customer_id': customer_id}
+                filters = {'eventbridge_rule_name': schedule_id, 'database_name': database_name}
                 self.schedule_table.update_field_by_filters('status', 'deleted', filters)
                 self.schedule_table.update_field_by_filters('deleted_at',
                     datetime.now().strftime('%Y-%m-%d %H:%M:%S'), filters)
@@ -308,7 +308,7 @@ class ReportScheduler:
                 'error': str(e)
             }
 
-    def get_customer_schedules(self, customer_id: str) -> List[Dict[str, Any]]:
+    def get_customer_schedules(self, database_name: str) -> List[Dict[str, Any]]:
         """Get all active schedules for a customer"""
         try:
             if not self.schedule_table:
@@ -316,7 +316,7 @@ class ReportScheduler:
 
             query = f"""
                 SELECT * FROM mnt_report_schedules
-                WHERE customer_id = '{customer_id}'
+                WHERE database_name = '{database_name}'
                 AND status = 'active'
                 ORDER BY created_at DESC
             """
@@ -335,7 +335,7 @@ class ReportScheduler:
             return schedules
 
         except Exception as e:
-            logger.error(f"Error getting customer schedules: {e}")
+            logger.error(f"Error getting project schedules: {e}")
             return []
 
     def _calculate_next_run_time(self, frequency: ScheduleFrequency) -> str:

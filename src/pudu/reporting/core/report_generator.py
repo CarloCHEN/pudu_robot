@@ -95,14 +95,14 @@ class ReportGenerator:
             raise Exception(f"Failed to convert HTML to PDF: {e}")
 
     def save_report_html(self, html_content: str, filename: Optional[str] = None,
-                        customer_id: Optional[str] = None) -> str:
+                        database_name: Optional[str] = None) -> str:
         """
         Save HTML report content to a local file
 
         Args:
             html_content: The HTML content to save
             filename: Optional custom filename. If not provided, generates one automatically
-            customer_id: Customer ID for filename generation
+            database_name: Project ID for filename generation
 
         Returns:
             str: Full path to the saved file
@@ -114,7 +114,7 @@ class ReportGenerator:
             # Generate filename if not provided
             if filename is None:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                customer_suffix = f"_{customer_id}" if customer_id else ""
+                customer_suffix = f"_{database_name}" if database_name else ""
                 filename = f"robot_report{customer_suffix}_{timestamp}.html"
 
             # Ensure filename has .html extension
@@ -138,14 +138,14 @@ class ReportGenerator:
             raise Exception(f"Failed to save HTML report: {e}")
 
     def save_report_pdf(self, html_content: str, filename: Optional[str] = None,
-                   customer_id: Optional[str] = None) -> str:
+                   database_name: Optional[str] = None) -> str:
         """
         Save PDF report from HTML content to a local file using Playwright
 
         Args:
             html_content: The HTML content to convert to PDF
             filename: Optional custom filename. If not provided, generates one automatically
-            customer_id: Customer ID for filename generation
+            database_name: project ID for filename generation
 
         Returns:
             str: Full path to the saved PDF file
@@ -160,7 +160,7 @@ class ReportGenerator:
             # Generate filename if not provided
             if filename is None:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                customer_suffix = f"_{customer_id}" if customer_id else ""
+                customer_suffix = f"_{database_name}" if database_name else ""
                 filename = f"robot_report{customer_suffix}_{timestamp}.pdf"
 
             # Ensure filename has .pdf extension
@@ -244,13 +244,13 @@ class ReportGenerator:
                     file_path = self.save_report_html(
                         report_html,
                         custom_filename,
-                        report_config.customer_id
+                        report_config.database_name
                     )
                 else:  # PDF
                     file_path = self.save_report_pdf(
                         report_html,
                         custom_filename,
-                        report_config.customer_id
+                        report_config.database_name
                     )
 
                 result['saved_file_path'] = file_path
@@ -286,7 +286,7 @@ class ReportGenerator:
         Returns:
             Dict containing results for both formats
         """
-        logger.info(f"Starting dual report generation (HTML + PDF) for customer {report_config.customer_id}")
+        logger.info(f"Starting dual report generation (HTML + PDF) for project {report_config.database_name}")
 
         try:
             report_config.output_format = 'html'
@@ -310,7 +310,7 @@ class ReportGenerator:
                 'html_result': html_result,
                 'pdf_result': pdf_result,
                 'metadata': {
-                    'customer_id': report_config.customer_id,
+                    'database_name': report_config.database_name,
                     'generation_time': datetime.now().isoformat(),
                     'formats_generated': ['HTML', 'PDF'] if html_result['success'] and pdf_result['success'] else
                                        (['HTML'] if html_result['success'] else []) +
@@ -328,7 +328,7 @@ class ReportGenerator:
                 'html_result': {'success': False},
                 'pdf_result': {'success': False},
                 'metadata': {
-                    'customer_id': report_config.customer_id,
+                    'database_name': report_config.database_name,
                     'error_occurred': True
                 }
             }
@@ -344,7 +344,7 @@ class ReportGenerator:
         Returns:
             Dict containing generated report data and metadata
         """
-        logger.info(f"Starting comprehensive report generation with comparison for customer {report_config.customer_id}")
+        logger.info(f"Starting comprehensive report generation with comparison for project {report_config.database_name}")
         start_time = datetime.now()
 
         try:
@@ -367,8 +367,8 @@ class ReportGenerator:
             # Filter robots based on configuration
             target_robots = self._resolve_target_robots(report_config)
             if not target_robots:
-                logger.warning(f"No robots found for customer {report_config.customer_id} with given criteria")
-                target_robots = self._get_all_customer_robots(report_config.customer_id)
+                logger.warning(f"No robots found for project {report_config.database_name} with given criteria")
+                target_robots = self._get_all_customer_robots(report_config.database_name)
 
             logger.info(f"Targeting {len(target_robots)} robots for report generation")
 
@@ -408,7 +408,7 @@ class ReportGenerator:
 
             # Enhanced metadata
             metadata = {
-                'customer_id': report_config.customer_id,
+                'database_name': report_config.database_name,
                 'generation_time': start_time.isoformat(),
                 'execution_time_seconds': execution_time,
                 'date_range': {'start': current_start, 'end': current_end},
@@ -453,7 +453,7 @@ class ReportGenerator:
                 'error': str(e),
                 'report_html': None,
                 'metadata': {
-                    'customer_id': report_config.customer_id,
+                    'database_name': report_config.database_name,
                     'generation_time': start_time.isoformat(),
                     'execution_time_seconds': execution_time,
                     'error_occurred': True
@@ -493,27 +493,27 @@ class ReportGenerator:
                 return robots
             else:
                 logger.warning("No robots found with specified criteria")
-                # If no specific criteria matched, return all customer robots
-                logger.info("Falling back to all customer robots")
-                return self._get_all_customer_robots(report_config.customer_id)
+                # If no specific criteria matched, return all project robots
+                logger.info("Falling back to all project robots")
+                return self._get_all_customer_robots(report_config.database_name)
 
         except Exception as e:
             logger.error(f"Error resolving target robots: {e}")
             return []
 
-    def _get_all_customer_robots(self, customer_id: str) -> List[str]:
-        """Get all robots belonging to a customer"""
+    def _get_all_customer_robots(self, database_name: str) -> List[str]:
+        """Get all robots belonging to a database_name"""
         try:
-            # TODO: Filter robots by customer_id
+            # TODO: Filter robots by database_name
             # Use the resolver to get all robots and their database mappings
             all_robot_mapping = self.resolver.get_robot_database_mapping()
 
             # For now, return all robots (customer filtering would require additional logic)
-            # In a real implementation, you'd filter by customer_id through the database
+            # In a real implementation, you'd filter by database_name through the database
             return list(all_robot_mapping.keys())
 
         except Exception as e:
-            logger.error(f"Error getting customer robots: {e}")
+            logger.error(f"Error getting project robots: {e}")
             return []
 
     def _generate_comprehensive_report_content(self, comprehensive_metrics: Dict[str, Any],
@@ -531,7 +531,7 @@ class ReportGenerator:
             'generation_time': datetime.now(),
             'detail_level': report_config.detail_level,
             'content_categories': report_config.content_categories,
-            'customer_id': report_config.customer_id,
+            'database_name': report_config.database_name,
 
             # Core metrics - pass comprehensive_metrics directly
             'fleet_performance': comprehensive_metrics.get('fleet_performance', {}),

@@ -48,21 +48,21 @@ def lambda_handler(event, context):
             raise
 
         # Parse event to get report configuration
-        customer_id = event.get('customer_id')
+        database_name = event.get('database_name')
         report_config_data = event.get('report_config', {})
         trigger_source = event.get('trigger_source', 'direct')
 
-        if not customer_id:
-            raise ValueError("customer_id is required")
+        if not database_name:
+            raise ValueError("database_name is required")
 
         if not report_config_data:
             raise ValueError("report_config is required")
 
-        logger.info(f"🔧 Processing report for customer: {customer_id}")
+        logger.info(f"🔧 Processing report for customer: {database_name}")
         logger.info(f"📋 Trigger source: {trigger_source}")
 
         # Create report configuration
-        report_config = ReportConfig(report_config_data, customer_id)
+        report_config = ReportConfig(report_config_data, database_name)
 
         # Validate configuration
         validation_errors = report_config.validate()
@@ -73,7 +73,7 @@ def lambda_handler(event, context):
                 'body': json.dumps({
                     'success': False,
                     'error': f"Configuration validation failed: {', '.join(validation_errors)}",
-                    'customer_id': customer_id,
+                    'database_name': database_name,
                     'timestamp': datetime.now().isoformat()
                 })
             }
@@ -114,7 +114,7 @@ def lambda_handler(event, context):
                 'body': json.dumps({
                     'success': False,
                     'error': generation_result['error'],
-                    'customer_id': customer_id,
+                    'database_name': database_name,
                     'timestamp': datetime.now().isoformat()
                 })
             }
@@ -140,7 +140,7 @@ def lambda_handler(event, context):
         # Prepare response
         response_data = {
             'success': True,
-            'customer_id': customer_id,
+            'database_name': database_name,
             'execution_time_seconds': execution_time,
             'generation_result': {
                 'robots_included': len(generation_result.get('target_robots', [])),
@@ -185,7 +185,7 @@ def lambda_handler(event, context):
             'body': json.dumps({
                 'success': False,
                 'error': error_msg,
-                'customer_id': event.get('customer_id', 'unknown'),
+                'database_name': event.get('database_name', 'unknown'),
                 'execution_time_seconds': execution_time,
                 'timestamp': datetime.now().isoformat()
             })
@@ -204,7 +204,7 @@ def lambda_handler(event, context):
 if __name__ == "__main__":
     # Test the Lambda function locally
     test_event = {
-        "customer_id": "test-customer-123",
+        "database_name": "test-customer-123",
         "report_config": {
             "service": "robot-management",
             "contentCategories": ["robot-status", "cleaning-tasks", "performance"],

@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     gcc \
     g++ \
+    gettext-base \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better Docker layer caching
@@ -23,7 +24,10 @@ COPY src/pudu/apis ./pudu/apis
 
 COPY src/pudu/services/robot_database_resolver.py ./pudu/services/robot_database_resolver.py
 COPY src/pudu/__init__.py ./pudu/__init__.py
-COPY report_api/main.py .
+COPY report_api/* .
+COPY report_api/setup-environment.sh .
+COPY report_api/cross_region_db.py .
+RUN chmod +x setup-environment.sh
 
 # Create services __init__.py with only what we need
 RUN mkdir -p ./pudu/services && \

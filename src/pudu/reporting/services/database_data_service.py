@@ -13,6 +13,8 @@ from ..calculators.metrics_calculator import PerformanceMetricsCalculator
 
 logger = logging.getLogger(__name__)
 
+reuse_connection = False
+
 class DatabaseDataService:
     """Enhanced service for querying and processing historical data from databases for report generation"""
 
@@ -47,7 +49,7 @@ class DatabaseDataService:
                         table_name=table_config['table_name'],
                         fields=table_config.get('fields'),
                         primary_keys=table_config['primary_keys'],
-                        reuse_connection=True
+                        reuse_connection=reuse_connection
                     )
 
                     # Get target robots for this database
@@ -223,7 +225,7 @@ class DatabaseDataService:
                         table_name=table_config['table_name'],
                         fields=table_config.get('fields'),
                         primary_keys=table_config['primary_keys'],
-                        reuse_connection=True
+                        reuse_connection=reuse_connection
                     )
 
                     # Get target robots for this database
@@ -295,7 +297,7 @@ class DatabaseDataService:
                         table_name=table_config['table_name'],
                         fields=table_config.get('fields'),
                         primary_keys=table_config['primary_keys'],
-                        reuse_connection=True
+                        reuse_connection=reuse_connection
                     )
 
                     # Get target robots for this database
@@ -366,7 +368,7 @@ class DatabaseDataService:
                         table_name=table_config['table_name'],
                         fields=table_config.get('fields'),
                         primary_keys=table_config['primary_keys'],
-                        reuse_connection=True
+                        reuse_connection=reuse_connection
                     )
 
                     # Get target robots for this database
@@ -449,7 +451,7 @@ class DatabaseDataService:
                         table_name=config['table_name'],
                         fields=config.get('fields'),
                         primary_keys=config['primary_keys'],
-                        reuse_connection=True
+                        reuse_connection=reuse_connection
                     )
 
                     location_list = "', '".join(location_ids)

@@ -78,8 +78,25 @@ TAG=latest
 EOF
 fi
 
-# Update src/pudu/rds/credentials.yaml
-cat > ../src/pudu/rds/credentials.yaml << EOF
+if [ -d "pudu/rds" ]; then
+    # Docker container environment
+    CREDENTIALS_PATH="pudu/rds/credentials.yaml"
+# Detect correct credentials path (local vs Docker)
+elif [ -d "src/pudu/rds" ]; then
+    # Local development environment
+    CREDENTIALS_PATH="src/pudu/rds/credentials.yaml"
+elif [ -d "../src/pudu/rds" ]; then
+    # Running from report_api directory locally
+    CREDENTIALS_PATH="../src/pudu/rds/credentials.yaml"
+else
+    echo "❌ Cannot find pudu/rds directory"
+    exit 1
+fi
+
+echo "Using credentials path: $CREDENTIALS_PATH"
+
+# Update credentials.yaml
+cat > $CREDENTIALS_PATH << EOF
 ---
 database:
   host: "$RDS_HOST"

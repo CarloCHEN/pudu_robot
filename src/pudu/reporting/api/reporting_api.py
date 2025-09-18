@@ -38,20 +38,20 @@ class ReportingAPI:
             """Generate an immediate report"""
             try:
                 data = request.get_json()
-                customer_id = data.get('customer_id')
+                database_name = data.get('database_name')
                 form_data = data.get('form_data', {})
 
-                if not customer_id:
+                if not database_name:
                     return jsonify({
                         'success': False,
-                        'error': 'customer_id is required'
+                        'error': 'database_name is required'
                     }), 400
 
                 # Force immediate generation
                 form_data['schedule'] = 'immediate'
 
                 # Create report configuration
-                report_config = ReportConfig(form_data, customer_id)
+                report_config = ReportConfig(form_data, database_name)
 
                 # Validate configuration
                 validation_errors = report_config.validate()
@@ -62,7 +62,7 @@ class ReportingAPI:
                     }), 400
 
                 # Generate report
-                logger.info(f"Generating immediate report for customer {customer_id}")
+                logger.info(f"Generating immediate report for project {database_name}")
                 generation_result = self.report_generator.generate_report(report_config)
 
                 if not generation_result['success']:
@@ -121,17 +121,17 @@ class ReportingAPI:
             """Create or update a scheduled report"""
             try:
                 data = request.get_json()
-                customer_id = data.get('customer_id')
+                database_name = data.get('database_name')
                 form_data = data.get('form_data', {})
 
-                if not customer_id:
+                if not database_name:
                     return jsonify({
                         'success': False,
-                        'error': 'customer_id is required'
+                        'error': 'database_name is required'
                     }), 400
 
                 # Create report configuration
-                report_config = ReportConfig(form_data, customer_id)
+                report_config = ReportConfig(form_data, database_name)
 
                 # Validate configuration
                 validation_errors = report_config.validate()
@@ -149,8 +149,8 @@ class ReportingAPI:
                     }), 400
 
                 # Create or update schedule
-                logger.info(f"Creating scheduled report for customer {customer_id}")
-                schedule_result = self.report_scheduler.create_or_update_schedule(customer_id, report_config)
+                logger.info(f"Creating scheduled report for project {database_name}")
+                schedule_result = self.report_scheduler.create_or_update_schedule(database_name, report_config)
 
                 if schedule_result['success']:
                     return jsonify({
@@ -172,18 +172,18 @@ class ReportingAPI:
                     'error': str(e)
                 }), 500
 
-        @self.app.route('/api/reports/schedules/<customer_id>', methods=['GET'])
-        def get_customer_schedules(customer_id):
+        @self.app.route('/api/reports/schedules/<database_name>', methods=['GET'])
+        def get_customer_schedules(database_name):
             """Get all schedules for a customer"""
             try:
-                schedules = self.report_scheduler.get_customer_schedules(customer_id)
+                schedules = self.report_scheduler.get_customer_schedules(database_name)
                 return jsonify({
                     'success': True,
                     'schedules': schedules
                 })
 
             except Exception as e:
-                logger.error(f"Error getting customer schedules: {e}")
+                logger.error(f"Error getting project schedules: {e}")
                 return jsonify({
                     'success': False,
                     'error': str(e)
@@ -193,14 +193,14 @@ class ReportingAPI:
         def delete_schedule(schedule_id):
             """Delete a scheduled report"""
             try:
-                customer_id = request.args.get('customer_id')
-                if not customer_id:
+                database_name = request.args.get('database_name')
+                if not database_name:
                     return jsonify({
                         'success': False,
-                        'error': 'customer_id parameter is required'
+                        'error': 'database_name parameter is required'
                     }), 400
 
-                result = self.report_scheduler.delete_schedule(customer_id, schedule_id)
+                result = self.report_scheduler.delete_schedule(database_name, schedule_id)
 
                 if result['success']:
                     return jsonify(result)
@@ -214,12 +214,12 @@ class ReportingAPI:
                     'error': str(e)
                 }), 500
 
-        @self.app.route('/api/reports/history/<customer_id>', methods=['GET'])
-        def get_report_history(customer_id):
+        @self.app.route('/api/reports/history/<database_name>', methods=['GET'])
+        def get_report_history(database_name):
             """Get report history for a customer"""
             try:
                 limit = request.args.get('limit', 50, type=int)
-                reports = self.delivery_service.get_report_history(customer_id, limit)
+                reports = self.delivery_service.get_report_history(database_name, limit)
 
                 return jsonify({
                     'success': True,
@@ -239,16 +239,16 @@ class ReportingAPI:
             """Delete a stored report"""
             try:
                 data = request.get_json()
-                customer_id = data.get('customer_id')
+                database_name = data.get('database_name')
                 report_key = data.get('report_key')
 
-                if not customer_id or not report_key:
+                if not database_name or not report_key:
                     return jsonify({
                         'success': False,
-                        'error': 'customer_id and report_key are required'
+                        'error': 'database_name and report_key are required'
                     }), 400
 
-                result = self.delivery_service.delete_report(customer_id, report_key)
+                result = self.delivery_service.delete_report(database_name, report_key)
 
                 if result['success']:
                     return jsonify(result)

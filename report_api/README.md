@@ -44,7 +44,7 @@ The API automatically selects S3 buckets based on AWS region:
 
 Reports are organized in S3 as:
 ```
-reports/{customer_id}/{year}/{month}/{timestamp}_robot_performance_report.html
+reports/{database_name}/{year}/{month}/{timestamp}_robot_performance_report.html
 ```
 
 ## Quick Start
@@ -129,7 +129,7 @@ POST /api/reports/generate
 Content-Type: application/json
 
 {
-  "customer_id": "customer-123",
+  "database_name": "customer-123",
   "form_data": {
     "service": "robot-management",
     "contentCategories": ["robot-status", "cleaning-tasks", "performance"],
@@ -137,7 +137,7 @@ Content-Type: application/json
     "detailLevel": "detailed",
     "delivery": "in-app",
     "schedule": "immediate",
-    "mainkey": 1,
+    "mainKey": 1,
     "reportName": "Customer Report",
     "outputFormat": "html",
     "location": {
@@ -202,12 +202,12 @@ GET /api/reports/health
 
 ### Report History
 ```http
-GET /api/reports/history/{customer_id}?limit=50
+GET /api/reports/history/{database_name}?limit=50
 ```
 
 ### Delete Report
 ```http
-DELETE /api/reports/delete?customer_id=customer-123&report_key=reports/customer-123/2024/01/file.html
+DELETE /api/reports/delete?database_name=customer-123&report_key=reports/customer-123/2024/01/file.html
 ```
 
 ## Development
@@ -287,7 +287,7 @@ make deploy-us-east-1-alb
 # Complete setup and deployment to us-east-2 with fixed URL
 make deploy-us-east-2-alb
 
-# Quick redeploy for code changes (existing ALB)
+# Quick redeploy for code changes (existing ALB) - Note: it will deploy to the last deployed region (take care!)
 make quick-deploy
 ```
 
@@ -351,19 +351,19 @@ The API will automatically:
 **Note**: Replace `monitor-report-api-alb-1071100458.us-east-1.elb.amazonaws.com` with your actual ALB DNS name from deployment output.
 
 ```bash
-# Single building report
-curl -X POST http://monitor-report-api-alb-1071100458.us-east-1.elb.amazonaws.com/api/reports/generate \
+# Single building report in foxx_irvine_office
+curl -X POST http://monitor-report-api-alb-2063783635.us-east-2.elb.amazonaws.com/api/reports/generate \
   -H "Content-Type: application/json" \
   -d '{
-    "customer_id": "UF2",
-    "mainkey": 1,
+    "database_name": "foxx_irvine_office",
+    "mainKey": 1,
     "form_data": {
       "service": "robot-management",
       "location": {
         "country": "us",
         "state": "fl",
         "city": "gainesville",
-        "building": "Building 43 Marston Science Library"
+        "building": ["Building 43 Marston Science Library", "Building 205 Dental Science"]
       },
       "contentCategories": ["charging-performance", "cleaning-performance", "resource-utilization", "financial-performance"],
       "reportName": "UF Single Building Report",
@@ -375,12 +375,12 @@ curl -X POST http://monitor-report-api-alb-1071100458.us-east-1.elb.amazonaws.co
     }
   }'
 
-# Multiple buildings report
-curl -X POST http://monitor-report-api-alb-1071100458.us-east-1.elb.amazonaws.com/api/reports/generate \
+# Multiple buildings report in university_of_florida
+curl -X POST http://monitor-report-api-alb-2063783635.us-east-2.elb.amazonaws.com/api/reports/generate \
   -H "Content-Type: application/json" \
   -d '{
-    "customer_id": "UF2",
-    "mainkey": 1,
+    "database_name": "university_of_florida",
+    "mainKey": 1,
     "form_data": {
       "service": "robot-management",
       "location": {
@@ -391,7 +391,7 @@ curl -X POST http://monitor-report-api-alb-1071100458.us-east-1.elb.amazonaws.co
       },
       "contentCategories": ["charging-performance", "cleaning-performance", "resource-utilization", "financial-performance"],
       "reportName": "UF Multiple Buildings Report",
-      "outputFormat": "html",
+      "outputFormat": "pdf",
       "timeRange": "custom",
       "customStartDate": "2025-09-01",
       "customEndDate": "2025-09-12",
@@ -403,8 +403,8 @@ curl -X POST http://monitor-report-api-alb-1071100458.us-east-1.elb.amazonaws.co
 curl -X POST http://monitor-report-api-alb-1071100458.us-east-1.elb.amazonaws.com/api/reports/generate \
   -H "Content-Type: application/json" \
   -d '{
-    "customer_id": "UF2",
-    "mainkey": 1,
+    "database_name": "UF2",
+    "mainKey": 1,
     "form_data": {
       "service": "robot-management",
       "location": {
@@ -426,8 +426,8 @@ curl -X POST http://monitor-report-api-alb-1071100458.us-east-1.elb.amazonaws.co
 curl -X POST http://monitor-report-api-alb-1071100458.us-east-1.elb.amazonaws.com/api/reports/generate \
   -H "Content-Type: application/json" \
   -d '{
-    "customer_id": "UF2",
-    "mainkey": 1,
+    "database_name": "UF2",
+    "mainKey": 1,
     "form_data": {
       "service": "robot-management",
       "robot": {
@@ -447,8 +447,8 @@ curl -X POST http://monitor-report-api-alb-1071100458.us-east-1.elb.amazonaws.co
 curl -X POST http://monitor-report-api-alb-1071100458.us-east-1.elb.amazonaws.com/api/reports/generate \
   -H "Content-Type: application/json" \
   -d '{
-    "customer_id": "UF2",
-    "mainkey": 1,
+    "database_name": "UF2",
+    "mainKey": 1,
     "form_data": {
       "service": "robot-management",
       "robot": {
@@ -466,8 +466,8 @@ curl -X POST http://monitor-report-api-alb-1071100458.us-east-1.elb.amazonaws.co
 curl -X POST http://monitor-report-api-alb-1071100458.us-east-1.elb.amazonaws.com/api/reports/generate \
   -H "Content-Type: application/json" \
   -d '{
-    "customer_id": "UF2",
-    "mainkey": 1,
+    "database_name": "UF2",
+    "mainKey": 1,
     "form_data": {
       "service": "robot-management",
       "location": {
@@ -487,8 +487,8 @@ curl -X POST http://monitor-report-api-alb-1071100458.us-east-1.elb.amazonaws.co
 curl -X POST http://monitor-report-api-alb-1071100458.us-east-1.elb.amazonaws.com/api/reports/generate \
   -H "Content-Type: application/json" \
   -d '{
-    "customer_id": "UF2",
-      "mainkey": 1,
+    "database_name": "UF2",
+      "mainKey": 1,
     "form_data": {
       "service": "robot-management",
       "location": {
