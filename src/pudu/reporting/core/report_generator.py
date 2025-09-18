@@ -461,36 +461,41 @@ class ReportGenerator:
             }
 
     def _resolve_target_robots(self, report_config: ReportConfig) -> List[str]:
-        """Resolve target robots based on configuration (name/SN or location)"""
+        """Resolve target robots based on configuration - Enhanced for multiple selections"""
         try:
             from ..services.robot_location_resolver import RobotLocationResolver
             location_resolver = RobotLocationResolver(self.config)
 
-            # Check if specific robot selected by name or serial number
-            robot_name = report_config.robot.get('name', '').strip()
-            robot_sn = report_config.robot.get('serialNumber', '').strip()
+            # Extract robot criteria
+            robot_names = report_config.robot.get('names', [])
+            robot_sns = report_config.robot.get('serialNumbers', [])
 
-            if robot_name or robot_sn:
-                logger.info(f"Resolving robots by name='{robot_name}' or SN='{robot_sn}'")
-                robots = location_resolver.resolve_robots_by_name_or_sn(robot_name, robot_sn)
-                if robots:
-                    return robots
-                else:
-                    logger.warning(f"No robots found with name='{robot_name}' or SN='{robot_sn}'")
+            # Extract location criteria
+            location_criteria = {}
+            if report_config.location.get('countries'):
+                location_criteria['countries'] = report_config.location['countries']
+            if report_config.location.get('states'):
+                location_criteria['states'] = report_config.location['states']
+            if report_config.location.get('cities'):
+                location_criteria['cities'] = report_config.location['cities']
+            if report_config.location.get('buildings'):
+                location_criteria['buildings'] = report_config.location['buildings']
 
-            # Check if location-based selection
-            location_criteria = report_config.location
-            if any(location_criteria.values()):
-                logger.info(f"Resolving robots by location: {location_criteria}")
-                robots = location_resolver.resolve_robots_by_location(location_criteria)
-                if robots:
-                    return robots
-                else:
-                    logger.warning(f"No robots found matching location criteria: {location_criteria}")
+            # Use the new combined resolver method
+            robots = location_resolver.resolve_robots_combined(
+                location_criteria=location_criteria if location_criteria else None,
+                robot_names=robot_names if robot_names else None,
+                robot_sns=robot_sns if robot_sns else None
+            )
 
-            # If no specific criteria, return all robots for the customer
-            logger.info("No specific robot criteria - returning all customer robots")
-            return self._get_all_customer_robots(report_config.customer_id)
+            if robots:
+                logger.info(f"Resolved {len(robots)} robots using combined criteria")
+                return robots
+            else:
+                logger.warning("No robots found with specified criteria")
+                # If no specific criteria matched, return all customer robots
+                logger.info("Falling back to all customer robots")
+                return self._get_all_customer_robots(report_config.customer_id)
 
         except Exception as e:
             logger.error(f"Error resolving target robots: {e}")

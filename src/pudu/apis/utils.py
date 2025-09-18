@@ -24,3 +24,16 @@ def convert_technical_string(text):
         spaced = re.sub('([a-z])([A-Z])', r'\1 \2', text)
         # Convert to title case
         return spaced.title()
+
+def clean_map_name(map_name: str) -> str:
+    """
+    Remove the prefix up to and including the first two '#' characters
+    from a map_name string. If fewer than two '#' are found,
+    return the original string.
+    """
+    if not map_name:
+        return None
+    if '#' not in map_name:
+        return map_name
+    parts = map_name.split("#", 2)
+    return parts[2] if len(parts) > 2 else map_name

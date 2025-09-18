@@ -16,6 +16,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
 from pudu.reporting.core.report_generator import ReportGenerator
 from pudu.reporting.core.report_config import ReportConfig
 from pudu.reporting.services.report_delivery_service import ReportDeliveryService
+from pudu.rds.rdsTable import RDSTable
 
 # Configure logging
 logging.basicConfig(
@@ -38,12 +39,14 @@ delivery_service: Optional[ReportDeliveryService] = None
 # Request models
 class ReportGenerationRequest(BaseModel):
     customer_id: str = Field(..., description="Customer identifier")
+    mainkey: Optional[int] = Field(None, description="Report ID for database update")
     form_data: Dict[str, Any] = Field(..., description="Report configuration form data")
 
     class Config:
         schema_extra = {
             "example": {
                 "customer_id": "customer-123",
+                "mainkey": 12345,
                 "form_data": {
                     "service": "robot-management",
                     "contentCategories": ["robot-status", "cleaning-tasks", "performance"],
@@ -51,7 +54,7 @@ class ReportGenerationRequest(BaseModel):
                     "detailLevel": "detailed",
                     "delivery": "in-app",
                     "schedule": "immediate",
-                    "outputFormat": "html",  # NEW: "html" or "pdf"
+                    "outputFormat": "html",
                     "location": {
                         "country": "US",
                         "state": "Ohio",
@@ -114,8 +117,6 @@ async def startup_event():
         report_generator = ReportGenerator(config_path=config_path)
         delivery_service = ReportDeliveryService(region=aws_region)
 
-        logger.info("Services initialized successfully")
-
     except Exception as e:
         logger.error(f"Failed to initialize services: {e}")
         raise
@@ -128,14 +129,66 @@ async def shutdown_event():
     try:
         if report_generator:
             report_generator.close()
-        # No explicit cleanup needed for delivery_service
         logger.info("Services cleaned up successfully")
     except Exception as e:
         logger.error(f"Error during cleanup: {e}")
 
-async def generate_report_async(request_id: str, customer_id: str, form_data: Dict[str, Any]):
+async def update_report_status_in_db(mainkey: int, report_url: str = None, status: str = "ready"):
+    """Update report status and URL in database"""
+    if not mainkey:
+        return
+    try:
+        # Initialize database table for report updates
+        try:
+            reports_table = RDSTable(
+                connection_config="credentials.yaml",
+                database_name="foxx_irvine_office",  # should be sent to the api from request
+                table_name="mnt_reports",
+                fields={
+                    "id": "bigint(20)",
+                    "report_url": "varchar(500)",
+                    "status": "enum('ready','processing')",
+                    "update_time": "timestamp"
+                },
+                primary_keys=["id"],
+                reuse_connection=False
+            )
+            logger.info("Database table connection initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize database table: {e}")
+            reports_table = None
+
+
+        update_data = {
+            "status": status,
+            "update_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+
+        if report_url:
+            update_data["report_url"] = report_url
+            reports_table.update_field_by_filters(
+                field_name="report_url",
+                new_value=report_url,
+                filters={"id": mainkey}
+            )
+
+        # Update the record
+        reports_table.update_field_by_filters(
+            field_name="status",
+            new_value=status,
+            filters={"id": mainkey}
+        )
+        if reports_table:
+            reports_table.close()
+
+        logger.info(f"Updated report {mainkey} in database: status={status}, url={report_url}")
+
+    except Exception as e:
+        logger.error(f"Failed to update report {mainkey} in database: {e}")
+
+async def generate_report_async(request_id: str, customer_id: str, form_data: Dict[str, Any], mainkey: Optional[int] = None):
     """Async function to generate report in background"""
-    logger.info(f"Starting report generation for request {request_id}")
+    logger.info(f"Starting report generation for request {request_id}, mainkey: {mainkey}")
 
     try:
         # Update status
@@ -154,6 +207,9 @@ async def generate_report_async(request_id: str, customer_id: str, form_data: Di
                 "error": error_msg,
                 "updated_at": datetime.now().isoformat()
             })
+            # Update database status to failed
+            if mainkey:
+                await update_report_status_in_db(mainkey, status="failed")
             return
 
         # Check if PDF generation is requested and available
@@ -199,6 +255,9 @@ async def generate_report_async(request_id: str, customer_id: str, form_data: Di
                 "error": generation_result['error'],
                 "updated_at": datetime.now().isoformat()
             })
+            # Update database status to failed
+            if mainkey:
+                await update_report_status_in_db(mainkey, status="failed")
             return
 
         # Deliver report (async)
@@ -232,13 +291,22 @@ async def generate_report_async(request_id: str, customer_id: str, form_data: Di
                 }
 
             request_status_store[request_id].update(success_update)
+
+            # Update database with report URL and status
+            if mainkey:
+                await update_report_status_in_db(mainkey, delivery_result['storage_url'], "ready")
+
             logger.info(f"{output_format.upper()} report generation completed for request {request_id}")
         else:
+            error_msg = f"Delivery failed: {delivery_result.get('error', 'Unknown error')}"
             request_status_store[request_id].update({
                 "status": "failed",
-                "error": f"Delivery failed: {delivery_result.get('error', 'Unknown error')}",
+                "error": error_msg,
                 "updated_at": datetime.now().isoformat()
             })
+            # Update database status to failed
+            if mainkey:
+                await update_report_status_in_db(mainkey, status="failed")
 
     except Exception as e:
         logger.error(f"Error generating report for request {request_id}: {e}")
@@ -247,6 +315,9 @@ async def generate_report_async(request_id: str, customer_id: str, form_data: Di
             "error": str(e),
             "updated_at": datetime.now().isoformat()
         })
+        # Update database status to failed
+        if mainkey:
+            await update_report_status_in_db(mainkey, status="failed")
 
 @app.post("/api/reports/generate", response_model=ReportGenerationResponse)
 async def generate_report(request: ReportGenerationRequest, background_tasks: BackgroundTasks):
@@ -267,6 +338,7 @@ async def generate_report(request: ReportGenerationRequest, background_tasks: Ba
         # Initialize request status
         request_status_store[request_id] = {
             "customer_id": request.customer_id,
+            "mainkey": request.mainkey,
             "status": "queued",
             "created_at": datetime.now().isoformat(),
             "updated_at": datetime.now().isoformat(),
@@ -281,10 +353,11 @@ async def generate_report(request: ReportGenerationRequest, background_tasks: Ba
             generate_report_async,
             request_id,
             request.customer_id,
-            request.form_data
+            request.form_data,
+            request.mainkey
         )
 
-        logger.info(f"Queued {actual_format} report generation for customer {request.customer_id}, request {request_id}")
+        logger.info(f"Queued {actual_format} report generation for customer {request.customer_id}, request {request_id}, mainkey: {request.mainkey}")
 
         return ReportGenerationResponse(
             success=True,
@@ -384,6 +457,7 @@ async def get_capabilities():
         "capabilities": {
             "html_reports": True,
             "pdf_reports": report_generator.pdf_enabled if report_generator else False,
+            "database_updates": True,
             "supported_formats": ["html"] + (["pdf"] if (report_generator and report_generator.pdf_enabled) else []),
             "pdf_requirements": {
                 "playwright": report_generator.pdf_enabled if report_generator else False,

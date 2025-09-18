@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, Union
 from datetime import datetime, timedelta
 import json
 import logging
@@ -37,12 +37,12 @@ class ReportConfig:
         """Parse HTML form data into structured configuration"""
         # Service Selection
         self.service = self.form_data.get('service', 'robot-management')
-        self.content_categories = self.form_data.get('contentCategories', [])
+        self.content_categories = self.form_data.get('contentCategories', ["charging-performance", "cleaning-performance", "resource-utilization", "financial-performance"])
 
         # Database primary key
         self.mainkey = self.form_data.get('mainkey', '')
 
-        # Hardware Selection
+        # Hardware Selection - Enhanced for multiple selections
         self.location = self._parse_location()
         self.robot = self._parse_robot()
 
@@ -64,22 +64,46 @@ class ReportConfig:
         self.recurring_frequency = self.form_data.get('recurringFrequency', 'weekly')
         self.recurring_start_date = self.form_data.get('recurringStartDate')
 
-    def _parse_location(self) -> Dict[str, str]:
-        """Parse location selection"""
+    def _parse_location(self) -> Dict[str, Union[str, List[str]]]:
+        """Parse location selection - Enhanced to support multiple selections"""
         location_data = self.form_data.get('location', {})
+
+        # Handle both single values and arrays for each location level
+        def normalize_location_value(value):
+            if value is None:
+                return []
+            elif isinstance(value, str):
+                return [value] if value.strip() else []
+            elif isinstance(value, list):
+                return [v.strip() for v in value if v and v.strip()]
+            else:
+                return []
+
         return {
-            'country': location_data.get('country', ''),
-            'state': location_data.get('state', ''),
-            'city': location_data.get('city', ''),
-            'building': location_data.get('building', '')
+            'countries': normalize_location_value(location_data.get('country') or location_data.get('countries')),
+            'states': normalize_location_value(location_data.get('state') or location_data.get('states')),
+            'cities': normalize_location_value(location_data.get('city') or location_data.get('cities')),
+            'buildings': normalize_location_value(location_data.get('building') or location_data.get('buildings'))
         }
 
-    def _parse_robot(self) -> Dict[str, str]:
-        """Parse robot selection"""
+    def _parse_robot(self) -> Dict[str, Union[str, List[str]]]:
+        """Parse robot selection - Enhanced to support multiple selections"""
         robot_data = self.form_data.get('robot', {})
+
+        # Handle both single values and arrays
+        def normalize_robot_value(value):
+            if value is None:
+                return []
+            elif isinstance(value, str):
+                return [value] if value.strip() else []
+            elif isinstance(value, list):
+                return [v.strip() for v in value if v and v.strip()]
+            else:
+                return []
+
         return {
-            'name': robot_data.get('name', ''),
-            'serialNumber': robot_data.get('serialNumber', '')
+            'names': normalize_robot_value(robot_data.get('name') or robot_data.get('names')),
+            'serialNumbers': normalize_robot_value(robot_data.get('serialNumber') or robot_data.get('serialNumbers'))
         }
 
     def _parse_custom_dates(self) -> Optional[Dict[str, str]]:
@@ -216,18 +240,80 @@ class ReportConfig:
         return current_period, previous_period
 
     def get_target_robots(self) -> List[str]:
-        """Get list of target robot serial numbers based on configuration"""
+        """Get list of target robot serial numbers based on configuration - Enhanced for multiple selections"""
         # NOTE: This method returns empty list if location-based or name-based selection
         # Actual robot resolution is handled by RobotLocationResolver in the generator
 
-        # Only return direct serial number if specified
-        robot_sn = self.robot.get('serialNumber', '').strip()
-        if robot_sn:
-            return [robot_sn]
+        # Only return direct serial numbers if specified
+        robot_sns = self.robot.get('serialNumbers', [])
+        if robot_sns:
+            return robot_sns
 
         # For all other cases (name-based or location-based), return empty list
         # The ReportGenerator will handle the resolution using RobotLocationResolver
         return []
+
+    def has_location_criteria(self) -> bool:
+        """Check if any location criteria are specified"""
+        return any(self.location.get(key, []) for key in ['countries', 'states', 'cities', 'buildings'])
+
+    def has_robot_criteria(self) -> bool:
+        """Check if any robot criteria are specified"""
+        return any(self.robot.get(key, []) for key in ['names', 'serialNumbers'])
+
+    def get_location_summary(self) -> str:
+        """Get human-readable summary of location criteria"""
+        summaries = []
+
+        if self.location.get('countries'):
+            countries = self.location['countries']
+            if len(countries) == 1:
+                summaries.append(f"Country: {countries[0]}")
+            else:
+                summaries.append(f"Countries: {', '.join(countries)}")
+
+        if self.location.get('states'):
+            states = self.location['states']
+            if len(states) == 1:
+                summaries.append(f"State: {states[0]}")
+            else:
+                summaries.append(f"States: {', '.join(states)}")
+
+        if self.location.get('cities'):
+            cities = self.location['cities']
+            if len(cities) == 1:
+                summaries.append(f"City: {cities[0]}")
+            else:
+                summaries.append(f"Cities: {', '.join(cities)}")
+
+        if self.location.get('buildings'):
+            buildings = self.location['buildings']
+            if len(buildings) == 1:
+                summaries.append(f"Building: {buildings[0]}")
+            else:
+                summaries.append(f"Buildings: {len(buildings)} selected")
+
+        return "; ".join(summaries) if summaries else "All locations"
+
+    def get_robot_summary(self) -> str:
+        """Get human-readable summary of robot criteria"""
+        summaries = []
+
+        if self.robot.get('names'):
+            names = self.robot['names']
+            if len(names) == 1:
+                summaries.append(f"Robot: {names[0]}")
+            else:
+                summaries.append(f"Robots: {len(names)} by name")
+
+        if self.robot.get('serialNumbers'):
+            sns = self.robot['serialNumbers']
+            if len(sns) == 1:
+                summaries.append(f"Robot SN: {sns[0]}")
+            else:
+                summaries.append(f"Robots: {len(sns)} by serial number")
+
+        return "; ".join(summaries) if summaries else "All robots"
 
     def get_eventbridge_schedule_expression(self) -> Optional[str]:
         """Generate EventBridge cron expression for scheduled reports"""
@@ -263,7 +349,6 @@ class ReportConfig:
             'content_categories': self.content_categories,
             'location': self.location,
             'robot': self.robot,
-            'robot_types': self.robot_types,
             'time_range': self.time_range,
             'custom_date_range': self.custom_date_range,
             'detail_level': self.detail_level.value,

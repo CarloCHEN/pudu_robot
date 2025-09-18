@@ -122,3 +122,11 @@ tables:
       primary_keys: ["id"]
       fields: null
       description: "Support ticket event reports"
+
+  # Reports management table
+  mnt_reports:
+    - database: "project"
+      table_name: "mnt_reports"
+      primary_keys: ["id"]
+      fields: null
+      description: "Reports management table for storing report URLs and status in project database"

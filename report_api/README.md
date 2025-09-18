@@ -10,6 +10,7 @@ This API provides asynchronous report generation capabilities for robot manageme
 
 - **Async Report Generation**: Non-blocking report generation using FastAPI background tasks
 - **Multi-Region Support**: Automatic S3 bucket selection based on AWS region
+- **Fixed URL via ALB**: Application Load Balancer provides permanent endpoint that never changes
 - **Status Tracking**: Real-time status updates for report generation requests
 - **S3 Integration**: Automatic upload to configured S3 buckets with organized folder structure
 - **Report History**: Retrieve historical reports for customers
@@ -23,8 +24,11 @@ report_api/
 ├── Dockerfile                           # Container configuration
 ├── requirements.txt                     # Python dependencies
 ├── setup-environment.sh                # Environment setup script
-├── deploy.sh                           # Deployment script
-├── Makefile                            # Build automation
+├── setup-alb.sh                        # ALB infrastructure setup
+├── deploy-with-alb.sh                  # ECS deployment with ALB
+├── quick-deploy.sh                     # Fast redeploy for code changes
+├── deploy.sh                           # Docker image deployment
+├── Makefile                            # Build automation with ALB support
 └── README.md                           # This file
 
 src/pudu/reporting/services/
@@ -45,40 +49,55 @@ reports/{customer_id}/{year}/{month}/{timestamp}_robot_performance_report.html
 
 ## Quick Start
 
-### 1. Setup Environment
+### 1. Setup Environment with ALB (Recommended)
 
-Choose your target region and setup configuration files:
+Choose your target region and deploy with fixed URL:
 
 ```bash
 # Navigate to report_api directory
 cd report_api
 
-# For us-east-2 (production)
-make setup-us-east-2
+# Complete ALB setup for us-east-1 (one command)
+make deploy-us-east-1-alb
 
-# For us-east-1 (test)
-make setup-us-east-1
+# Complete ALB setup for us-east-2 (one command)
+make deploy-us-east-2-alb
 ```
 
 This creates:
 - `.env` - Deployment variables
 - `app.env` - Application environment variables
-- `database_config.yaml` - Database configuration
+- `alb-config.env` - ALB configuration
+- Application Load Balancer with fixed URL
+- ECS service connected to ALB
 
-### 2. Deploy to AWS ECS
+### 2. Daily Development (Code Changes)
 
 ```bash
-# One-step deployment to us-east-2
-make deploy-us-east-2
+# Fast redeploy after code changes (2-3 minutes)
+make quick-deploy
 
-# One-step deployment to us-east-1
-make deploy-us-east-1
+# Check service status
+make status
 
-# Or deploy with current configuration
+# Test API
+make test-api
+```
+
+### 3. Legacy Deployment (Changing IP)
+
+```bash
+# For us-east-2 (production)
+make setup-us-east-2
+
+# For us-east-1 (test)
+make setup-us-east-1
+
+# Deploy
 make deploy-container
 ```
 
-### 3. Test Locally
+### 4. Test Locally
 
 ```bash
 # Install dependencies
@@ -96,6 +115,14 @@ make test-api
 
 ## API Endpoints
 
+### Fixed URL (ALB)
+After ALB setup, your API will be available at a fixed URL like:
+```
+http://monitor-report-api-alb-1071100458.us-east-1.elb.amazonaws.com
+```
+
+This URL **never changes** regardless of deployments!
+
 ### Generate Report
 ```http
 POST /api/reports/generate
@@ -110,10 +137,13 @@ Content-Type: application/json
     "detailLevel": "detailed",
     "delivery": "in-app",
     "schedule": "immediate",
+    "mainkey": 1,
+    "reportName": "Customer Report",
+    "outputFormat": "html",
     "location": {
-      "country": "US",
-      "state": "Ohio",
-      "city": "",
+      "country": "us",
+      "state": "fl",
+      "city": "gainesville",
       "building": ""
     },
     "robot": {
@@ -201,14 +231,15 @@ DELETE /api/reports/delete?customer_id=customer-123&report_key=reports/customer-
    make install-deps
    ```
 
-3. **Setup environment:**
+3. **Setup environment with ALB:**
    ```bash
-   make setup-us-east-2  # or us-east-1
+   make deploy-us-east-1-alb  # Creates fixed URL
    ```
 
 4. **Verify configuration:**
    ```bash
    make verify-config
+   make status  # Check ALB and service health
    ```
 
 5. **Test S3 access:**
@@ -216,15 +247,14 @@ DELETE /api/reports/delete?customer_id=customer-123&report_key=reports/customer-
    make check-bucket
    ```
 
-6. **Run locally:**
+6. **For local development:**
    ```bash
    make test-local
    ```
 
 7. **Test API endpoints:**
    ```bash
-   # In another terminal
-   make test-api
+   make test-api  # Tests ALB endpoint
    ```
 
 ### Docker Development
@@ -246,9 +276,28 @@ DELETE /api/reports/delete?customer_id=customer-123&report_key=reports/customer-
 
 ## Deployment Guide
 
-### Automated Deployment (Recommended)
+### ALB Deployment (Recommended)
 
-The Makefile provides one-command deployment:
+The ALB deployment provides a **fixed URL that never changes**:
+
+```bash
+# Complete setup and deployment to us-east-1 with fixed URL
+make deploy-us-east-1-alb
+
+# Complete setup and deployment to us-east-2 with fixed URL
+make deploy-us-east-2-alb
+
+# Quick redeploy for code changes (existing ALB)
+make quick-deploy
+```
+
+Benefits:
+- ✅ Fixed URL - developers never need to update endpoints
+- ✅ Zero downtime deployments
+- ✅ Automatic health checks
+- ✅ Load balancing ready
+
+### Legacy Deployment (Changing IP)
 
 ```bash
 # Complete setup and deployment to us-east-2
@@ -258,27 +307,23 @@ make deploy-us-east-2
 make deploy-us-east-1
 ```
 
-This will:
-1. Clean any existing configuration
-2. Setup environment for the target region
-3. Build and push Docker image to ECR
-4. Configure region-specific S3 buckets
+⚠️ **Warning**: This method gives you a new IP address each deployment.
 
-### Manual Deployment Steps
+### Manual ALB Setup Steps
 
 1. **Setup environment:**
    ```bash
-   ./setup-environment.sh us-east-2
+   ./setup-environment.sh us-east-1
    ```
 
-2. **Verify configuration:**
+2. **Create ALB infrastructure:**
    ```bash
-   make verify-config
+   ./setup-alb.sh
    ```
 
-3. **Deploy:**
+3. **Deploy ECS with ALB:**
    ```bash
-   ./deploy.sh
+   ./deploy-with-alb.sh
    ```
 
 ### ECS Task Configuration
@@ -286,8 +331,9 @@ This will:
 When deploying to ECS, ensure these environment variables are set:
 
 ```bash
-AWS_REGION=us-east-2
-S3_REPORTS_BUCKET=monitor-reports-archive
+AWS_REGION=us-east-1
+AWS_DEFAULT_REGION=us-east-1
+S3_REPORTS_BUCKET=monitor-reports-test-archive
 DATABASE_CONFIG_PATH=/app/database_config.yaml
 PORT=8000
 HOST=0.0.0.0
@@ -302,34 +348,15 @@ The API will automatically:
 
 ### API Testing
 
-```bash
-# Test report generation
-curl -X POST http://localhost:8000/api/reports/generate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "customer_id": "test-customer",
-    "form_data": {
-      "service": "robot-management",
-      "location": {
-        "country": "us",
-        "state": "fl",
-        "city": "gainesville"
-      },
-      "contentCategories": ["charging-performance", "cleaning-performance", "resource-utilization", "financial-performance"],
-      "timeRange": "custom",
-      "customStartDate": "2025-08-20",
-      "customEndDate": "2025-09-09",
-      "detailLevel": "detailed",
-      "delivery": "in-app",
-      "schedule": "immediate"
-    }
-  }'
+**Note**: Replace `monitor-report-api-alb-1071100458.us-east-1.elb.amazonaws.com` with your actual ALB DNS name from deployment output.
 
-# Cloud testing
-curl -X POST http://54.163.54.190:8000/api/reports/generate \
+```bash
+# Single building report
+curl -X POST http://monitor-report-api-alb-1071100458.us-east-1.elb.amazonaws.com/api/reports/generate \
   -H "Content-Type: application/json" \
   -d '{
     "customer_id": "UF2",
+    "mainkey": 1,
     "form_data": {
       "service": "robot-management",
       "location": {
@@ -339,8 +366,7 @@ curl -X POST http://54.163.54.190:8000/api/reports/generate \
         "building": "Building 43 Marston Science Library"
       },
       "contentCategories": ["charging-performance", "cleaning-performance", "resource-utilization", "financial-performance"],
-      "mainkey": "123",
-      "reportName": "UF Report",
+      "reportName": "UF Single Building Report",
       "outputFormat": "html",
       "timeRange": "custom",
       "customStartDate": "2025-09-01",
@@ -348,11 +374,37 @@ curl -X POST http://54.163.54.190:8000/api/reports/generate \
       "detailLevel": "detailed"
     }
   }'
-# email - pending
-curl -X POST http://34.238.51.145:8000/api/reports/generate \
+
+# Multiple buildings report
+curl -X POST http://monitor-report-api-alb-1071100458.us-east-1.elb.amazonaws.com/api/reports/generate \
   -H "Content-Type: application/json" \
   -d '{
-    "customer_id": "test-customer",
+    "customer_id": "UF2",
+    "mainkey": 1,
+    "form_data": {
+      "service": "robot-management",
+      "location": {
+        "country": "us",
+        "state": "fl",
+        "city": "gainesville",
+        "building": ["Building 43 Marston Science Library", "Building 205 Dental Science"]
+      },
+      "contentCategories": ["charging-performance", "cleaning-performance", "resource-utilization", "financial-performance"],
+      "reportName": "UF Multiple Buildings Report",
+      "outputFormat": "html",
+      "timeRange": "custom",
+      "customStartDate": "2025-09-01",
+      "customEndDate": "2025-09-12",
+      "detailLevel": "detailed"
+    }
+  }'
+
+# All buildings in city (ignore building field)
+curl -X POST http://monitor-report-api-alb-1071100458.us-east-1.elb.amazonaws.com/api/reports/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "customer_id": "UF2",
+    "mainkey": 1,
     "form_data": {
       "service": "robot-management",
       "location": {
@@ -361,20 +413,109 @@ curl -X POST http://34.238.51.145:8000/api/reports/generate \
         "city": "gainesville"
       },
       "contentCategories": ["charging-performance", "cleaning-performance", "resource-utilization", "financial-performance"],
+      "reportName": "UF All Buildings Report",
+      "outputFormat": "html",
       "timeRange": "custom",
-      "customStartDate": "2025-08-20",
-      "customEndDate": "2025-09-09",
-      "detailLevel": "detailed",
-      "delivery": "email",
-      "emailRecipients": ["jiaxuchen16@gmail.com"],
-      "schedule": "immediate"
+      "customStartDate": "2025-09-01",
+      "customEndDate": "2025-09-12",
+      "detailLevel": "detailed"
     }
   }'
+
+# Multiple robots by name
+curl -X POST http://monitor-report-api-alb-1071100458.us-east-1.elb.amazonaws.com/api/reports/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "customer_id": "UF2",
+    "mainkey": 1,
+    "form_data": {
+      "service": "robot-management",
+      "robot": {
+        "name": ["Building_205_Dental_Science", "Building_43_Marston_Library"]
+      },
+      "contentCategories": ["charging-performance", "cleaning-performance", "resource-utilization", "financial-performance"],
+      "reportName": "UF Robot Names Report",
+      "outputFormat": "html",
+      "timeRange": "custom",
+      "customStartDate": "2025-09-01",
+      "customEndDate": "2025-09-12",
+      "detailLevel": "detailed"
+    }
+  }'
+
+# Single robot by serial number with PDF output
+curl -X POST http://monitor-report-api-alb-1071100458.us-east-1.elb.amazonaws.com/api/reports/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "customer_id": "UF2",
+    "mainkey": 1,
+    "form_data": {
+      "service": "robot-management",
+      "robot": {
+        "serialNumber": ["811135422060216"]
+      },
+      "contentCategories": ["charging-performance", "cleaning-performance", "resource-utilization", "financial-performance"],
+      "reportName": "UF Single Robot PDF Report",
+      "outputFormat": "pdf",
+      "timeRange": "last-7-days",
+      "detailLevel": "detailed"
+    }
+  }'
+
+# Last 30 days with predefined time range
+curl -X POST http://monitor-report-api-alb-1071100458.us-east-1.elb.amazonaws.com/api/reports/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "customer_id": "UF2",
+    "mainkey": 1,
+    "form_data": {
+      "service": "robot-management",
+      "location": {
+        "country": "us",
+        "state": "fl",
+        "city": "gainesville"
+      },
+      "contentCategories": ["charging-performance", "cleaning-performance", "resource-utilization", "financial-performance"],
+      "reportName": "UF Last 30 Days Report",
+      "outputFormat": "html",
+      "timeRange": "last-30-days",
+      "detailLevel": "detailed"
+    }
+  }'
+
+# Email delivery (when email service is configured)
+curl -X POST http://monitor-report-api-alb-1071100458.us-east-1.elb.amazonaws.com/api/reports/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "customer_id": "UF2",
+      "mainkey": 1,
+    "form_data": {
+      "service": "robot-management",
+      "location": {
+        "country": "us",
+        "state": "fl",
+        "city": "gainesville"
+      },
+      "contentCategories": ["charging-performance", "cleaning-performance", "resource-utilization", "financial-performance"],
+      "reportName": "UF Email Report",
+      "outputFormat": "html",
+      "timeRange": "custom",
+      "customStartDate": "2025-09-01",
+      "customEndDate": "2025-09-12",
+      "detailLevel": "detailed",
+      "delivery": "email",
+      "emailRecipients": ["user@example.com"]
+    }
+  }'
+
 # Check status (use request_id from above response)
-curl http://localhost:8000/api/reports/status/{request_id}
+curl http://monitor-report-api-alb-1071100458.us-east-1.elb.amazonaws.com/api/reports/status/{request_id}
 
 # Get report history
-curl http://localhost:8000/api/reports/history/test-customer
+curl http://monitor-report-api-alb-1071100458.us-east-1.elb.amazonaws.com/api/reports/history/UF2
+
+# Health check
+curl http://monitor-report-api-alb-1071100458.us-east-1.elb.amazonaws.com/api/reports/health
 ```
 
 ### Configuration Testing
@@ -385,6 +526,9 @@ make verify-config
 
 # Test S3 bucket access
 make check-bucket
+
+# Check ALB and service status
+make status
 
 # Test database connectivity (if configured)
 python -c "from pudu.configs.database_config_loader import DynamicDatabaseConfig; print('DB Config OK')"
@@ -410,18 +554,27 @@ python -c "from pudu.configs.database_config_loader import DynamicDatabaseConfig
    - Verify RDS endpoint and credentials
    - Check VPC security groups
    - Validate database exists
+   - Ensure ECS task role has RDS permissions
 
-3. **Docker Build Fails**
+3. **ALB Health Checks Failing**
+   ```bash
+   make status  # Check comprehensive status
+   ```
+   - Verify ECS service is running
+   - Check security group allows ALB → ECS traffic
+   - Confirm `/api/reports/health` endpoint works
+
+4. **Docker Build Fails**
    ```bash
    make clean-docker  # Clean docker cache
    make build-local   # Rebuild
    ```
 
-4. **Report Generation Timeout**
+5. **Report Generation Timeout**
    - Check database query performance
    - Verify adequate compute resources
    - Review data volume for date range
-   - Check logs: `docker logs <container_id>`
+   - Check ECS task logs in CloudWatch
 
 ### Debug Commands
 
@@ -432,32 +585,58 @@ make verify-config
 # Test bucket access
 make check-bucket
 
+# Check ALB status
+make status
+
 # View environment variables
 cat .env
 cat app.env
+cat alb-config.env
 
 # Test imports
 python -c "from pudu.reporting.core.report_config import ReportConfig; print('Imports OK')"
 
 # Clean and restart
 make clean-config
-make setup-us-east-2
+make deploy-us-east-1-alb
+```
+
+### ALB-Specific Troubleshooting
+
+```bash
+# Check ALB status
+make status
+
+# Test ALB endpoint directly
+curl http://your-alb-dns-name/api/reports/health
+
+# Check ECS service logs
+aws logs tail /ecs/monitor-report-api --follow --region us-east-1
+
+# Verify ALB target health
+aws elbv2 describe-target-health --target-group-arn your-target-group-arn --region us-east-1
 ```
 
 ### Monitoring
 
 #### Health Checks
 ```bash
-# API health
-curl http://localhost:8000/api/reports/health
+# API health via ALB
+curl http://monitor-report-api-alb-1071100458.us-east-1.elb.amazonaws.com/api/reports/health
 
-# Container health (if running in Docker)
+# ALB and ECS status
+make status
+
+# Container health (if running locally)
 docker ps
 ```
 
 #### Logs
 ```bash
-# Application logs
+# ECS logs (CloudWatch)
+aws logs tail /ecs/monitor-report-api --follow --region us-east-1
+
+# Local container logs
 docker logs <container_id>
 
 # Follow logs
@@ -468,7 +647,8 @@ docker logs -f <container_id>
 Monitor these metrics:
 - Report generation time (`/api/reports/status/{id}`)
 - S3 upload success rate
-- API response times
+- API response times via ALB
+- ALB target health status
 - Error rates by endpoint
 
 ## Security
@@ -484,12 +664,20 @@ The API requires these AWS permissions:
 - `s3:ListBucket` - List customer reports
 
 **RDS Permissions:**
-- Database connection permissions via RDS secrets
+- `rds:DescribeDBInstances` - RDS connections
+- `secretsmanager:GetSecretValue` - Database credentials
 
 **ECR Permissions:**
 - `ecr:GetAuthorizationToken`
 - `ecr:BatchCheckLayerAvailability`
 - `ecr:BatchGetImage`
+
+### ALB Security
+
+- ALB security group allows HTTP traffic from internet
+- ECS security group allows traffic only from ALB
+- ECS tasks run in private subnets with public IP for S3/RDS access
+- IAM roles provide least-privilege access
 
 ### Best Practices
 
@@ -498,6 +686,7 @@ The API requires these AWS permissions:
 - Configure VPC security groups appropriately
 - Implement proper logging and monitoring
 - Use secrets manager for database credentials
+- ALB provides SSL termination capability (configure HTTPS)
 
 ## Maintenance
 
@@ -506,6 +695,9 @@ The API requires these AWS permissions:
 ```bash
 # Clean configuration files
 make clean-config
+
+# Clean failed deployments
+make clean-failed-deployment
 
 # Clean Docker images
 make clean-docker
@@ -516,13 +708,25 @@ make clean-config clean-docker
 
 ### Updates
 
+For code changes with ALB setup:
+
+```bash
+# Quick update (2-3 minutes)
+make quick-deploy
+
+# Check status
+make status
+```
+
+For infrastructure changes:
+
 ```bash
 # Update dependencies
 pip install -r requirements.txt
 
-# Rebuild and redeploy
-make clean-docker
-make deploy-us-east-2
+# Full redeploy
+make clean-config
+make deploy-us-east-1-alb
 ```
 
 ## Support
@@ -530,7 +734,9 @@ make deploy-us-east-2
 For issues or questions:
 
 1. Check this troubleshooting section
-2. Review logs with `docker logs <container_id>`
-3. Verify configuration with `make verify-config`
-4. Test bucket access with `make check-bucket`
-5. Check AWS credentials with `aws sts get-caller-identity`
+2. Run `make status` to check ALB and service health
+3. Review logs with `aws logs tail /ecs/monitor-report-api --follow`
+4. Verify configuration with `make verify-config`
+5. Test bucket access with `make check-bucket`
+6. Check AWS credentials with `aws sts get-caller-identity`
+7. For ALB issues, check target group health in AWS Console

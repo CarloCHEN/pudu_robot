@@ -1,24 +1,24 @@
 # src/pudu/reporting/services/robot_location_resolver.py
 import logging
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Union
 from pudu.rds.rdsTable import RDSTable
 from pudu.configs.database_config_loader import DynamicDatabaseConfig
 
 logger = logging.getLogger(__name__)
 
 class RobotLocationResolver:
-    """Service to resolve robots based on location criteria (building, city, state, country)"""
+    """Service to resolve robots based on location criteria (building, city, state, country) and robot names/SNs"""
 
     def __init__(self, config: DynamicDatabaseConfig):
         self.config = config
         self.connection_config = "credentials.yaml"
 
-    def resolve_robots_by_location(self, location_criteria: Dict[str, str]) -> List[str]:
+    def resolve_robots_by_location(self, location_criteria: Dict[str, Union[str, List[str]]]) -> List[str]:
         """
-        Resolve robot serial numbers based on location criteria
+        Resolve robot serial numbers based on location criteria - Enhanced for multiple selections
 
         Args:
-            location_criteria: Dict with keys: country, state, city, building
+            location_criteria: Dict with keys: countries, states, cities, buildings (each can be string or list)
 
         Returns:
             List of robot serial numbers matching criteria
@@ -26,6 +26,9 @@ class RobotLocationResolver:
         logger.info(f"Resolving robots by location: {location_criteria}")
 
         try:
+            # Convert old format to new format for backward compatibility
+            location_criteria = self._normalize_location_criteria(location_criteria)
+
             # If no location criteria specified, return all robots
             if not any(location_criteria.values()):
                 return self._get_all_robots()
@@ -47,45 +50,142 @@ class RobotLocationResolver:
             logger.error(f"Error resolving robots by location: {e}")
             return []
 
-    def resolve_robots_by_name_or_sn(self, robot_name: str = None, robot_sn: str = None) -> List[str]:
+    def resolve_robots_by_name_or_sn(self, robot_names: Union[str, List[str]] = None,
+                                   robot_sns: Union[str, List[str]] = None) -> List[str]:
         """
-        Resolve robots by specific name or serial number
+        Resolve robots by specific names or serial numbers - Enhanced for multiple selections
 
         Args:
-            robot_name: Specific robot name
-            robot_sn: Specific robot serial number
+            robot_names: Single robot name or list of robot names
+            robot_sns: Single robot serial number or list of serial numbers
 
         Returns:
-            List of robot serial numbers (usually just one)
+            List of robot serial numbers
         """
-        logger.info(f"Resolving robots by name='{robot_name}' or sn='{robot_sn}'")
+        logger.info(f"Resolving robots by names={robot_names} or sns={robot_sns}")
 
         try:
-            # If serial number provided, return it directly (after validation)
-            if robot_sn:
-                if self._validate_robot_exists(robot_sn):
-                    return [robot_sn]
-                else:
-                    logger.warning(f"Robot with SN '{robot_sn}' not found")
-                    return []
+            all_robots = []
 
-            # If robot name provided, find by name
-            if robot_name:
-                robots = self._get_robots_by_name(robot_name)
-                logger.info(f"Found {len(robots)} robots with name '{robot_name}'")
-                return robots
+            # Handle serial numbers
+            if robot_sns:
+                sns_list = robot_sns if isinstance(robot_sns, list) else [robot_sns]
+                for sn in sns_list:
+                    if sn and self._validate_robot_exists(sn):
+                        all_robots.append(sn)
+                    elif sn:
+                        logger.warning(f"Robot with SN '{sn}' not found")
 
-            return []
+            # Handle robot names
+            if robot_names:
+                names_list = robot_names if isinstance(robot_names, list) else [robot_names]
+                for name in names_list:
+                    if name:
+                        robots = self._get_robots_by_name(name)
+                        all_robots.extend(robots)
+                        logger.info(f"Found {len(robots)} robots with name '{name}'")
+
+            # Remove duplicates while preserving order
+            unique_robots = list(dict.fromkeys(all_robots))
+            logger.info(f"Total unique robots found: {len(unique_robots)}")
+            return unique_robots
 
         except Exception as e:
             logger.error(f"Error resolving robots by name/SN: {e}")
             return []
 
-    def _get_buildings_by_location(self, location_criteria: Dict[str, str]) -> List[str]:
-        """Get building IDs that match location criteria"""
+    def resolve_robots_combined(self, location_criteria: Dict[str, Union[str, List[str]]] = None,
+                              robot_names: Union[str, List[str]] = None,
+                              robot_sns: Union[str, List[str]] = None) -> List[str]:
+        """
+        Resolve robots using both location and robot criteria - NEW METHOD
+
+        Args:
+            location_criteria: Location criteria (countries, states, cities, buildings)
+            robot_names: Robot names
+            robot_sns: Robot serial numbers
+
+        Returns:
+            List of robot serial numbers matching ALL criteria (intersection)
+        """
+        logger.info("Resolving robots using combined criteria")
+
+        try:
+            result_sets = []
+
+            # Get robots by location if specified
+            if location_criteria and any(location_criteria.values()):
+                location_robots = self.resolve_robots_by_location(location_criteria)
+                if location_robots:
+                    result_sets.append(set(location_robots))
+                    logger.info(f"Found {len(location_robots)} robots by location")
+                else:
+                    logger.info("No robots found by location criteria")
+                    return []  # If location specified but no robots found, return empty
+
+            # Get robots by names/SNs if specified
+            if robot_names or robot_sns:
+                name_sn_robots = self.resolve_robots_by_name_or_sn(robot_names, robot_sns)
+                if name_sn_robots:
+                    result_sets.append(set(name_sn_robots))
+                    logger.info(f"Found {len(name_sn_robots)} robots by name/SN")
+                else:
+                    logger.info("No robots found by name/SN criteria")
+                    return []  # If names/SNs specified but no robots found, return empty
+
+            # If no criteria specified, return all robots
+            if not result_sets:
+                all_robots = self._get_all_robots()
+                logger.info(f"No criteria specified, returning all {len(all_robots)} robots")
+                return all_robots
+
+            # Find intersection of all criteria
+            final_robots = list(result_sets[0])
+            for robot_set in result_sets[1:]:
+                final_robots = [r for r in final_robots if r in robot_set]
+
+            logger.info(f"Final result after combining criteria: {len(final_robots)} robots")
+            return final_robots
+
+        except Exception as e:
+            logger.error(f"Error resolving robots with combined criteria: {e}")
+            return []
+
+    def _normalize_location_criteria(self, location_criteria: Dict[str, Union[str, List[str]]]) -> Dict[str, List[str]]:
+        """Normalize location criteria to support both old and new formats"""
+        normalized = {
+            'countries': [],
+            'states': [],
+            'cities': [],
+            'buildings': []
+        }
+
+        # Handle old format (singular keys)
+        for old_key, new_key in [('country', 'countries'), ('state', 'states'),
+                                ('city', 'cities'), ('building', 'buildings')]:
+            if old_key in location_criteria:
+                value = location_criteria[old_key]
+                if isinstance(value, str) and value.strip():
+                    normalized[new_key] = [value.strip()]
+                elif isinstance(value, list):
+                    normalized[new_key] = [v.strip() for v in value if v and v.strip()]
+
+        # Handle new format (plural keys)
+        for key in ['countries', 'states', 'cities', 'buildings']:
+            if key in location_criteria:
+                value = location_criteria[key]
+                if isinstance(value, str) and value.strip():
+                    normalized[key] = [value.strip()]
+                elif isinstance(value, list):
+                    normalized[key] = [v.strip() for v in value if v and v.strip()]
+
+        return normalized
+
+    def _get_buildings_by_location(self, location_criteria: Dict[str, List[str]]) -> List[str]:
+        """Get building IDs that match location criteria - for multiple selections and case-insensitive matching"""
         try:
             # Get building info table configurations
-            building_configs = self.config.get_all_table_configs('location')  # This queries pro_building_info
+            building_configs = self.config.get_all_table_configs('location')
 
             all_buildings = []
             for config in building_configs:
@@ -102,15 +202,47 @@ class RobotLocationResolver:
                     # Build WHERE clause based on provided criteria
                     where_conditions = []
 
-                    if location_criteria.get('country'):
-                        where_conditions.append(f"country = '{location_criteria['country'].upper()}'")
-                    if location_criteria.get('state'):
-                        where_conditions.append(f"state = '{location_criteria['state'].upper()}'")
-                    if location_criteria.get('city'):
-                        where_conditions.append(f"city = '{location_criteria['city'].upper()}'")
-                    if location_criteria.get('building'):
-                        building_val = location_criteria['building']
-                        where_conditions.append(f"(building_name LIKE '%{building_val}%' OR building_name = '{building_val}')")
+                    # Handle multiple countries (case-insensitive)
+                    if location_criteria.get('countries'):
+                        countries = location_criteria['countries']
+                        if len(countries) == 1:
+                            where_conditions.append(f"UPPER(country) = UPPER('{countries[0]}')")
+                        else:
+                            # Escape single quotes and build case-insensitive IN clause
+                            country_list = "', '".join([c.replace("'", "''") for c in countries])
+                            where_conditions.append(f"UPPER(country) IN (UPPER('{country_list}'))")
+
+                    # Handle multiple states (case-insensitive)
+                    if location_criteria.get('states'):
+                        states = location_criteria['states']
+                        if len(states) == 1:
+                            where_conditions.append(f"UPPER(state) = UPPER('{states[0]}')")
+                        else:
+                            # Escape single quotes and build case-insensitive IN clause
+                            state_list = "', '".join([s.replace("'", "''") for s in states])
+                            where_conditions.append(f"UPPER(state) IN (UPPER('{state_list}'))")
+
+                    # Handle multiple cities (case-insensitive)
+                    if location_criteria.get('cities'):
+                        cities = location_criteria['cities']
+                        if len(cities) == 1:
+                            where_conditions.append(f"UPPER(city) = UPPER('{cities[0]}')")
+                        else:
+                            # Escape single quotes and build case-insensitive IN clause
+                            city_list = "', '".join([c.replace("'", "''") for c in cities])
+                            where_conditions.append(f"UPPER(city) IN (UPPER('{city_list}'))")
+
+                    # Handle multiple buildings (case-insensitive partial matching)
+                    if location_criteria.get('buildings'):
+                        buildings = location_criteria['buildings']
+                        building_conditions = []
+                        for building in buildings:
+                            # Escape single quotes for SQL safety
+                            escaped_building = building.replace("'", "''")
+                            building_conditions.append(
+                                f"(UPPER(building_name) LIKE UPPER('%{escaped_building}%') OR UPPER(building_name) = UPPER('{escaped_building}'))"
+                            )
+                        where_conditions.append(f"({' OR '.join(building_conditions)})")
 
                     where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
 
@@ -144,8 +276,11 @@ class RobotLocationResolver:
     def _get_robots_by_buildings(self, building_ids: List[str]) -> List[str]:
         """Get robots located in specific buildings"""
         try:
+            if not building_ids:
+                return []
+
             # Get robot management table configurations
-            robot_configs = self.config.get_all_table_configs('robot_status')  # This queries mnt_robots_management
+            robot_configs = self.config.get_all_table_configs('robot_status')
 
             all_robots = []
             for config in robot_configs:
@@ -190,7 +325,7 @@ class RobotLocationResolver:
             return []
 
     def _get_robots_by_name(self, robot_name: str) -> List[str]:
-        """Get robots by name"""
+        """Get robots by name - supports partial matching"""
         try:
             robot_configs = self.config.get_all_table_configs('robot_status')
 
