@@ -33,22 +33,20 @@ if __name__ == "__main__":
     test_form_data = {
         'service': 'robot-management',
         'contentCategories': ['charging-performance', 'cleaning-performance', 'resource-utilization', 'financial-performance'],
+        'timeRange': 'custom',
         "location": {
             "country": "us",
             "state": "fl",
             "city": "gainesville"
         },
-        'mainKey': '123',
-        'outputFormat': 'pdf', # html, pdf
-        'reportName': 'UF Report', # user provided report name
-        'timeRange': 'custom', # last-30-days, last-7-days, last-3-days, custom
+        'outputFormat': 'pdf',
+        'reportName': 'UF Report',
         'customStartDate': '2025-08-20',
         'customEndDate': '2025-09-09',
-        'detailLevel': 'detailed', # overview, detailed, in-depth
-        'delivery': 'in-app', # in-app ONLY
-        'schedule': 'immediate' # immediate ONLY
+        'detailLevel': 'detailed',
+        'delivery': 'in-app',
+        'schedule': 'immediate'
     }
-
     config = ReportConfig(test_form_data, 'test-customer-123')
 
     # Generate comprehensive report

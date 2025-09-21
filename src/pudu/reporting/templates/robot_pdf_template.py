@@ -448,6 +448,22 @@ class RobotPDFTemplate:
         if not robot_rows:
             robot_rows = '<tr><td colspan="8">No robot data available</td></tr>'
 
+        roi_breakdown_rows = ""
+        robot_roi_breakdown = cost_data.get('robot_roi_breakdown', {})
+        if robot_roi_breakdown:
+            for robot_sn, roi_data in list(robot_roi_breakdown.items())[:10]:  # Top 10 robots
+                roi_breakdown_rows += f'''
+                <tr>
+                    <td>{robot_sn}</td>
+                    <td>{roi_data.get('months_elapsed', 0)}</td>
+                    <td>${roi_data.get('investment', 0):,.0f}</td>
+                    <td>${roi_data.get('savings', 0):,.0f}</td>
+                    <td>{roi_data.get('roi_percent', 0):.1f}%</td>
+                </tr>'''
+
+        if not roi_breakdown_rows:
+            roi_breakdown_rows = '<tr><td colspan="5">No ROI breakdown available</td></tr>'
+
         return f"""
         <section id="executive-summary" class="section">
             <h2>📊 Executive Summary</h2>
@@ -530,6 +546,23 @@ class RobotPDFTemplate:
                 </thead>
                 <tbody>
                     {robot_rows}
+                </tbody>
+            </table>
+
+            <h3>💰 Individual Robot ROI Analysis</h3>
+            <p>Investment and ROI breakdown per robot based on ${cost_data.get('monthly_lease_price', 1500)}/month lease model.</p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Robot ID</th>
+                        <th>Months</th>
+                        <th>Investment</th>
+                        <th>Savings</th>
+                        <th>ROI</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {roi_breakdown_rows}
                 </tbody>
             </table>
         </section>"""
@@ -1016,12 +1049,12 @@ class RobotPDFTemplate:
         <section id="financial-performance" class="section">
             <h2>💰 Financial Performance</h2>
 
-            <p>Financial analysis based on actual resource usage: {safe_format(cost_data.get('cost_per_sqft', 0), '$', '/sq ft')} average cost per square foot, {safe_format(cost_data.get('total_cost', 0))} total operational cost, {cost_data.get('hours_saved', 0):.1f} hours saved compared to manual cleaning, and {safe_format(cost_data.get('savings', 0))} in realized savings.</p>
+            <p>Financial analysis based on actual resource usage and lease model: {safe_format(cost_data.get('cost_per_sqft', 0), '$', '/sq ft')} average cost per square foot, {safe_format(cost_data.get('total_cost', 0))} total operational cost, {cost_data.get('hours_saved', 0):.1f} hours saved compared to manual cleaning, {safe_format(cost_data.get('savings', 0))} in realized savings, and {cost_data.get('roi_improvement', 'N/A')} return on investment based on {safe_format(cost_data.get('total_investment', 0))} total lease investment.</p>
 
             <table>
                 <thead>
                     <tr>
-                        <th>Metric</th>
+                        <th>Operational Metric</th>
                         <th>Value</th>
                         <th>vs Previous Period</th>
                         <th>Notes</th>
@@ -1032,84 +1065,109 @@ class RobotPDFTemplate:
                         <td>Cost per Sq Ft</td>
                         <td>{safe_format(cost_data.get('cost_per_sqft', 0), '$', '/sq ft')}</td>
                         <td style="color: {get_comparison_color(comparisons.get('cost_per_sqft', 'N/A'), 'cost_per_sqft')};">{format_comparison(comparisons.get('cost_per_sqft', 'N/A'))}</td>
-                        <td>Water + energy cost per area cleaned</td>
+                        <td>Operational efficiency</td>
                     </tr>
                     <tr>
-                        <td>Total Cost</td>
+                        <td>Total Operational Cost</td>
                         <td>{safe_format(cost_data.get('total_cost', 0))}</td>
                         <td style="color: {get_comparison_color(comparisons.get('total_cost', 'N/A'), 'total_cost')};">{format_comparison(comparisons.get('total_cost', 'N/A'))}</td>
-                        <td>Robot operational cost this period</td>
+                        <td>Robot operational cost</td>
                     </tr>
                     <tr>
-                        <td>Savings</td>
-                        <td>{safe_format(cost_data.get('savings', 0))}</td>
-                        <td style="color: {get_comparison_color(comparisons.get('savings', 'N/A'), 'savings')};">{format_comparison(comparisons.get('savings', 'N/A'))}</td>
-                        <td>Savings vs manual cleaning (${cost_data.get('hourly_wage', 25)}/hr)</td>
+                        <td>ROI</td>
+                        <td>{cost_data.get('roi_improvement', 'N/A')}</td>
+                        <td style="color: {get_comparison_color(comparisons.get('roi_improvement', 'N/A'), 'roi')};">{format_comparison(comparisons.get('roi_improvement', 'N/A'))}</td>
+                        <td>Return on Investment</td>
                     </tr>
                     <tr>
-                        <td>Hours Saved vs Manual</td>
-                        <td>{cost_data.get('hours_saved', 0):.1f} hrs</td>
-                        <td style="color: {get_comparison_color(comparisons.get('hours_saved', 'N/A'), 'hours_saved')};">{format_comparison(comparisons.get('hours_saved', 'N/A'))}</td>
-                        <td>Time saved compared to manual cleaning</td>
+                        <td>Total Investment</td>
+                        <td>{safe_format(cost_data.get('total_investment', 0))}</td>
+                        <td style="color: {get_comparison_color(comparisons.get('total_investment', 'N/A'), 'total_investment')};">{format_comparison(comparisons.get('total_investment', 'N/A'))}</td>
+                        <td>Cumulative lease investment</td>
                     </tr>
                     <tr>
-                        <td>Annual Projected Savings</td>
-                        <td>{safe_format(cost_data.get('annual_projected_savings', 0))}</td>
-                        <td style="color: {get_comparison_color(comparisons.get('annual_projected_savings', 'N/A'), 'annual_projected_savings')};">{format_comparison(comparisons.get('annual_projected_savings', 'N/A'))}</td>
-                        <td>Projected annual savings</td>
+                        <td>Cost Efficiency</td>
+                        <td>{cost_data.get('cost_efficiency_improvement', 0):.1f}%</td>
+                        <td style="color: {get_comparison_color(comparisons.get('cost_efficiency_improvement', 'N/A'), 'cost_efficiency')};">{format_comparison(comparisons.get('cost_efficiency_improvement', 'N/A'))}</td>
+                        <td>Improvement vs manual</td>
                     </tr>
                     <tr>
-                        <td>ROI Impact</td>
-                        <td>N/A</td>
-                        <td>N/A</td>
-                        <td>Requires investment data</td>
+                        <td>Water Cost</td>
+                        <td>{safe_format(cost_data.get('water_cost', 0))}</td>
+                        <td style="color: {get_comparison_color(comparisons.get('water_cost', 'N/A'), 'water_cost')};">{format_comparison(comparisons.get('water_cost', 'N/A'))}</td>
+                        <td>Water resource cost</td>
+                    </tr>
+                    <tr>
+                        <td>Energy Cost</td>
+                        <td>{safe_format(cost_data.get('energy_cost', 0))}</td>
+                        <td style="color: {get_comparison_color(comparisons.get('energy_cost', 'N/A'), 'energy_cost')};">{format_comparison(comparisons.get('energy_cost', 'N/A'))}</td>
+                        <td>Energy resource cost</td>
                     </tr>
                 </tbody>
             </table>
-
+            <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #17a2b8;">
+                <h4 style="color: #17a2b8; margin-top: 0;">💡 ROI Calculation Method</h4>
+                <p><strong>ROI Formula:</strong> Cumulative Savings ÷ Total Investment × 100</p>
+                <p><strong>Investment:</strong> $1,500/month per robot × months elapsed (rounded up for billing)</p>
+                <p><strong>Cumulative Savings:</strong> All-time savings from first robot task to end of reporting period</p>
+            </div>
             {self._get_chart_image_html('financial_chart', 'Weekly Financial Performance')}
 
             <div class="highlight-box">
                 <h3>💡 Financial Impact Summary</h3>
                 <div class="metrics-grid">
                     <div style="text-align: center;">
-                        <div style="font-size: 16px; margin-bottom: 5px;"><strong>{safe_format(cost_data.get('total_cost', 0))}</strong></div>
-                        <div>Total operational cost</div>
-                        <div style="color: {get_comparison_color(comparisons.get('total_cost', 'N/A'), 'total_cost')}; font-size: 9px;">
-                            vs last: {format_comparison(comparisons.get('total_cost', 'N/A'))}
-                        </div>
-                    </div>
-                    <div style="text-align: center;">
                         <div style="font-size: 16px; margin-bottom: 5px;"><strong>{safe_format(cost_data.get('human_cost', 0))}</strong></div>
-                        <div>Equivalent manual cost</div>
+                        <div>Manual Cleaning Cost</div>
                         <div style="color: {get_comparison_color(comparisons.get('human_cost', 'N/A'), 'human_cost')}; font-size: 9px;">
                             vs last: {format_comparison(comparisons.get('human_cost', 'N/A'))}
                         </div>
                     </div>
                     <div style="text-align: center;">
                         <div style="font-size: 16px; margin-bottom: 5px;"><strong>{safe_format(cost_data.get('savings', 0))}</strong></div>
-                        <div>Savings realized</div>
+                        <div>Savings Realized</div>
                         <div style="color: {get_comparison_color(comparisons.get('savings', 'N/A'), 'savings')}; font-size: 9px;">
                             vs last: {format_comparison(comparisons.get('savings', 'N/A'))}
                         </div>
                     </div>
                     <div style="text-align: center;">
+                        <div style="font-size: 16px; margin-bottom: 5px;"><strong>{cost_data.get('hours_saved', 0):.1f} hrs</strong></div>
+                        <div>Hours Saved vs Manual</div>
+                        <div style="color: {get_comparison_color(comparisons.get('hours_saved', 'N/A'), 'hours_saved')}; font-size: 9px;">
+                            vs last: {format_comparison(comparisons.get('hours_saved', 'N/A'))}
+                        </div>
+                    </div>
+                    <div style="text-align: center;">
                         <div style="font-size: 16px; margin-bottom: 5px;"><strong>{safe_format(cost_data.get('annual_projected_savings', 0))}</strong></div>
-                        <div>Annual projected savings</div>
+                        <div>Annual Projected Savings</div>
                         <div style="color: {get_comparison_color(comparisons.get('annual_projected_savings', 'N/A'), 'annual_projected_savings')}; font-size: 9px;">
                             vs last: {format_comparison(comparisons.get('annual_projected_savings', 'N/A'))}
                         </div>
                     </div>
                     <div style="text-align: center;">
-                        <div style="font-size: 16px; margin-bottom: 5px;"><strong>{cost_data.get('hours_saved', 0):.1f} hrs</strong></div>
-                        <div>Hours saved vs manual</div>
-                        <div style="color: {get_comparison_color(comparisons.get('hours_saved', 'N/A'), 'hours_saved')}; font-size: 9px;">
-                            vs last: {format_comparison(comparisons.get('hours_saved', 'N/A'))}
+                        <div style="font-size: 16px; margin-bottom: 5px;"><strong>{safe_format(cost_data.get('cumulative_savings', 0))}</strong></div>
+                        <div>Cumulative Savings</div>
+                        <div style="color: {get_comparison_color(comparisons.get('cumulative_savings', 'N/A'), 'cumulative_savings')}; font-size: 9px;">
+                            vs last: {format_comparison(comparisons.get('cumulative_savings', 'N/A'))}
+                        </div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 16px; margin-bottom: 5px;"><strong>{cost_data.get('payback_period', 'N/A')}</strong></div>
+                        <div>Payback Period</div>
+                        <div style="color: {get_comparison_color(comparisons.get('payback_months', 'N/A'), 'payback_months')}; font-size: 9px;">
+                            vs last: {format_comparison(comparisons.get('payback_months', 'N/A'))}
+                        </div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 16px; margin-bottom: 5px;"><strong>{safe_format(cost_data.get('monthly_savings_rate', 0), '$', '/month')}</strong></div>
+                        <div>Monthly Savings Rate</div>
+                        <div style="color: {get_comparison_color(comparisons.get('monthly_savings_rate', 'N/A'), 'monthly_savings_rate')}; font-size: 9px;">
+                            vs last: {format_comparison(comparisons.get('monthly_savings_rate', 'N/A'))}
                         </div>
                     </div>
                 </div>
                 <p style="margin-top: 15px; font-size: 10px; opacity: 0.8;">
-                    {cost_data.get('note', 'Cost calculations based on actual resource usage and human cleaning speed benchmarks.')}
+                    Financial calculations based on actual resource usage, ${cost_data.get('monthly_lease_price', 1500):,.0f}/month lease model, and human cleaning benchmarks.
                 </p>
             </div>
 
@@ -1249,6 +1307,7 @@ class RobotPDFTemplate:
         task_data = content.get('task_performance', {})
         resource_data = content.get('resource_utilization', {})
         charging_data = content.get('charging_performance', {})
+        cost_data = content.get('cost_analysis', {})
 
         period = content.get('period', 'the reporting period')
 
@@ -1260,15 +1319,13 @@ class RobotPDFTemplate:
         return f"""
         <section id="conclusion" class="section">
             <h2>🎯 Conclusion</h2>
-
             <div class="highlight-box">
                 <p>{period.title()} performance summary: {format_value(task_data.get('completion_rate', 0), '%')} task completion rate across
                 {format_value(fleet_data.get('total_robots', 0))} robot(s),
                 {format_value(task_data.get('total_tasks', 0))} tasks completed,
                 {format_value(resource_data.get('total_area_cleaned_sqft', 0))} sq ft cleaned,
                 {format_value(charging_data.get('total_sessions', 0))} charging sessions,
-                {format_value(resource_data.get('total_energy_consumption_kwh', 0))} kWh energy consumption,
-                and {format_value(resource_data.get('total_water_consumption_floz', 0))} fl oz water usage.</p>
+                and {cost_data.get('roi_improvement', 'N/A')} return on investment.</p>
             </div>
         </section>"""
 

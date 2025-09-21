@@ -702,7 +702,7 @@ class PerformanceMetricsCalculator:
 
     def calculate_daily_trends(self, tasks_data: pd.DataFrame, charging_data: pd.DataFrame,
                           start_date: str, end_date: str) -> Dict[str, List]:
-        """Calculate REAL daily trend data from actual database records"""
+        """Calculate REAL daily trend data from actual database records with REAL savings"""
         try:
             start_dt = datetime.strptime(start_date.split(' ')[0], '%Y-%m-%d')
             end_dt = datetime.strptime(end_date.split(' ')[0], '%Y-%m-%d')
@@ -718,7 +718,8 @@ class PerformanceMetricsCalculator:
                     'charging_duration_total': 0,
                     'charging_session_count': 0,
                     'energy_consumption': 0,
-                    'water_usage': 0
+                    'water_usage': 0,
+                    'daily_savings': 0  # NEW: Add daily savings tracking
                 }
                 current_date += timedelta(days=1)
 
@@ -737,6 +738,15 @@ class PerformanceMetricsCalculator:
                                 # REAL water usage
                                 water = float(task.get('water_consumption', 0) or 0)
                                 daily_data[date_str]['water_usage'] += water
+
+                                # NEW: Calculate daily savings
+                                area_sqm = float(task.get('actual_area', 0) or 0)
+                                area_sqft = area_sqm * 10.764
+                                human_hours = area_sqft / 8000.0  # Same constants as cost analysis
+                                human_cost = human_hours * 25.0
+                                # Robot cost is 0 (water and energy costs are 0)
+                                task_savings = max(0, human_cost)
+                                daily_data[date_str]['daily_savings'] += task_savings
                     except Exception as e:
                         logger.warning(f"Error processing task date: {e}")
                         continue
@@ -761,7 +771,7 @@ class PerformanceMetricsCalculator:
                         logger.warning(f"Error processing charging date: {e}")
                         continue
 
-            # Convert to lists for charts with REAL calculated averages
+            # Convert to lists for charts with REAL calculated values
             dates = list(daily_data.keys())
             charging_sessions = [daily_data[date]['charging_sessions'] for date in dates]
 
@@ -776,13 +786,18 @@ class PerformanceMetricsCalculator:
             energy_consumption = [round(daily_data[date]['energy_consumption'], 1) for date in dates]
             water_usage = [round(daily_data[date]['water_usage'], 0) for date in dates]
 
-            logger.info(f"Calculated daily trends for {len(dates)} days with real data")
+            # NEW: REAL daily savings instead of placeholder
+            cost_savings_trend = [round(daily_data[date]['daily_savings'], 2) for date in dates]
+
+            logger.info(f"Calculated daily trends for {len(dates)} days with real savings data")
             return {
                 'dates': dates,
                 'charging_sessions_trend': charging_sessions,
                 'charging_duration_trend': charging_durations,
                 'energy_consumption_trend': energy_consumption,
-                'water_usage_trend': water_usage
+                'water_usage_trend': water_usage,
+                'cost_savings_trend': cost_savings_trend,  # REAL data instead of [0] * len
+                'roi_improvement_trend': [0] * len(dates)  # Will be updated by comprehensive method with ROI
             }
 
         except Exception as e:
@@ -792,7 +807,9 @@ class PerformanceMetricsCalculator:
                 'charging_sessions_trend': [],
                 'charging_duration_trend': [],
                 'energy_consumption_trend': [],
-                'water_usage_trend': []
+                'water_usage_trend': [],
+                'cost_savings_trend': [],
+                'roi_improvement_trend': []
             }
 
     def calculate_resource_utilization_metrics(self, tasks_data: pd.DataFrame) -> Dict[str, Any]:
@@ -845,10 +862,298 @@ class PerformanceMetricsCalculator:
                 'total_area_cleaned_sqft': 0.0
             }
 
+    def calculate_roi_metrics(self, all_time_tasks: pd.DataFrame, target_robots: List[str],
+                             current_period_end: str, monthly_lease_price: float = 1500.0) -> Dict[str, Any]:
+        """
+        Calculate ROI metrics using all-time task data and lease model
+
+        Args:
+            all_time_tasks: All historical tasks from first task to current period end
+            target_robots: List of robots included in report
+            current_period_end: End date of current reporting period
+            monthly_lease_price: Monthly lease price per robot (default $1500)
+
+        Returns:
+            Dict with ROI metrics including total and per-robot breakdown
+        """
+        try:
+            logger.info(f"Calculating ROI metrics for {len(target_robots)} robots with lease price ${monthly_lease_price}")
+
+            if all_time_tasks.empty:
+                return self._get_placeholder_roi_metrics()
+
+            end_date = datetime.strptime(current_period_end.split(' ')[0], '%Y-%m-%d')
+
+            # Calculate per-robot metrics
+            robot_roi_breakdown = {}
+            total_investment = 0
+            total_savings = 0
+
+            for robot_sn in target_robots:
+                robot_tasks = all_time_tasks[all_time_tasks['robot_sn'] == robot_sn]
+
+                if robot_tasks.empty:
+                    robot_roi_breakdown[robot_sn] = {
+                        'months_elapsed': 0,
+                        'investment': 0,
+                        'savings': 0,
+                        'roi_percent': 0
+                    }
+                    continue
+
+                # Find first task date for this robot
+                first_task_date = pd.to_datetime(robot_tasks['start_time']).min().date()
+                months_elapsed = self._calculate_months_elapsed(first_task_date, end_date.date())
+
+                # Calculate investment (rounded up months)
+                robot_investment = monthly_lease_price * months_elapsed
+
+                # Calculate cumulative savings for this robot
+                robot_savings = self._calculate_cumulative_savings(robot_tasks, end_date.date())
+
+                # Calculate ROI for this robot
+                robot_roi = (robot_savings / robot_investment * 100) if robot_investment > 0 else 0
+
+                robot_roi_breakdown[robot_sn] = {
+                    'months_elapsed': months_elapsed,
+                    'investment': robot_investment,
+                    'savings': round(robot_savings, 2),
+                    'roi_percent': round(robot_roi, 1)
+                }
+
+                total_investment += robot_investment
+                total_savings += robot_savings
+
+            # Calculate total ROI
+            total_roi = (total_savings / total_investment * 100) if total_investment > 0 else 0
+
+            # Calculate monthly savings rate and payback period
+            if robot_roi_breakdown:
+                months_list = [robot_roi_breakdown[robot]['months_elapsed'] for robot in robot_roi_breakdown.keys()]
+                max_months_elapsed = max(months_list) if months_list else 1
+            else:
+                max_months_elapsed = 1
+
+            monthly_savings_rate = total_savings / max_months_elapsed if max_months_elapsed > 0 else 0
+
+            # Calculate payback period
+            if monthly_savings_rate > 0:
+                payback_months = total_investment / monthly_savings_rate
+                if payback_months <= 0:
+                    payback_period = "Already profitable"
+                elif payback_months < 24:
+                    payback_period = f"{payback_months:.1f} months"
+                else:
+                    payback_years = payback_months / 12
+                    payback_period = f"{payback_years:.1f} years"
+            else:
+                payback_period = "Not yet profitable"
+
+            logger.info(f"ROI calculation complete: {total_roi:.1f}% (${total_savings:.2f} savings / ${total_investment:.2f} investment)")
+
+            return {
+                'total_roi_percent': round(total_roi, 1),
+                'total_investment': round(total_investment, 2),
+                'total_savings': round(total_savings, 2),
+                'monthly_lease_price': monthly_lease_price,
+                'robot_count': len(target_robots),
+                'robot_breakdown': robot_roi_breakdown,
+                'monthly_savings_rate': round(monthly_savings_rate, 2),
+                'payback_period': payback_period
+            }
+
+        except Exception as e:
+            logger.error(f"Error calculating ROI metrics: {e}")
+            return self._get_placeholder_roi_metrics()
+
+    def _calculate_months_elapsed(self, first_date: datetime.date, end_date: datetime.date) -> int:
+        """Calculate months elapsed, rounded up for lease billing"""
+        try:
+            years_diff = end_date.year - first_date.year
+            months_diff = end_date.month - first_date.month
+            total_months = years_diff * 12 + months_diff
+
+            # If there are any days beyond the month boundary, round up
+            if end_date.day >= first_date.day:
+                total_months += 1
+            else:
+                # Still count the partial month
+                total_months += 1
+
+            return max(1, total_months)  # Minimum 1 month
+
+        except Exception as e:
+            logger.error(f"Error calculating months elapsed: {e}")
+            return 1
+
+    def _calculate_cumulative_savings(self, robot_tasks: pd.DataFrame, end_date: datetime.date) -> float:
+        """Calculate cumulative savings for a robot using existing cost model"""
+        try:
+            # Use same constants as existing cost analysis
+            HOURLY_WAGE = 25.0
+            HUMAN_CLEANING_SPEED = 8000.0  # sq ft per hour
+            COST_PER_FL_OZ_WATER = 0.0
+            COST_PER_KWH = 0.0
+
+            total_area_sqft = 0
+            total_water_cost = 0
+            total_energy_cost = 0
+
+            for _, task in robot_tasks.iterrows():
+                if task['start_time'].date() > end_date:
+                    continue
+                # Area cleaned (convert to sq ft)
+                area_sqm = float(task.get('actual_area', 0) or 0)
+                area_sqft = area_sqm * 10.764
+                total_area_sqft += area_sqft
+
+                # Robot operational costs
+                water = float(task.get('water_consumption', 0) or 0)
+                energy = float(task.get('consumption', 0) or 0)
+                total_water_cost += water * COST_PER_FL_OZ_WATER
+                total_energy_cost += energy * COST_PER_KWH
+
+            # Calculate savings
+            total_robot_cost = total_water_cost + total_energy_cost
+            human_hours = total_area_sqft / HUMAN_CLEANING_SPEED if HUMAN_CLEANING_SPEED > 0 else 0
+            human_cost = human_hours * HOURLY_WAGE
+            cumulative_savings = human_cost - total_robot_cost
+
+            return max(0, cumulative_savings)  # Ensure non-negative
+
+        except Exception as e:
+            logger.error(f"Error calculating cumulative savings: {e}")
+            return 0
+
+    def calculate_daily_roi_trends(self, tasks_data: pd.DataFrame, all_time_tasks: pd.DataFrame,
+                                  target_robots: List[str], start_date: str, end_date: str,
+                                  monthly_lease_price: float = 1500.0) -> Dict[str, List]:
+        """Calculate daily ROI and savings trends for the reporting period"""
+        try:
+            start_dt = datetime.strptime(start_date.split(' ')[0], '%Y-%m-%d')
+            end_dt = datetime.strptime(end_date.split(' ')[0], '%Y-%m-%d')
+
+            # Create daily buckets
+            daily_data = {}
+            current_date = start_dt
+            while current_date <= end_dt:
+                date_str = current_date.strftime('%m/%d')
+                daily_data[date_str] = {
+                    'daily_savings': 0,
+                    'cumulative_savings': 0,
+                    'roi_percent': 0
+                }
+                current_date += timedelta(days=1)
+
+            # Calculate total investment (fixed for all days in period)
+            total_investment = 0
+            for robot_sn in target_robots:
+                robot_all_tasks = all_time_tasks[all_time_tasks['robot_sn'] == robot_sn] if not all_time_tasks.empty else pd.DataFrame()
+                if not robot_all_tasks.empty:
+                    first_task_date = pd.to_datetime(robot_all_tasks['start_time']).min().date()
+                    months_elapsed = self._calculate_months_elapsed(first_task_date, end_dt.date())
+                    total_investment += monthly_lease_price * months_elapsed
+
+            # Process daily savings from reporting period tasks
+            if not tasks_data.empty and 'start_time' in tasks_data.columns:
+                for _, task in tasks_data.iterrows():
+                    try:
+                        task_date = pd.to_datetime(task['start_time']).date()
+                        if start_dt.date() <= task_date <= end_dt.date():
+                            date_str = task_date.strftime('%m/%d')
+                            if date_str in daily_data:
+                                # Calculate daily savings for this task
+                                area_sqm = float(task.get('actual_area', 0) or 0)
+                                area_sqft = area_sqm * 10.764
+
+                                # Human cost for this area
+                                human_hours = area_sqft / 8000.0
+                                human_cost = human_hours * 25.0
+
+                                # Robot cost (currently 0 for water and energy)
+                                robot_cost = 0
+
+                                task_savings = max(0, human_cost - robot_cost)
+                                daily_data[date_str]['daily_savings'] += task_savings
+                    except:
+                        continue
+
+            # Calculate cumulative savings and ROI for each day
+            running_total_savings = 0
+            if not all_time_tasks.empty:
+                # Get cumulative savings up to start of reporting period
+                pre_period_tasks = all_time_tasks[pd.to_datetime(all_time_tasks['start_time']).dt.date < start_dt.date()]
+                running_total_savings = self._calculate_total_savings_from_tasks(pre_period_tasks)
+
+            # Build final trends
+            dates = list(daily_data.keys())
+            daily_savings_trend = []
+            roi_trend = []
+
+            for date in dates:
+                running_total_savings += daily_data[date]['daily_savings']
+                daily_data[date]['cumulative_savings'] = running_total_savings
+
+                # Calculate ROI for this day
+                roi_percent = (running_total_savings / total_investment * 100) if total_investment > 0 else 0
+                daily_data[date]['roi_percent'] = roi_percent
+
+                daily_savings_trend.append(round(daily_data[date]['daily_savings'], 2))
+                roi_trend.append(round(roi_percent, 1))
+
+            logger.info(f"Calculated daily ROI trends for {len(dates)} days")
+            return {
+                'dates': dates,
+                'daily_savings_trend': daily_savings_trend,
+                'roi_trend': roi_trend
+            }
+
+        except Exception as e:
+            logger.error(f"Error calculating daily ROI trends: {e}")
+            return {
+                'dates': [],
+                'daily_savings_trend': [],
+                'roi_trend': []
+            }
+
+    def _calculate_total_savings_from_tasks(self, tasks_df: pd.DataFrame) -> float:
+        """Helper to calculate total savings from a DataFrame of tasks"""
+        if tasks_df.empty:
+            return 0
+
+        total_savings = 0
+        for _, task in tasks_df.iterrows():
+            area_sqm = float(task.get('actual_area', 0) or 0)
+            area_sqft = area_sqm * 10.764
+            human_hours = area_sqft / 8000.0
+            human_cost = human_hours * 25.0
+            total_savings += max(0, human_cost)  # Robot cost is 0
+
+        return total_savings
+
+    def _get_placeholder_roi_metrics(self) -> Dict[str, Any]:
+        """Return placeholder ROI metrics when calculation fails"""
+        return {
+            'total_roi_percent': 0.0,
+            'total_investment': 0.0,
+            'total_savings': 0.0,
+            'monthly_lease_price': 1500.0,
+            'robot_count': 0,
+            'robot_breakdown': {},
+            'monthly_savings_rate': 0.0,
+            'payback_period': 'Not yet profitable'
+        }
+
     def calculate_cost_analysis_metrics(self, tasks_data: pd.DataFrame,
-                                      resource_metrics: Dict[str, Any]) -> Dict[str, Any]:
+                                  resource_metrics: Dict[str, Any],
+                                  roi_improvement: str = 'N/A') -> Dict[str, Any]:
         """
         Calculate REAL cost analysis metrics based on actual resource usage and cleaning efficiency
+
+        Args:
+            tasks_data: Task performance data
+            resource_metrics: Resource utilization metrics
+            roi_improvement: ROI percentage string (e.g., "45.2%") or 'N/A'
         """
         try:
             logger.info("Calculating real cost analysis metrics")
@@ -883,17 +1188,16 @@ class PerformanceMetricsCalculator:
 
             return {
                 'cost_per_sqft': round(cost_per_sqft, 4),
-                'total_cost': round(total_cost, 2),  # Renamed from monthly_operational_cost
+                'total_cost': round(total_cost, 2),
                 'hours_saved': round(hours_saved, 1),
-                'savings': round(savings, 2),  # Renamed from monthly_cost_savings
+                'savings': round(savings, 2),
                 'annual_projected_savings': round(savings * 12, 2) if savings > 0 else 0,
                 'cost_efficiency_improvement': round((savings / human_cost * 100), 1) if human_cost > 0 else 0,
-                'roi_improvement': 'N/A',  # Keep as N/A as requested
+                'roi_improvement': roi_improvement,  # UPDATED: Now accepts parameter instead of 'N/A'
                 'human_cost': round(human_cost, 2),
                 'water_cost': round(water_cost, 2),
                 'energy_cost': round(energy_cost, 2),
                 'hourly_wage': HOURLY_WAGE,
-                'note': f'Cost calculated using ${HOURLY_WAGE}/hr wage, {HUMAN_CLEANING_SPEED} sq ft/hr human speed'
             }
 
         except Exception as e:
@@ -905,12 +1209,11 @@ class PerformanceMetricsCalculator:
                 'savings': 0.0,
                 'annual_projected_savings': 0.0,
                 'cost_efficiency_improvement': 0.0,
-                'roi_improvement': 'N/A',
+                'roi_improvement': roi_improvement,  # Use provided ROI or 'N/A'
                 'human_cost': 0.0,
                 'water_cost': 0.0,
                 'energy_cost': 0.0,
-                'hourly_wage': 25.0,
-                'note': 'Cost calculated based on actual resource usage and human cleaning benchmarks'
+                'hourly_wage': 25.0
             }
 
     def calculate_event_analysis_metrics(self, events_data: pd.DataFrame) -> Dict[str, Any]:
@@ -1344,16 +1647,22 @@ class PerformanceMetricsCalculator:
                     return "N/A"
 
                 try:
-                    current_val = float(current)
-                    previous_val = float(previous)
+                    # Special handling for ROI percentage strings like "45.2%"
+                    if isinstance(current, str) and current.endswith('%'):
+                        current_val = float(current.replace('%', ''))
+                    else:
+                        current_val = float(current)
 
-                    # REMOVED: if previous_val == 0: return "N/A"
-                    # NEW LOGIC: Handle zero previous values properly
+                    if isinstance(previous, str) and previous.endswith('%'):
+                        previous_val = float(previous.replace('%', ''))
+                    else:
+                        previous_val = float(previous)
+
+                    # Handle zero previous values properly
                     if previous_val == 0:
                         if current_val == 0:
-                            return "0" + suffix  # No change if both are 0
+                            return "0" + suffix
                         else:
-                            # When previous is 0 but current has value, show as "new" or full current value
                             if format_type == "percent":
                                 return f"+{current_val:.1f}%"
                             else:
@@ -1520,6 +1829,48 @@ class PerformanceMetricsCalculator:
                 cost_current.get('human_cost', 0),
                 cost_previous.get('human_cost', 0),
                 "number", ""
+            )
+
+            comparisons['roi_improvement'] = calculate_change(
+                cost_current.get('roi_improvement', 'N/A'),
+                cost_previous.get('roi_improvement', 'N/A'),
+                "percent"  # This tells calculate_change it's a percentage comparison
+            )
+
+            comparisons['cost_efficiency_improvement'] = calculate_change(
+                cost_current.get('cost_efficiency_improvement', 0),
+                cost_previous.get('cost_efficiency_improvement', 0),
+                "percent"
+            )
+
+            comparisons['water_cost'] = calculate_change(
+                cost_current.get('water_cost', 0),
+                cost_previous.get('water_cost', 0),
+                "number", ""
+            )
+
+            comparisons['energy_cost'] = calculate_change(
+                cost_current.get('energy_cost', 0),
+                cost_previous.get('energy_cost', 0),
+                "number", ""
+            )
+
+            comparisons['cumulative_savings'] = calculate_change(
+                cost_current.get('cumulative_savings', 0),
+                cost_previous.get('cumulative_savings', 0),
+                "number", ""
+            )
+
+            comparisons['monthly_savings_rate'] = calculate_change(
+                cost_current.get('monthly_savings_rate', 0),
+                cost_previous.get('monthly_savings_rate', 0),
+                "number", ""
+            )
+
+            comparisons['payback_months'] = calculate_change(
+                cost_current.get('payback_months', 0),
+                cost_previous.get('payback_months', 0),
+                "number", " months"
             )
 
             # Facility-specific comparisons (including efficiency)

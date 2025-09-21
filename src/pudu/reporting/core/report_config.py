@@ -49,6 +49,7 @@ class ReportConfig:
         # Report Configuration
         self.time_range = self.form_data.get('timeRange', 'last-30-days')
         self.custom_date_range = self._parse_custom_dates()
+        self.timezone = self.form_data.get('timezone', 'America/New_York') # default to America/New_York TODO: add timezone selection
         self.detail_level = ReportDetailLevel(self.form_data.get('detailLevel', 'detailed'))
         self.delivery = DeliveryMethod(self.form_data.get('delivery', 'in-app'))
         self.schedule = ScheduleFrequency(self.form_data.get('schedule', 'immediate'))

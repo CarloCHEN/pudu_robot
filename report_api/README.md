@@ -391,7 +391,7 @@ curl -X POST http://monitor-report-api-alb-2063783635.us-east-2.elb.amazonaws.co
       },
       "contentCategories": ["charging-performance", "cleaning-performance", "resource-utilization", "financial-performance"],
       "reportName": "UF Multiple Buildings Report",
-      "outputFormat": "pdf",
+      "outputFormat": "html",
       "timeRange": "custom",
       "customStartDate": "2025-09-01",
       "customEndDate": "2025-09-12",

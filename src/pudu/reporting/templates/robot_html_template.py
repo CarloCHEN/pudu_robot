@@ -578,6 +578,22 @@ class RobotPerformanceTemplate:
         if not robot_rows:
             robot_rows = '<tr><td colspan="8">No robot data available</td></tr>'
 
+        roi_breakdown_rows = ""
+        robot_roi_breakdown = cost_data.get('robot_roi_breakdown', {})
+        if robot_roi_breakdown:
+            for robot_sn, roi_data in list(robot_roi_breakdown.items())[:10]:  # Top 10 robots
+                roi_breakdown_rows += f'''
+                <tr>
+                    <td>{robot_sn}</td>
+                    <td>{roi_data.get('months_elapsed', 0)}</td>
+                    <td>${roi_data.get('investment', 0):,.2f}</td>
+                    <td>${roi_data.get('savings', 0):,.2f}</td>
+                    <td>{roi_data.get('roi_percent', 0):.1f}%</td>
+                </tr>'''
+
+        if not roi_breakdown_rows:
+            roi_breakdown_rows = '<tr><td colspan="5">No ROI breakdown data available</td></tr>'
+
         return f"""
         <section id="executive-summary">
             <h2>📊 Executive Summary</h2>
@@ -672,6 +688,23 @@ class RobotPerformanceTemplate:
                 </thead>
                 <tbody>
                     {robot_rows}
+                </tbody>
+            </table>
+
+            <h3>💰 Individual Robot ROI Breakdown</h3>
+            <p>Investment and ROI analysis per robot based on lease model and operational savings.</p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Robot ID</th>
+                        <th>Months Deployed</th>
+                        <th>Total Investment</th>
+                        <th>Cumulative Savings</th>
+                        <th>ROI</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {roi_breakdown_rows}
                 </tbody>
             </table>
         </section>"""
@@ -1210,7 +1243,7 @@ class RobotPerformanceTemplate:
             <table>
                 <thead>
                     <tr>
-                        <th>Metric</th>
+                        <th>Operational Metric</th>
                         <th>Value</th>
                         <th>vs Previous Period</th>
                         <th>Notes</th>
@@ -1221,41 +1254,53 @@ class RobotPerformanceTemplate:
                         <td>Cost per Sq Ft</td>
                         <td>{safe_format(cost_data.get('cost_per_sqft', 0), '$', '/sq ft')}</td>
                         <td style="color: {get_comparison_color(comparisons.get('cost_per_sqft', 'N/A'), 'cost_per_sqft')};">{format_comparison(comparisons.get('cost_per_sqft', 'N/A'))}</td>
-                        <td>Water + energy cost per area cleaned</td>
+                        <td>Operational efficiency (water + energy cost per area)</td>
                     </tr>
                     <tr>
-                        <td>Total Cost</td>
+                        <td>Total Operational Cost</td>
                         <td>{safe_format(cost_data.get('total_cost', 0))}</td>
                         <td style="color: {get_comparison_color(comparisons.get('total_cost', 'N/A'), 'total_cost')};">{format_comparison(comparisons.get('total_cost', 'N/A'))}</td>
                         <td>Robot operational cost this period</td>
                     </tr>
                     <tr>
-                        <td>Savings</td>
-                        <td>{safe_format(cost_data.get('savings', 0))}</td>
-                        <td style="color: {get_comparison_color(comparisons.get('savings', 'N/A'), 'savings')};">{format_comparison(comparisons.get('savings', 'N/A'))}</td>
-                        <td>Savings vs manual cleaning (${cost_data.get('hourly_wage', 25)}/hr)</td>
+                        <td>ROI</td>
+                        <td>{cost_data.get('roi_improvement', 'N/A')}</td>
+                        <td style="color: {get_comparison_color(comparisons.get('roi_improvement', 'N/A'), 'roi')};">{format_comparison(comparisons.get('roi_improvement', 'N/A'))}</td>
+                        <td>Return on Investment (cumulative savings ÷ total investment × 100)</td>
                     </tr>
                     <tr>
-                        <td>Hours Saved vs Manual</td>
-                        <td>{cost_data.get('hours_saved', 0):.1f} hrs</td>
-                        <td style="color: {get_comparison_color(comparisons.get('hours_saved', 'N/A'), 'hours_saved')};">{format_comparison(comparisons.get('hours_saved', 'N/A'))}</td>
-                        <td>Time saved compared to manual cleaning</td>
+                        <td>Total Investment</td>
+                        <td>{safe_format(cost_data.get('total_investment', 0))}</td>
+                        <td style="color: {get_comparison_color(comparisons.get('total_investment', 'N/A'), 'total_investment')};">{format_comparison(comparisons.get('total_investment', 'N/A'))}</td>
+                        <td>Cumulative lease investment (${cost_data.get('monthly_lease_price', 1500)}/month per robot)</td>
                     </tr>
                     <tr>
-                        <td>Annual Projected Savings</td>
-                        <td>{safe_format(cost_data.get('annual_projected_savings', 0))}</td>
-                        <td style="color: {get_comparison_color(comparisons.get('annual_projected_savings', 'N/A'), 'annual_projected_savings')};">{format_comparison(comparisons.get('annual_projected_savings', 'N/A'))}</td>
-                        <td>Projected annual savings</td>
+                        <td>Cost Efficiency Improvement</td>
+                        <td>{cost_data.get('cost_efficiency_improvement', 0):.1f}%</td>
+                        <td style="color: {get_comparison_color(comparisons.get('cost_efficiency_improvement', 'N/A'), 'cost_efficiency')};">{format_comparison(comparisons.get('cost_efficiency_improvement', 'N/A'))}</td>
+                        <td>Efficiency improvement vs manual cleaning</td>
                     </tr>
                     <tr>
-                        <td>ROI Impact</td>
-                        <td>N/A</td>
-                        <td>N/A</td>
-                        <td>Requires investment data</td>
+                        <td>Water Cost</td>
+                        <td>{safe_format(cost_data.get('water_cost', 0))}</td>
+                        <td style="color: {get_comparison_color(comparisons.get('water_cost', 'N/A'), 'water_cost')};">{format_comparison(comparisons.get('water_cost', 'N/A'))}</td>
+                        <td>Water resource cost component</td>
+                    </tr>
+                    <tr>
+                        <td>Energy Cost</td>
+                        <td>{safe_format(cost_data.get('energy_cost', 0))}</td>
+                        <td style="color: {get_comparison_color(comparisons.get('energy_cost', 'N/A'), 'energy_cost')};">{format_comparison(comparisons.get('energy_cost', 'N/A'))}</td>
+                        <td>Energy resource cost component</td>
                     </tr>
                 </tbody>
             </table>
-
+            <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #17a2b8;">
+                <h4 style="color: #17a2b8; margin-top: 0;">💡 ROI Calculation Method</h4>
+                <p><strong>ROI Formula:</strong> Cumulative Savings ÷ Total Investment × 100</p>
+                <p><strong>Investment:</strong> $1,500/month per robot × months elapsed (rounded up for billing)</p>
+                <p><strong>Cumulative Savings:</strong> All-time savings from first robot task to end of reporting period</p>
+                <p><strong>Chart Note:</strong> ROI trend shows daily cumulative values (not weekly averages, as ROI is cumulative by nature)</p>
+            </div>
             <div class="chart-container">
                 <div class="chart-toggle-container">
                     <button class="chart-toggle-btn" onclick="toggleFinancialView()" id="financialToggle">
@@ -1265,48 +1310,63 @@ class RobotPerformanceTemplate:
                 <canvas id="financialChart"></canvas>
             </div>
             <div class="highlight-box">
-                <h3>💡 Financial Impact Summary</h3>
+                <h3 class="white-text">💡 Financial Impact Summary</h3>
                 <div class="metrics-grid">
                     <div style="text-align: center;">
-                        <div style="font-size: 1.5em; margin-bottom: 5px;"><strong>{safe_format(cost_data.get('total_cost', 0))}</strong></div>
-                        <div>Total operational cost</div>
-                        <div style="color: {get_comparison_color(comparisons.get('total_cost', 'N/A'), 'total_cost')}; font-size: 0.8em;">
-                            vs last: {format_comparison(comparisons.get('total_cost', 'N/A'))}
-                        </div>
-                    </div>
-                    <div style="text-align: center;">
                         <div style="font-size: 1.5em; margin-bottom: 5px;"><strong>{safe_format(cost_data.get('human_cost', 0))}</strong></div>
-                        <div>Equivalent manual cleaning cost</div>
+                        <div>Manual Cleaning Cost</div>
                         <div style="color: {get_comparison_color(comparisons.get('human_cost', 'N/A'), 'human_cost')}; font-size: 0.8em;">
                             vs last: {format_comparison(comparisons.get('human_cost', 'N/A'))}
                         </div>
                     </div>
                     <div style="text-align: center;">
                         <div style="font-size: 1.5em; margin-bottom: 5px;"><strong>{safe_format(cost_data.get('savings', 0))}</strong></div>
-                        <div>Savings realized</div>
+                        <div>Savings Realized</div>
                         <div style="color: {get_comparison_color(comparisons.get('savings', 'N/A'), 'savings')}; font-size: 0.8em;">
                             vs last: {format_comparison(comparisons.get('savings', 'N/A'))}
                         </div>
                     </div>
                     <div style="text-align: center;">
+                        <div style="font-size: 1.5em; margin-bottom: 5px;"><strong>{cost_data.get('hours_saved', 0):.1f} hrs</strong></div>
+                        <div>Hours Saved vs Manual</div>
+                        <div style="color: {get_comparison_color(comparisons.get('hours_saved', 'N/A'), 'hours_saved')}; font-size: 0.8em;">
+                            vs last: {format_comparison(comparisons.get('hours_saved', 'N/A'))}
+                        </div>
+                    </div>
+                    <div style="text-align: center;">
                         <div style="font-size: 1.5em; margin-bottom: 5px;"><strong>{safe_format(cost_data.get('annual_projected_savings', 0))}</strong></div>
-                        <div>Annual projected savings</div>
+                        <div>Annual Projected Savings</div>
                         <div style="color: {get_comparison_color(comparisons.get('annual_projected_savings', 'N/A'), 'annual_projected_savings')}; font-size: 0.8em;">
                             vs last: {format_comparison(comparisons.get('annual_projected_savings', 'N/A'))}
                         </div>
                     </div>
                     <div style="text-align: center;">
-                        <div style="font-size: 1.5em; margin-bottom: 5px;"><strong>{cost_data.get('hours_saved', 0):.1f} hrs</strong></div>
-                        <div>Hours saved vs manual</div>
-                        <div style="color: {get_comparison_color(comparisons.get('hours_saved', 'N/A'), 'hours_saved')}; font-size: 0.8em;">
-                            vs last: {format_comparison(comparisons.get('hours_saved', 'N/A'))}
+                        <div style="font-size: 1.5em; margin-bottom: 5px;"><strong>{safe_format(cost_data.get('cumulative_savings', 0))}</strong></div>
+                        <div>Cumulative Savings</div>
+                        <div style="color: {get_comparison_color(comparisons.get('cumulative_savings', 'N/A'), 'cumulative_savings')}; font-size: 0.8em;">
+                            vs last: {format_comparison(comparisons.get('cumulative_savings', 'N/A'))}
+                        </div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 1.5em; margin-bottom: 5px;"><strong>{cost_data.get('payback_period', 'N/A')}</strong></div>
+                        <div>Payback Period</div>
+                        <div style="color: {get_comparison_color(comparisons.get('payback_months', 'N/A'), 'payback_months')}; font-size: 0.8em;">
+                            vs last: {format_comparison(comparisons.get('payback_months', 'N/A'))}
+                        </div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 1.5em; margin-bottom: 5px;"><strong>{safe_format(cost_data.get('monthly_savings_rate', 0), '$', '/month')}</strong></div>
+                        <div>Monthly Savings Rate</div>
+                        <div style="color: {get_comparison_color(comparisons.get('monthly_savings_rate', 'N/A'), 'monthly_savings_rate')}; font-size: 0.8em;">
+                            vs last: {format_comparison(comparisons.get('monthly_savings_rate', 'N/A'))}
                         </div>
                     </div>
                 </div>
-            <p style="margin-top: 15px; font-size: 0.9em; opacity: 0.8;">
-                {cost_data.get('note', 'Cost calculations based on actual resource usage and human cleaning speed benchmarks.')}
-            </p>
+                <p style="margin-top: 15px; font-size: 0.9em; opacity: 0.8;">
+                    {cost_data.get('note', 'Financial calculations based on actual resource usage, lease model, and human cleaning speed benchmarks.')}
+                </p>
             </div>
+
         </section>"""
 
     def _generate_charging_section(self, content: Dict[str, Any]) -> str:
@@ -1456,6 +1516,7 @@ class RobotPerformanceTemplate:
         task_data = content.get('task_performance', {})
         resource_data = content.get('resource_utilization', {})
         charging_data = content.get('charging_performance', {})
+        cost_data = content.get('cost_analysis', {})
 
         period = content.get('period', 'the reporting period')
 
@@ -1474,8 +1535,7 @@ class RobotPerformanceTemplate:
                 {format_value(task_data.get('total_tasks', 0))} tasks completed,
                 {format_value(resource_data.get('total_area_cleaned_sqft', 0))} sq ft cleaned,
                 {format_value(charging_data.get('total_sessions', 0))} charging sessions,
-                {format_value(resource_data.get('total_energy_consumption_kwh', 0))} kWh energy consumption,
-                and {format_value(resource_data.get('total_water_consumption_floz', 0))} fl oz water usage.</p>
+                and {cost_data.get('roi_improvement', 'N/A')} return on investment.</p>
             </div>
         </section>"""
 
@@ -1557,7 +1617,8 @@ class RobotPerformanceTemplate:
             energy_data: {json.dumps(trend_data.get('energy_consumption_trend', []))},
             water_data: {json.dumps(trend_data.get('water_usage_trend', []))},
             hours_saved: {json.dumps(financial_trend_data.get('hours_saved_trend', []))},
-            savings_data: {json.dumps(financial_trend_data.get('savings_trend', []))}
+            savings_data: {json.dumps(financial_trend_data.get('savings_trend', []))},
+            roi_data: {json.dumps(trend_data.get('roi_improvement_trend', []))}
         }};
 
         // Store location efficiency data
@@ -1690,7 +1751,13 @@ class RobotPerformanceTemplate:
             if (isWeekly) {{
                 btn.textContent = 'View Weekly Trend';
                 btn.classList.remove('active');
-                createFinancialChart(originalData.dates, originalData.hours_saved, originalData.savings_data);
+                // ROI always shows daily cumulative data (no aggregation)
+                createFinancialChart(
+                    originalData.dates,
+                    originalData.hours_saved,
+                    originalData.savings_data,
+                    originalData.roi_data
+                );
             }} else {{
                 btn.textContent = 'View Daily Trend';
                 btn.classList.add('active');
@@ -1698,7 +1765,13 @@ class RobotPerformanceTemplate:
                 const weeklyHours = aggregateByDayOfWeek(originalData.dates, originalData.hours_saved);
                 const weeklySavings = aggregateByDayOfWeek(originalData.dates, originalData.savings_data);
 
-                createFinancialChart(weeklyHours.labels, weeklyHours.data, weeklySavings.data);
+                // ROI remains daily — don’t aggregate by day of week as it doesn’t make sense
+                createFinancialChart(
+                    weeklyHours.labels,
+                    weeklyHours.data,
+                    weeklySavings.data,
+                    [0, 0, 0, 0, 0, 0, 0] // ROI = 0 in weekly view
+                );
             }}
         }}
 
@@ -1804,7 +1877,7 @@ class RobotPerformanceTemplate:
             }}
         }}
 
-        function createFinancialChart(labels, hours, savings) {{
+        function createFinancialChart(labels, hours, savings, roi) {{
             if (chartInstances.financial) {{
                 chartInstances.financial.destroy();
             }}
@@ -1829,9 +1902,86 @@ class RobotPerformanceTemplate:
                             borderColor: 'rgba(23, 162, 184, 1)',
                             borderWidth: 1,
                             yAxisID: 'y1'
+                        }}, {{
+                            label: 'ROI (%) - Daily Cumulative',
+                            data: roi.length > 0 ? roi : [0],
+                            type: 'line',
+                            borderColor: '#28a745',
+                            backgroundColor: 'rgba(40, 167, 69, 0.1)',
+                            tension: 0.4,
+                            yAxisID: 'y2',
+                            pointBackgroundColor: '#28a745',
+                            pointBorderColor: '#28a745',
+                            pointRadius: 4,
+                            pointHoverRadius: 6
                         }}]
                     }},
-                    options: getInteractiveChartOptions('Hours Saved', 'Savings ($)')
+                    options: {{
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: {{
+                            intersect: false,
+                            mode: 'index'
+                        }},
+                        plugins: {{
+                            tooltip: {{
+                                enabled: true,
+                                mode: 'index',
+                                intersect: false,
+                                backgroundColor: 'rgba(0,0,0,0.8)',
+                                titleColor: 'white',
+                                bodyColor: 'white',
+                                borderColor: 'rgba(255,255,255,0.2)',
+                                borderWidth: 1,
+                                callbacks: {{
+                                    afterLabel: function(context) {{
+                                        return context.datasetIndex === 2
+                                            ? 'Cumulative ROI based on all-time data'
+                                            : '';
+                                    }}
+                                }}
+                            }},
+                            legend: {{
+                                display: true,
+                                position: 'top'
+                            }}
+                        }},
+                        scales: {{
+                            y: {{
+                                type: 'linear',
+                                display: true,
+                                position: 'left',
+                                title: {{
+                                    display: true,
+                                    text: 'Hours Saved'
+                                }}
+                            }},
+                            y1: {{
+                                type: 'linear',
+                                display: true,
+                                position: 'right',
+                                title: {{
+                                    display: true,
+                                    text: 'Savings ($)'
+                                }},
+                                grid: {{
+                                    drawOnChartArea: false
+                                }}
+                            }},
+                            y2: {{
+                                type: 'linear',
+                                display: false,
+                                position: 'right',
+                                title: {{
+                                    display: true,
+                                    text: 'ROI (%)'
+                                }},
+                                grid: {{
+                                    drawOnChartArea: false
+                                }}
+                            }}
+                        }}
+                    }}
                 }});
             }}
         }}
@@ -1985,7 +2135,7 @@ class RobotPerformanceTemplate:
             // Global trend charts
             createChargingChart(originalData.dates, originalData.charging_sessions, originalData.charging_durations);
             createResourceChart(originalData.dates, originalData.energy_data, originalData.water_data);
-            createFinancialChart(originalData.dates, originalData.hours_saved, originalData.savings_data);
+            createFinancialChart(originalData.dates, originalData.hours_saved, originalData.savings_data, originalData.roi_data); // UPDATED
 
             // Location-specific charts
             createLocationTaskEfficiencyCharts();

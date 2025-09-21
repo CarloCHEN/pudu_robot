@@ -688,6 +688,7 @@ if __name__ == "__main__":
             "state": "fl",
             "city": "gainesville"
         },
+        'outputFormat': 'html',
         'customStartDate': '2025-08-20',
         'customEndDate': '2025-09-09',
         'detailLevel': 'detailed',
@@ -703,7 +704,8 @@ if __name__ == "__main__":
     try:
         # Test HTML generation
         print("=== Testing HTML Generation ===")
-        html_result = generator.generate_and_save_report(config, output_format="html", save_file=True)
+        config.output_format = 'html'
+        html_result = generator.generate_and_save_report(config, save_file=True)
         if html_result['success']:
             print(f"HTML report saved to: {html_result.get('saved_file_path')}")
         else:
@@ -712,7 +714,8 @@ if __name__ == "__main__":
         # Test PDF generation
         print("\n=== Testing PDF Generation ===")
         if generator.pdf_enabled:
-            pdf_result = generator.generate_and_save_report(config, output_format="pdf", save_file=True)
+            config.output_format = 'pdf'
+            pdf_result = generator.generate_and_save_report(config, save_file=True)
             if pdf_result['success']:
                 print(f"PDF report saved to: {pdf_result.get('saved_file_path')}")
             else:

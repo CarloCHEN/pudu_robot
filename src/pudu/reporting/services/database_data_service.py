@@ -791,6 +791,77 @@ class DatabaseDataService:
                 'roi_improvement_trend': [0, 0, 0, 0]
             }
 
+    def fetch_all_time_tasks_for_roi(self, target_robots: List[str], end_date: str) -> pd.DataFrame:
+        """
+        Fetch minimal task data from first task ever to end_date for ROI calculation
+
+        Args:
+            target_robots: List of robot serial numbers
+            end_date: End date of reporting period (YYYY-MM-DD HH:MM:SS)
+
+        Returns:
+            DataFrame with minimal fields needed for ROI: robot_sn, actual_area, consumption,
+            water_consumption, start_time
+        """
+        logger.info(f"Fetching all-time task data for ROI calculation for {len(target_robots)} robots until {end_date}")
+
+        try:
+            # Get table configurations for robot tasks
+            table_configs = self.config.get_table_configs_for_robots('robot_task', target_robots)
+
+            all_data = []
+            for table_config in table_configs:
+                try:
+                    table = RDSTable(
+                        connection_config=self.connection_config,
+                        database_name=table_config['database'],
+                        table_name=table_config['table_name'],
+                        fields=table_config.get('fields'),
+                        primary_keys=table_config['primary_keys'],
+                        reuse_connection=reuse_connection
+                    )
+
+                    # Get target robots for this database
+                    db_robots = table_config.get('robot_sns', [])
+                    if not db_robots:
+                        continue
+
+                    # Optimized query - only fetch fields needed for ROI calculation
+                    robot_list = "', '".join(db_robots)
+                    query = f"""
+                        SELECT robot_sn, actual_area, consumption, water_consumption, start_time
+                        FROM {table.table_name}
+                        WHERE robot_sn IN ('{robot_list}')
+                        AND start_time <= '{end_date}'
+                        AND actual_area IS NOT NULL
+                        AND actual_area > 0
+                        ORDER BY robot_sn, start_time ASC
+                    """
+
+                    result_df = table.execute_query(query)
+                    if not result_df.empty:
+                        all_data.append(result_df)
+                        logger.info(f"Retrieved {len(result_df)} ROI task records from {table_config['database']}")
+
+                    table.close()
+
+                except Exception as e:
+                    logger.error(f"Error fetching ROI tasks from {table_config['database']}: {e}")
+                    continue
+
+            # Combine all data
+            if all_data:
+                combined_df = pd.concat(all_data, ignore_index=True)
+                logger.info(f"Total ROI task records: {len(combined_df)}")
+                return combined_df
+            else:
+                logger.warning("No ROI task data found")
+                return pd.DataFrame()
+
+        except Exception as e:
+            logger.error(f"Error in fetch_all_time_tasks_for_roi: {e}")
+            return pd.DataFrame()
+
     def fetch_all_report_data(self, target_robots: List[str], start_date: str, end_date: str,
                              content_categories: List[str]) -> Dict[str, pd.DataFrame]:
         """
@@ -953,7 +1024,7 @@ class DatabaseDataService:
 
             # Cost analysis metrics (with placeholders)
             metrics['cost_analysis'] = self.metrics_calculator.calculate_cost_analysis_metrics(
-                tasks_data, metrics['resource_utilization']
+                tasks_data, metrics['resource_utilization'], roi_improvement='N/A'  # Default N/A, will be updated by comprehensive method
             )
 
             logger.info("Comprehensive metrics calculation completed with all facility metrics")
@@ -1189,13 +1260,13 @@ class DatabaseDataService:
             return self.metrics_calculator.calculate_period_comparison_metrics(current_metrics, previous_metrics)
 
     def calculate_comprehensive_metrics_with_comparison(self, current_data: Dict[str, pd.DataFrame],
-                                                       previous_data: Dict[str, pd.DataFrame],
-                                                       current_start: str, current_end: str,
-                                                       previous_start: str, previous_end: str) -> Dict[str, Any]:
+                                                   previous_data: Dict[str, pd.DataFrame],
+                                                   current_start: str, current_end: str,
+                                                   previous_start: str, previous_end: str) -> Dict[str, Any]:
         """
-        Calculate comprehensive metrics with period comparison INCLUDING facility efficiency comparisons
+        Calculate comprehensive metrics with period comparison INCLUDING ROI calculations
         """
-        logger.info("Calculating comprehensive metrics with period comparison")
+        logger.info("Calculating comprehensive metrics with period comparison and ROI")
 
         try:
             # Calculate current period metrics
@@ -1209,6 +1280,62 @@ class DatabaseDataService:
             events_data = current_data.get('events', pd.DataFrame())
             robot_locations = current_data.get('robot_locations', pd.DataFrame())
             charging_data = current_data.get('charging_tasks', pd.DataFrame())
+            robot_status = current_data.get('robot_status', pd.DataFrame())
+
+            # Get target robots from robot_status or tasks_data
+            target_robots = []
+            if not robot_status.empty:
+                target_robots = robot_status['robot_sn'].dropna().tolist()
+            elif not tasks_data.empty:
+                target_robots = tasks_data['robot_sn'].dropna().unique().tolist()
+
+            # ===== NEW ROI CALCULATION =====
+            if target_robots:
+                logger.info(f"Fetching all-time data for ROI calculation for {len(target_robots)} robots")
+
+                # Fetch all-time task data for ROI calculation
+                all_time_tasks = self.fetch_all_time_tasks_for_roi(target_robots, current_end)
+
+                # Calculate ROI metrics
+                roi_metrics = self.metrics_calculator.calculate_roi_metrics(
+                    all_time_tasks, target_robots, current_end, monthly_lease_price=1500.0
+                )
+                previous_roi_metrics = self.metrics_calculator.calculate_roi_metrics(
+                    all_time_tasks, target_robots, previous_end, monthly_lease_price=1500.0
+                )
+
+                # Update cost analysis with real ROI
+                current_metrics['cost_analysis']['roi_improvement'] = f"{roi_metrics['total_roi_percent']:.1f}%"
+                current_metrics['cost_analysis']['total_investment'] = roi_metrics['total_investment']
+                current_metrics['cost_analysis']['robot_roi_breakdown'] = roi_metrics['robot_breakdown']
+
+                current_metrics['cost_analysis']['monthly_savings_rate'] = roi_metrics['monthly_savings_rate']
+                current_metrics['cost_analysis']['payback_period'] = roi_metrics['payback_period']
+                current_metrics['cost_analysis']['cumulative_savings'] = roi_metrics['total_savings']
+
+                previous_metrics['cost_analysis']['roi_improvement'] = f"{previous_roi_metrics['total_roi_percent']:.1f}%"
+                previous_metrics['cost_analysis']['total_investment'] = previous_roi_metrics['total_investment']
+                previous_metrics['cost_analysis']['robot_roi_breakdown'] = previous_roi_metrics['robot_breakdown']
+
+                previous_metrics['cost_analysis']['monthly_savings_rate'] = previous_roi_metrics['monthly_savings_rate']
+                previous_metrics['cost_analysis']['payback_period'] = previous_roi_metrics['payback_period']
+                previous_metrics['cost_analysis']['cumulative_savings'] = previous_roi_metrics['total_savings']
+
+                # Calculate daily ROI trends for the reporting period
+                daily_roi_trends = self.metrics_calculator.calculate_daily_roi_trends(
+                    tasks_data, all_time_tasks, target_robots, current_start, current_end
+                )
+
+                # Update trend data with real ROI and savings trends
+                if current_metrics.get('trend_data') and daily_roi_trends.get('dates'):
+                    current_metrics['trend_data']['cost_savings_trend'] = daily_roi_trends['daily_savings_trend']
+                    current_metrics['trend_data']['roi_improvement_trend'] = daily_roi_trends['roi_trend']
+
+                logger.info(f"ROI calculation complete: {roi_metrics['total_roi_percent']:.1f}%")
+            else:
+                logger.warning("No target robots found for ROI calculation")
+
+            # === Continue with existing calculations ===
 
             # Add weekend schedule completion and average duration
             weekend_completion = self.metrics_calculator.calculate_weekend_schedule_completion(tasks_data)
@@ -1234,6 +1361,7 @@ class DatabaseDataService:
                 )
                 current_metrics['daily_location_efficiency'] = daily_location_efficiency
 
+            # Calculate previous period metrics for comparison
             previous_tasks_data = previous_data.get('cleaning_tasks', pd.DataFrame())
             previous_avg_duration = self.metrics_calculator.calculate_average_task_duration(previous_tasks_data)
             previous_metrics['task_performance']['avg_task_duration_minutes'] = previous_avg_duration
@@ -1275,9 +1403,14 @@ class DatabaseDataService:
             # Update trend data to use daily instead of weekly
             daily_trend_data = self.calculate_daily_trends(tasks_data, charging_data, current_start, current_end)
             if daily_trend_data and daily_trend_data.get('dates'):
+                # Merge ROI trends with daily trends if both exist
+                if current_metrics['trend_data'].get('cost_savings_trend'):
+                    daily_trend_data['cost_savings_trend'] = current_metrics['trend_data']['cost_savings_trend']
+                if current_metrics['trend_data'].get('roi_improvement_trend'):
+                    daily_trend_data['roi_improvement_trend'] = current_metrics['trend_data']['roi_improvement_trend']
                 current_metrics['trend_data'] = daily_trend_data
 
-            # FIX: Calculate period comparisons INCLUDING facility efficiency using enhanced calculator method
+            # Calculate period comparisons
             period_comparisons = self.metrics_calculator.calculate_period_comparison_metrics(current_metrics, previous_metrics)
             current_metrics['period_comparisons'] = period_comparisons
 
@@ -1293,13 +1426,14 @@ class DatabaseDataService:
             if daily_financial_trends and daily_financial_trends.get('dates'):
                 current_metrics['financial_trend_data'] = daily_financial_trends
 
-            logger.info("Successfully calculated metrics with period comparison and facility efficiency comparisons")
+            logger.info("Successfully calculated metrics with period comparison and ROI")
             return current_metrics
 
         except Exception as e:
-            logger.error(f"Error calculating metrics with comparison: {e}")
+            logger.error(f"Error calculating metrics with comparison and ROI: {e}")
             # Fallback to current metrics only
             current_metrics = self.calculate_comprehensive_metrics(current_data, current_start, current_end)
+
             # Add required fields even without comparison
             tasks_data = current_data.get('cleaning_tasks', pd.DataFrame())
             weekend_completion = self.metrics_calculator.calculate_weekend_schedule_completion(tasks_data)
@@ -1309,17 +1443,12 @@ class DatabaseDataService:
             current_metrics['task_performance']['avg_task_duration_minutes'] = avg_duration
             current_metrics['period_comparisons'] = {}
             current_metrics['comparison_metadata'] = {'comparison_available': False}
-            current_metrics['facility_task_metrics'] = {}
-            current_metrics['facility_charging_metrics'] = {}
-            current_metrics['facility_resource_metrics'] = {}
-            current_metrics['facility_efficiency_metrics'] = {}
-            current_metrics['facility_breakdown_metrics'] = {}
-            current_metrics['map_performance_by_building'] = {}
-            current_metrics['weekday_completion'] = {}
-            current_metrics['trend_data'] = {}
-            current_metrics['event_type_by_location'] = {}
-            current_metrics['financial_trend_data'] = {}
-            current_metrics['daily_location_efficiency'] = {}
+
+            # Add placeholder ROI
+            current_metrics['cost_analysis']['roi_improvement'] = '0.0%'
+            current_metrics['cost_analysis']['total_investment'] = 0.0
+            current_metrics['cost_analysis']['robot_roi_breakdown'] = {}
+
             return current_metrics
 
     def calculate_facility_specific_task_metrics(self, tasks_data: pd.DataFrame,
