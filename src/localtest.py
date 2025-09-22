@@ -41,12 +41,13 @@ if __name__ == "__main__":
         },
         'outputFormat': 'pdf',
         'reportName': 'UF Report',
-        'customStartDate': '2025-08-20',
-        'customEndDate': '2025-09-09',
-        'detailLevel': 'detailed',
+        'customStartDate': '2025-09-01',
+        'customEndDate': '2025-09-22',
+        'detailLevel': 'overview',
         'delivery': 'in-app',
         'schedule': 'immediate'
     }
+
     config = ReportConfig(test_form_data, 'test-customer-123')
 
     # Generate comprehensive report

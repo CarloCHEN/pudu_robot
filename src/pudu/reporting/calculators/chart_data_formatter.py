@@ -257,7 +257,6 @@ class ChartDataFormatter:
 
             # 6. Location-specific task efficiency charts (weekly trend for each location)
             daily_location_efficiency = content.get('daily_location_efficiency', {})
-            charts[f'location_chart'] = {}
             for location_name, efficiency_data in daily_location_efficiency.items():
                 if efficiency_data.get('dates') and efficiency_data.get('running_hours') and efficiency_data.get('coverage_percentages'):
                     weekly_hours = self._aggregate_by_weekday(efficiency_data['dates'], efficiency_data['running_hours'])
@@ -272,7 +271,7 @@ class ChartDataFormatter:
                         # Running hours bars
                         bars = ax1.bar(x, weekly_hours['data'], width,
                                        color=(52/255, 152/255, 219/255, 0.6),
-                                       edgecolor=(52/255, 152/255, 219/255, 0.6),
+                                       edgecolor=(52/255, 152/219, 219/255, 0.6),
                                        linewidth=1, label='Running Hours')
 
                         ax1.set_xlabel('Day of Week', fontsize=11)
@@ -305,7 +304,8 @@ class ChartDataFormatter:
                                    facecolor='white', edgecolor='none')
                         buffer.seek(0)
                         chart_img = base64.b64encode(buffer.getvalue()).decode()
-                        charts[f'location_chart'][location_name] = f"data:image/png;base64,{chart_img}"
+                        safe_name = location_name.replace(' ', '_')
+                        charts[f'taskEfficiencyChart_{safe_name}'] = f"data:image/png;base64,{chart_img}"
                         plt.close()
 
             return charts

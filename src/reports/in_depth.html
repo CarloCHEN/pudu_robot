@@ -1,0 +1,2185 @@
+<!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>UF Report - 2025-09-01 to 2025-09-22</title>
+                <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+                <style>
+                    body {
+                        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                        line-height: 1.6;
+                        margin: 0;
+                        padding: 20px;
+                        background-color: #f8f9fa;
+                    }
+                    .chart-toggle-container {
+                        text-align: center;
+                        margin-bottom: 15px;
+                    }
+
+                    .chart-toggle-btn {
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                        border: none;
+                        padding: 8px 16px;
+                        border-radius: 5px;
+                        cursor: pointer;
+                        font-size: 0.9em;
+                        transition: opacity 0.3s ease;
+                    }
+
+                    .chart-toggle-btn:hover {
+                        opacity: 0.8;
+                    }
+
+                    .chart-toggle-btn.active {
+                        background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+                    }
+
+                    .container {
+                        max-width: 1200px;
+                        margin: 0 auto;
+                        background: white;
+                        padding: 30px;
+                        border-radius: 10px;
+                        box-shadow: 0 0 20px rgba(0,0,0,0.1);
+                    }
+
+                    h1 {
+                        color: #2c3e50;
+                        text-align: center;
+                        margin-bottom: 10px;
+                        font-size: 2.5em;
+                    }
+
+                    .subtitle {
+                        text-align: center;
+                        color: #7f8c8d;
+                        font-size: 1.2em;
+                        margin-bottom: 30px;
+                    }
+
+                    h2 {
+                        color: #34495e;
+                        border-bottom: 3px solid #3498db;
+                        padding-bottom: 10px;
+                        margin-top: 40px;
+                    }
+
+                    h3 {
+                        color: #2980b9;
+                        margin-top: 30px;
+                    }
+
+                    .highlight-box {
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                        padding: 20px;
+                        border-radius: 10px;
+                        margin: 20px 0;
+                    }
+
+                    .metrics-grid {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                        gap: 20px;
+                        margin: 20px 0;
+                    }
+
+                    .metric-card {
+                        background: #f8f9fa;
+                        border: 1px solid #e9ecef;
+                        border-radius: 8px;
+                        padding: 20px;
+                        text-align: center;
+                        transition: transform 0.3s ease;
+                    }
+
+                    .metric-card:hover {
+                        transform: translateY(-5px);
+                        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+                    }
+
+                    .metric-value {
+                        font-size: 2em;
+                        font-weight: bold;
+                        color: #2c3e50;
+                    }
+
+                    .metric-label {
+                        color: #7f8c8d;
+                        font-size: 0.9em;
+                        margin-top: 5px;
+                    }
+
+                    .chart-container {
+                        position: relative;
+                        height: 400px;
+                        margin: 30px 0;
+                        background: white;
+                        border-radius: 8px;
+                        padding: 20px;
+                        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                    }
+
+                    .location-efficiency-single-column {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 20px;
+                        margin: 30px 0;
+                    }
+
+                    .location-efficiency-single-line {
+                        background: #f8f9fa;
+                        border-radius: 8px;
+                        padding: 20px;
+                        border: 1px solid #e9ecef;
+                        margin: 15px 0;
+                    }
+
+                    .location-single-line-content {
+                        display: grid;
+                        grid-template-columns: 1fr 350px;
+                        gap: 40px; /* Increased from 30px to 40px for more space */
+                        align-items: flex-start;
+                    }
+
+                    .location-chart-compact {
+                        position: relative;
+                        height: 280px;
+                        background: white;
+                        border-radius: 8px;
+                        padding: 15px;
+                        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                        width: 100%;
+                        overflow: hidden;
+                        margin-right: 20px; /* Add right margin for extra space */
+                    }
+
+                    .location-stats-compact {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 12px;
+                        min-width: 350px;
+                        max-width: 350px;
+                        padding-left: 15px; /* Add left padding for extra space */
+                        border-left: 1px solid #e9ecef; /* Optional: visual separator */
+                    }
+
+                    .location-chart-compact canvas {
+                        width: 100% !important;
+                        height: 220px !important;
+                        max-width: 100%;
+                        display: block;
+                    }
+
+                    .location-chart-compact .chart-toggle-container {
+                        margin-bottom: 10px;
+                        text-align: center;
+                    }
+
+                    .location-chart-compact .chart-toggle-btn {
+                        padding: 6px 12px;
+                        font-size: 0.8em;
+                    }
+
+                    .location-stats-compact {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 12px;
+                        min-width: 350px;
+                        max-width: 350px;
+                    }
+
+                    .stat-row {
+                        display: flex;
+                        align-items: flex-start;
+                        gap: 10px;
+                        padding: 8px 0;
+                        border-bottom: 1px solid #e9ecef;
+                        flex-wrap: wrap;
+                    }
+
+                    .stat-row:last-child {
+                        border-bottom: none;
+                    }
+
+                    .stat-label {
+                        font-weight: 600;
+                        color: #495057;
+                        min-width: 90px;
+                        font-size: 0.9em;
+                        flex-shrink: 0;
+                    }
+
+                    .stat-value {
+                        font-weight: bold;
+                        color: #2c3e50;
+                        font-size: 0.95em;
+                        flex-shrink: 0;
+                    }
+
+                    .stat-comparison {
+                        font-size: 0.85em;
+                        font-style: italic;
+                        margin-left: 5px;
+                        flex-shrink: 0;
+                    }
+
+                    .location-chart-container {
+                        position: relative;
+                        height: 350px;
+                        margin: 20px 0;
+                        background: white;
+                        border-radius: 8px;
+                        padding: 15px;
+                        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                    }
+
+                    .chart-row {
+                        display: grid;
+                        grid-template-columns: 1fr 1fr;
+                        gap: 30px;
+                        margin: 30px 0;
+                    }
+
+                    .chart-small {
+                        position: relative;
+                        height: 300px;
+                    }
+
+                    .location-efficiency-grid {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+                        gap: 30px;
+                        margin: 30px 0;
+                    }
+
+                    .location-efficiency-item {
+                        background: #f8f9fa;
+                        border-radius: 8px;
+                        padding: 20px;
+                        border: 1px solid #e9ecef;
+                    }
+
+                    table {
+                        width: 100%;
+                        border-collapse: collapse;
+                        margin: 20px 0;
+                        background: white;
+                        border-radius: 8px;
+                        overflow: hidden;
+                        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                    }
+
+                    th, td {
+                        padding: 12px;
+                        text-align: left;
+                        border-bottom: 1px solid #e9ecef;
+                    }
+
+                    th {
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                        font-weight: 600;
+                    }
+
+                    tr:hover {
+                        background: #f8f9fa;
+                    }
+
+                    .progress-container {
+                        display: flex;
+                        align-items: center;
+                        gap: 10px;
+                        margin: 10px 0;
+                    }
+
+                    .progress-bar {
+                        width: 60%;
+                        height: 15px;
+                        background: #e9ecef;
+                        border-radius: 8px;
+                        overflow: hidden;
+                        margin: 3px 0;
+                        display: inline-block;
+                    }
+
+                    .progress-fill {
+                        height: 100%;
+                        background: linear-gradient(90deg, #28a745, #20c997);
+                        transition: width 0.3s ease;
+                    }
+
+                    .progress-text {
+                        display: inline-block;
+                        margin-left: 10px;
+                        font-weight: bold;
+                        color: #2c3e50;
+                    }
+
+                    .status-indicator {
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 5px;
+                    }
+
+                    .status-dot {
+                        width: 10px;
+                        height: 10px;
+                        border-radius: 50%;
+                    }
+
+                    .status-excellent { background: #28a745; }
+                    .status-good { background: #17a2b8; }
+                    .status-warning { background: #ffc107; }
+                    .status-error { background: #dc3545; }
+
+                    .two-column {
+                        display: grid;
+                        grid-template-columns: 1fr 1fr;
+                        gap: 30px;
+                        margin: 20px 0;
+                    }
+
+                    .tooltip {
+                        position: relative;
+                        display: inline-block;
+                        cursor: help;
+                        color: #3498db;
+                        text-decoration: underline dotted;
+                    }
+
+                    .tooltip .tooltiptext {
+                        visibility: hidden;
+                        width: 300px;
+                        background-color: #555;
+                        color: #fff;
+                        text-align: left;
+                        border-radius: 6px;
+                        padding: 10px;
+                        position: absolute;
+                        z-index: 1;
+                        bottom: 125%;
+                        left: 50%;
+                        margin-left: -150px;
+                        opacity: 0;
+                        transition: opacity 0.3s;
+                        font-size: 0.9em;
+                    }
+
+                    .tooltip:hover .tooltiptext {
+                        visibility: visible;
+                        opacity: 1;
+                    }
+
+                    .map-section {
+                        margin: 30px 0;
+                        padding: 20px;
+                        background: #f8f9fa;
+                        border-radius: 8px;
+                    }
+
+                    .building-maps {
+                        margin: 15px 0;
+                    }
+
+                    .map-metrics {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                        gap: 15px;
+                        margin: 10px 0;
+                    }
+
+                    .map-metric {
+                        background: white;
+                        padding: 10px;
+                        border-radius: 5px;
+                        text-align: center;
+                        border: 1px solid #dee2e6;
+                    }
+
+                    @media (max-width: 768px) {
+                        .chart-row, .two-column, .location-efficiency-grid, .location-single-line-content {
+                            grid-template-columns: 1fr;
+                        }
+
+                        .location-chart-compact {
+                            height: 220px;
+                            margin-bottom: 15px;
+                        }
+
+                        .location-stats-compact {
+                            min-width: unset;
+                            max-width: unset;
+                        }
+
+                        .stat-label {
+                            min-width: 80px;
+                            font-size: 0.85em;
+                        }
+
+                        .stat-value {
+                            font-size: 0.9em;
+                        }
+
+                        .stat-comparison {
+                            font-size: 0.8em;
+                            margin-left: 3px;
+                        }
+
+                        .container {
+                            padding: 15px;
+                        }
+
+                        .progress-bar {
+                            width: 40%;
+                        }
+                    }
+
+                    @media (max-width: 1024px) and (min-width: 769px) {
+                        .location-single-line-content {
+                            grid-template-columns: 1fr 320px;
+                            gap: 20px;
+                        }
+
+                        .location-stats-compact {
+                            min-width: 320px;
+                            max-width: 320px;
+                        }
+
+                        .stat-label {
+                            min-width: 85px;
+                        }
+                    }
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h1>Robot Performance Report</h1>
+                    <p class="subtitle">2025-09-01 to 2025-09-22</p>
+                    
+        <section id="executive-summary">
+            <h2>📊 Executive Summary</h2>
+            <div class="highlight-box">
+                <p>Robot deployment during 2025-09-01 to 2025-09-22 processed 63.0 total tasks,
+                covering 336,831.0 square feet with
+                56.5 total running hours.</p>
+            </div>
+
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-value">2</div>
+                    <div class="metric-label">Total Robots</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value tooltip">336,831.0
+                        <span class="tooltiptext">Total area cleaned in square feet, converted from actual_area field in task data (originally in square meters).</span>
+                    </div>
+                    <div class="metric-label">Sq Ft Cleaned</div>
+                    <div style="font-size: 0.8em; margin-top: 5px; color: #dc3545;">
+                        vs last period: -13414.0 sq ft
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value tooltip">88.0%
+                        <span class="tooltiptext">Coverage efficiency calculated as (actual area cleaned / planned area) × 100 from task performance data.</span>
+                    </div>
+                    <div class="metric-label">Coverage</div>
+                    <div style="font-size: 0.8em; margin-top: 5px; color: #28a745;">
+                        vs last period: +17.2%
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value tooltip">56.5
+                        <span class="tooltiptext">Total running hours from all robots during the reporting period, calculated from task duration data.</span>
+                    </div>
+                    <div class="metric-label">Total Running Hours</div>
+                    <div style="font-size: 0.8em; margin-top: 5px; color: #dc3545;">
+                        vs last period: -27.5 hrs
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value tooltip">2.5
+                        <span class="tooltiptext">Average daily running hours per robot calculated as the average of daily running hours of each robot on days when the robot had at least 1 task.</span>
+                    </div>
+                    <div class="metric-label">Avg Daily Running Hours per Robot (hrs/robot)</div>
+                    <div style="font-size: 0.8em; margin-top: 5px; color: #dc3545;">
+                        vs last period: -0.4 hrs/robot
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value tooltip">15/23
+                        <span class="tooltiptext">Days with tasks out of total reporting period days. Shows actual operational days vs total period length.</span>
+                    </div>
+                    <div class="metric-label">Days with Tasks</div>
+                    <div style="font-size: 0.8em; margin-top: 5px; color: #dc3545;">
+                        vs last period: -1.0 days
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value tooltip">22.6 kWh
+                        <span class="tooltiptext">Total energy consumption calculated from task data consumption field during the reporting period.</span>
+                    </div>
+                    <div class="metric-label">Energy Used</div>
+                    <div style="font-size: 0.8em; margin-top: 5px; color: #dc3545;">
+                        vs last period: -8.3 kWh
+                    </div>
+                </div>
+            </div>
+
+            <h3>🎯 Key Achievements</h3>
+            <ul style="font-size: 1.1em; color: #2c3e50;">
+                <li>63.0 total tasks processed during reporting period</li>
+                <li>336,831.0 square feet cleaned across all locations</li>
+                <li>2.0 robots actively deployed and monitored</li>
+                <li>80.0 charging sessions during the period</li>
+            </ul>
+        
+            <h3>🤖 Individual Robot Performance</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Robot ID</th>
+                        <th>Location</th>
+                        <th>Total Tasks</th>
+                        <th>Tasks Completed</th>
+                        <th>Total Area Cleaned</th>
+                        <th>Average Coverage</th>
+                        <th>Days with Tasks</th>
+                        <th>Running Hours</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    
+                <tr>
+                    <td>811135422060228</td>
+                    <td>Building 43 Marston Science Library</td>
+                    <td>25</td>
+                    <td>20</td>
+                    <td>173,240 sq ft</td>
+                    <td>87.0%</td>
+                    <td>13</td>
+                    <td>30.8 hrs</td>
+                </tr>
+                <tr>
+                    <td>811135422060216</td>
+                    <td>Building 205 Dental Science</td>
+                    <td>38</td>
+                    <td>31</td>
+                    <td>163,591 sq ft</td>
+                    <td>89.1%</td>
+                    <td>10</td>
+                    <td>25.7 hrs</td>
+                </tr>
+                </tbody>
+            </table>
+            
+            <h3>💰 Individual Robot ROI Breakdown</h3>
+            <p>Investment and ROI analysis per robot based on lease model and operational savings.</p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Robot ID</th>
+                        <th>Months Deployed</th>
+                        <th>Total Investment</th>
+                        <th>Cumulative Savings</th>
+                        <th>ROI</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    
+                <tr>
+                    <td>811135422060216</td>
+                    <td>2</td>
+                    <td>$3,000.00</td>
+                    <td>$1,248.58</td>
+                    <td>41.6%</td>
+                </tr>
+                <tr>
+                    <td>811135422060228</td>
+                    <td>2</td>
+                    <td>$3,000.00</td>
+                    <td>$1,307.82</td>
+                    <td>43.6%</td>
+                </tr>
+                </tbody>
+            </table>
+            </section>
+        <section id="task-performance">
+            <h2>📋 Task & Schedule Performance</h2>
+
+            <h3>Task Management Efficiency</h3>
+            <p>Task tracking across all facilities: 63 total tasks with 31,292 sq ft total coverage and 53.8 minutes average task duration.</p>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Metric</th>
+                        <th>Total</th>
+                        <th>Completed</th>
+                        <th>In Progress</th>
+                        <th>Average Duration</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>All Facilities</strong></td>
+                        <td>63</td>
+                        <td>51</td>
+                        <td>0</td>
+                        <td>
+                            <span class="tooltip">53.8 min
+                                <span class="tooltiptext">Average task duration calculated from actual task durations in the database.</span>
+                            </span>
+                            <span style="color: #28a745; font-size: 0.8em; margin-left: 5px;">
+                                (vs last: +8.0 min)
+                            </span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="chart-row">
+                <div class="chart-small">
+                    <canvas id="taskStatusChart"></canvas>
+                </div>
+                <div class="chart-small">
+                    <canvas id="taskModeChart"></canvas>
+                </div>
+            </div>
+        
+            <h3>Task Efficiency by Location</h3>
+            <p>Daily task performance showing running hours and coverage efficiency patterns for each location. Each chart displays actual operational data to identify location-specific performance trends.</p>
+
+            <div class="location-efficiency-single-column">
+                    <div class="location-efficiency-single-line">
+                        <h4>Building 205 Dental Science</h4>
+                        <div class="location-single-line-content">
+                            <div class="location-chart-compact">
+                                <div class="chart-toggle-container">
+                                    <button class="chart-toggle-btn" onclick="toggleLocationView('Building_205_Dental_Science')" id="locationToggle_Building_205_Dental_Science">
+                                        View Weekly Trend
+                                    </button>
+                                </div>
+                                <canvas id="taskEfficiencyChart_Building_205_Dental_Science"></canvas>
+                            </div>
+                            <div class="location-stats-compact">
+                                <div class="stat-row">
+                                    <span class="stat-label">Task Mode:</span>
+                                    <span class="stat-value">Scrubbing (38 tasks)</span>
+                                </div>
+                                <div class="stat-row">
+                                    <span class="stat-label">Avg Duration:</span>
+                                    <span class="stat-value">40.6 min</span>
+                                    <span class="stat-comparison" style="color: #28a745;">
+                                        (vs last: +8.0 min)
+                                    </span>
+                                </div>
+                                <div class="stat-row">
+                                    <span class="stat-label">Days with Tasks:</span>
+                                    <span class="stat-value">10/23</span>
+                                    <span class="stat-comparison" style="color: #dc3545;">
+                                        (vs last: -3.0 days)
+                                    </span>
+                                </div>
+                                <div class="stat-row">
+                                    <span class="stat-label">Highest Coverage:</span>
+                                    <span class="stat-value">Wednesday</span>
+                                    <span class="stat-comparison">(vs last: Friday)</span>
+                                </div>
+                                <div class="stat-row">
+                                    <span class="stat-label">Lowest Coverage:</span>
+                                    <span class="stat-value">Tuesday</span>
+                                    <span class="stat-comparison">(vs last: Tuesday)</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="location-efficiency-single-line">
+                        <h4>Building 43 Marston Science Library</h4>
+                        <div class="location-single-line-content">
+                            <div class="location-chart-compact">
+                                <div class="chart-toggle-container">
+                                    <button class="chart-toggle-btn" onclick="toggleLocationView('Building_43_Marston_Science_Library')" id="locationToggle_Building_43_Marston_Science_Library">
+                                        View Weekly Trend
+                                    </button>
+                                </div>
+                                <canvas id="taskEfficiencyChart_Building_43_Marston_Science_Library"></canvas>
+                            </div>
+                            <div class="location-stats-compact">
+                                <div class="stat-row">
+                                    <span class="stat-label">Task Mode:</span>
+                                    <span class="stat-value">Sweeping (25 tasks)</span>
+                                </div>
+                                <div class="stat-row">
+                                    <span class="stat-label">Avg Duration:</span>
+                                    <span class="stat-value">74.0 min</span>
+                                    <span class="stat-comparison" style="color: #28a745;">
+                                        (vs last: +5.0 min)
+                                    </span>
+                                </div>
+                                <div class="stat-row">
+                                    <span class="stat-label">Days with Tasks:</span>
+                                    <span class="stat-value">13/23</span>
+                                    <span class="stat-comparison" style="color: #dc3545;">
+                                        (vs last: -3.0 days)
+                                    </span>
+                                </div>
+                                <div class="stat-row">
+                                    <span class="stat-label">Highest Coverage:</span>
+                                    <span class="stat-value">Tuesday</span>
+                                    <span class="stat-comparison">(vs last: Saturday)</span>
+                                </div>
+                                <div class="stat-row">
+                                    <span class="stat-label">Lowest Coverage:</span>
+                                    <span class="stat-value">Sunday</span>
+                                    <span class="stat-comparison">(vs last: Sunday)</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+            </div></section>
+        <section id="facility-performance">
+            <h2>🏢 Facility-Specific Performance</h2>
+
+            <div class="two-column">
+                
+            <div>
+                <h3>Building 205 Dental Science</h3>
+                <p>Performance metrics for Building 205 Dental Science: 38 total tasks, 163,591 sq ft total area cleaned, 89.1% average coverage, 6363.4 sq ft/hour time efficiency, and 1.4 sq ft/fl oz water efficiency.</p>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Metric</th>
+                            <th>Performance</th>
+                            <th>vs Last Period</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Total Area Cleaned</td>
+                            <td>163,591 sq ft</td>
+                            <td style="color: #dc3545;">-72364.0 sq ft</td>
+                        </tr>
+                        <tr>
+                            <td>Average Coverage</td>
+                            <td>89.1%</td>
+                            <td style="color: #28a745;">+18.0%</td>
+                        </tr>
+                        <tr>
+                            <td>Running Hours</td>
+                            <td>25.7 hours</td>
+                            <td style="color: #dc3545;">-12.3 hrs</td>
+                        </tr>
+                        <tr>
+                            <td>Time Efficiency</td>
+                            <td>6363.4 sq ft/hr</td>
+                            <td style="color: #28a745;">+152.7 sq ft/hr</td>
+                        </tr>
+                        <tr>
+                            <td>Power Efficiency</td>
+                            <td>17,801 sq ft/kWh</td>
+                            <td style="color: #28a745;">+87.0 sq ft/kWh</td>
+                        </tr>
+                        <tr>
+                            <td>Water Efficiency</td>
+                            <td>1.4 sq ft/fl oz</td>
+                            <td style="color: #28a745;">+0.4 sq ft/fl oz</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div>
+                <h3>Building 43 Marston Science Library</h3>
+                <p>Performance metrics for Building 43 Marston Science Library: 25 total tasks, 173,240 sq ft total area cleaned, 87.0% average coverage, 5621.2 sq ft/hour time efficiency, and 0.0 sq ft/fl oz water efficiency.</p>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Metric</th>
+                            <th>Performance</th>
+                            <th>vs Last Period</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Total Area Cleaned</td>
+                            <td>173,240 sq ft</td>
+                            <td style="color: #dc3545;">-72022.0 sq ft</td>
+                        </tr>
+                        <tr>
+                            <td>Average Coverage</td>
+                            <td>87.0%</td>
+                            <td style="color: #28a745;">+16.6%</td>
+                        </tr>
+                        <tr>
+                            <td>Running Hours</td>
+                            <td>30.8 hours</td>
+                            <td style="color: #dc3545;">-15.2 hrs</td>
+                        </tr>
+                        <tr>
+                            <td>Time Efficiency</td>
+                            <td>5621.2 sq ft/hr</td>
+                            <td style="color: #28a745;">+292.0 sq ft/hr</td>
+                        </tr>
+                        <tr>
+                            <td>Power Efficiency</td>
+                            <td>12,957 sq ft/kWh</td>
+                            <td style="color: #dc3545;">-970.0 sq ft/kWh</td>
+                        </tr>
+                        <tr>
+                            <td>Water Efficiency</td>
+                            <td>0.0 sq ft/fl oz</td>
+                            <td style="color: #6c757d;">0 sq ft/fl oz</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            </div>
+
+            
+                    <h3>Map-Specific Performance</h3>
+                    <div class="tooltip" style="margin-bottom: 15px;">
+                        <span style="color: #3498db; text-decoration: underline dotted;">How these figures are calculated</span>
+                        <span class="tooltiptext">Coverage: (actual area / planned area) × 100. Area Cleaned: sum of actual cleaned area converted to sq ft. Running Hours: sum of task durations converted from seconds. Power Efficiency: area cleaned / energy consumption. Time Efficiency: area cleaned / running hours. Water Efficiency: area cleaned / water consumption. Days with Tasks: unique dates when tasks occurred.</span>
+                    </div>
+                            <div class="map-section">
+                                <h4>Building 205 Dental Science Maps</h4>
+                                <div class="building-maps">
+                                    <div style="margin: 15px 0; border: 1px solid #dee2e6; border-radius: 5px; padding: 15px;">
+                                        <h5>2#0#Bld205-Floor2</h5>
+                                        <div class="progress-container">
+                                            <span>Coverage:</span>
+                                            <div class="progress-bar">
+                                                <div class="progress-fill" style="width: 98.9%"></div>
+                                            </div>
+                                            <span class="progress-text">98.9%</span>
+                                            <span style="color: #28a745; font-size: 0.8em; margin-left: 10px;">
+                                                vs last: +98.9%
+                                            </span>
+                                        </div>
+                                        <div class="map-metrics">
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">19,937</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Area Cleaned (sq ft)</div>
+                                                <div style="font-size: 0.7em; color: #28a745;">
+                                                    vs last: +19937.0 sq ft
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">2.9</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Running Hours</div>
+                                                <div style="font-size: 0.7em; color: #28a745;">
+                                                    vs last: +2.9 hrs
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">6860</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Time Efficiency (sq ft/hr)</div>
+                                                <div style="font-size: 0.7em; color: #28a745;">
+                                                    vs last: +6860.3 sq ft/hr
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">19546</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Power Efficiency (sq ft/kWh)</div>
+                                                <div style="font-size: 0.7em; color: #28a745;">
+                                                    vs last: +19545.9 sq ft/kWh
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">1.6</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Water Efficiency (sq ft/fl oz)</div>
+                                                <div style="font-size: 0.7em; color: #28a745;">
+                                                    vs last: +1.6 sq ft/fl oz
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">5</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Days with Tasks</div>
+                                                <div style="font-size: 0.7em; color: #28a745;">
+                                                    vs last: +4.0 days
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style="margin: 15px 0; border: 1px solid #dee2e6; border-radius: 5px; padding: 15px;">
+                                        <h5>-1#0#Bld_205_Dental_Sci_Grd</h5>
+                                        <div class="progress-container">
+                                            <span>Coverage:</span>
+                                            <div class="progress-bar">
+                                                <div class="progress-fill" style="width: 97.2%"></div>
+                                            </div>
+                                            <span class="progress-text">97.2%</span>
+                                            <span style="color: #28a745; font-size: 0.8em; margin-left: 10px;">
+                                                vs last: +11.4%
+                                            </span>
+                                        </div>
+                                        <div class="map-metrics">
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">71,589</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Area Cleaned (sq ft)</div>
+                                                <div style="font-size: 0.7em; color: #dc3545;">
+                                                    vs last: -53226.0 sq ft
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">10.4</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Running Hours</div>
+                                                <div style="font-size: 0.7em; color: #dc3545;">
+                                                    vs last: -7.5 hrs
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">6910</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Time Efficiency (sq ft/hr)</div>
+                                                <div style="font-size: 0.7em; color: #dc3545;">
+                                                    vs last: -57.8 sq ft/hr
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">16805</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Power Efficiency (sq ft/kWh)</div>
+                                                <div style="font-size: 0.7em; color: #28a745;">
+                                                    vs last: +118.4 sq ft/kWh
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">1.3</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Water Efficiency (sq ft/fl oz)</div>
+                                                <div style="font-size: 0.7em; color: #28a745;">
+                                                    vs last: +0.2 sq ft/fl oz
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">10</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Days with Tasks</div>
+                                                <div style="font-size: 0.7em; color: #dc3545;">
+                                                    vs last: -3.0 days
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style="margin: 15px 0; border: 1px solid #dee2e6; border-radius: 5px; padding: 15px;">
+                                        <h5>1#1#dental_ground_elevator</h5>
+                                        <div class="progress-container">
+                                            <span>Coverage:</span>
+                                            <div class="progress-bar">
+                                                <div class="progress-fill" style="width: 89.8%"></div>
+                                            </div>
+                                            <span class="progress-text">89.8%</span>
+                                            <span style="color: #28a745; font-size: 0.8em; margin-left: 10px;">
+                                                vs last: +13.6%
+                                            </span>
+                                        </div>
+                                        <div class="map-metrics">
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">9,890</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Area Cleaned (sq ft)</div>
+                                                <div style="font-size: 0.7em; color: #dc3545;">
+                                                    vs last: -3536.0 sq ft
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">2.4</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Running Hours</div>
+                                                <div style="font-size: 0.7em; color: #dc3545;">
+                                                    vs last: -1.1 hrs
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">4163</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Time Efficiency (sq ft/hr)</div>
+                                                <div style="font-size: 0.7em; color: #28a745;">
+                                                    vs last: +329.7 sq ft/hr
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">10989</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Power Efficiency (sq ft/kWh)</div>
+                                                <div style="font-size: 0.7em; color: #28a745;">
+                                                    vs last: +1189.4 sq ft/kWh
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">0.9</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Water Efficiency (sq ft/fl oz)</div>
+                                                <div style="font-size: 0.7em; color: #28a745;">
+                                                    vs last: +0.1 sq ft/fl oz
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">9</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Days with Tasks</div>
+                                                <div style="font-size: 0.7em; color: #dc3545;">
+                                                    vs last: -2.0 days
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style="margin: 15px 0; border: 1px solid #dee2e6; border-radius: 5px; padding: 15px;">
+                                        <h5>1#0#Bld_205_Dental_Sci_1fl</h5>
+                                        <div class="progress-container">
+                                            <span>Coverage:</span>
+                                            <div class="progress-bar">
+                                                <div class="progress-fill" style="width: 78.8%"></div>
+                                            </div>
+                                            <span class="progress-text">78.8%</span>
+                                            <span style="color: #28a745; font-size: 0.8em; margin-left: 10px;">
+                                                vs last: +19.0%
+                                            </span>
+                                        </div>
+                                        <div class="map-metrics">
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">62,175</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Area Cleaned (sq ft)</div>
+                                                <div style="font-size: 0.7em; color: #dc3545;">
+                                                    vs last: -34727.0 sq ft
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">10.1</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Running Hours</div>
+                                                <div style="font-size: 0.7em; color: #dc3545;">
+                                                    vs last: -6.3 hrs
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">6177</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Time Efficiency (sq ft/hr)</div>
+                                                <div style="font-size: 0.7em; color: #28a745;">
+                                                    vs last: +251.8 sq ft/hr
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">20656</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Power Efficiency (sq ft/kWh)</div>
+                                                <div style="font-size: 0.7em; color: #dc3545;">
+                                                    vs last: -1367.3 sq ft/kWh
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">1.7</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Water Efficiency (sq ft/fl oz)</div>
+                                                <div style="font-size: 0.7em; color: #28a745;">
+                                                    vs last: +0.7 sq ft/fl oz
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">6</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Days with Tasks</div>
+                                                <div style="font-size: 0.7em; color: #dc3545;">
+                                                    vs last: -5.0 days
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                            </div>
+                        </div>
+                            <div class="map-section">
+                                <h4>Building 43 Marston Science Library Maps</h4>
+                                <div class="building-maps">
+                                    <div style="margin: 15px 0; border: 1px solid #dee2e6; border-radius: 5px; padding: 15px;">
+                                        <h5>1#1#43_Main_areaMarston_Library_F1</h5>
+                                        <div class="progress-container">
+                                            <span>Coverage:</span>
+                                            <div class="progress-bar">
+                                                <div class="progress-fill" style="width: 95.1%"></div>
+                                            </div>
+                                            <span class="progress-text">95.1%</span>
+                                            <span style="color: #28a745; font-size: 0.8em; margin-left: 10px;">
+                                                vs last: +28.4%
+                                            </span>
+                                        </div>
+                                        <div class="map-metrics">
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">47,727</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Area Cleaned (sq ft)</div>
+                                                <div style="font-size: 0.7em; color: #28a745;">
+                                                    vs last: +33395.0 sq ft
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">7.9</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Running Hours</div>
+                                                <div style="font-size: 0.7em; color: #28a745;">
+                                                    vs last: +5.5 hrs
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">6022</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Time Efficiency (sq ft/hr)</div>
+                                                <div style="font-size: 0.7em; color: #28a745;">
+                                                    vs last: +110.5 sq ft/hr
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">11500</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Power Efficiency (sq ft/kWh)</div>
+                                                <div style="font-size: 0.7em; color: #dc3545;">
+                                                    vs last: -1894.3 sq ft/kWh
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">0.0</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Water Efficiency (sq ft/fl oz)</div>
+                                                <div style="font-size: 0.7em; color: #6c757d;">
+                                                    vs last: 0 sq ft/fl oz
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">7</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Days with Tasks</div>
+                                                <div style="font-size: 0.7em; color: #28a745;">
+                                                    vs last: +4.0 days
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style="margin: 15px 0; border: 1px solid #dee2e6; border-radius: 5px; padding: 15px;">
+                                        <h5>2#0#43_Marston_library_2nd</h5>
+                                        <div class="progress-container">
+                                            <span>Coverage:</span>
+                                            <div class="progress-bar">
+                                                <div class="progress-fill" style="width: 90.9%"></div>
+                                            </div>
+                                            <span class="progress-text">90.9%</span>
+                                            <span style="color: #28a745; font-size: 0.8em; margin-left: 10px;">
+                                                vs last: +5.5%
+                                            </span>
+                                        </div>
+                                        <div class="map-metrics">
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">75,111</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Area Cleaned (sq ft)</div>
+                                                <div style="font-size: 0.7em; color: #dc3545;">
+                                                    vs last: -14722.0 sq ft
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">13.8</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Running Hours</div>
+                                                <div style="font-size: 0.7em; color: #dc3545;">
+                                                    vs last: -2.3 hrs
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">5438</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Time Efficiency (sq ft/hr)</div>
+                                                <div style="font-size: 0.7em; color: #dc3545;">
+                                                    vs last: -142.2 sq ft/hr
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">13657</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Power Efficiency (sq ft/kWh)</div>
+                                                <div style="font-size: 0.7em; color: #dc3545;">
+                                                    vs last: -1265.8 sq ft/kWh
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">0.0</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Water Efficiency (sq ft/fl oz)</div>
+                                                <div style="font-size: 0.7em; color: #6c757d;">
+                                                    vs last: 0 sq ft/fl oz
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">10</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Days with Tasks</div>
+                                                <div style="font-size: 0.7em; color: #dc3545;">
+                                                    vs last: -2.0 days
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style="margin: 15px 0; border: 1px solid #dee2e6; border-radius: 5px; padding: 15px;">
+                                        <h5>1#0#43_Marston_Library_F1</h5>
+                                        <div class="progress-container">
+                                            <span>Coverage:</span>
+                                            <div class="progress-bar">
+                                                <div class="progress-fill" style="width: 80.8%"></div>
+                                            </div>
+                                            <span class="progress-text">80.8%</span>
+                                            <span style="color: #28a745; font-size: 0.8em; margin-left: 10px;">
+                                                vs last: +20.8%
+                                            </span>
+                                        </div>
+                                        <div class="map-metrics">
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">41,238</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Area Cleaned (sq ft)</div>
+                                                <div style="font-size: 0.7em; color: #dc3545;">
+                                                    vs last: -77914.0 sq ft
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">8.0</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Running Hours</div>
+                                                <div style="font-size: 0.7em; color: #dc3545;">
+                                                    vs last: -15.7 hrs
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">5147</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Time Efficiency (sq ft/hr)</div>
+                                                <div style="font-size: 0.7em; color: #28a745;">
+                                                    vs last: +118.7 sq ft/hr
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">12689</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Power Efficiency (sq ft/kWh)</div>
+                                                <div style="font-size: 0.7em; color: #dc3545;">
+                                                    vs last: -594.6 sq ft/kWh
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">0.0</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Water Efficiency (sq ft/fl oz)</div>
+                                                <div style="font-size: 0.7em; color: #6c757d;">
+                                                    vs last: 0 sq ft/fl oz
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">4</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Days with Tasks</div>
+                                                <div style="font-size: 0.7em; color: #dc3545;">
+                                                    vs last: -7.0 days
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style="margin: 15px 0; border: 1px solid #dee2e6; border-radius: 5px; padding: 15px;">
+                                        <h5>5#0#Marston-5th-floor</h5>
+                                        <div class="progress-container">
+                                            <span>Coverage:</span>
+                                            <div class="progress-bar">
+                                                <div class="progress-fill" style="width: 59.5%"></div>
+                                            </div>
+                                            <span class="progress-text">59.5%</span>
+                                            <span style="color: #dc3545; font-size: 0.8em; margin-left: 10px;">
+                                                vs last: -35.5%
+                                            </span>
+                                        </div>
+                                        <div class="map-metrics">
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">9,163</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Area Cleaned (sq ft)</div>
+                                                <div style="font-size: 0.7em; color: #dc3545;">
+                                                    vs last: -12782.0 sq ft
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">1.1</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Running Hours</div>
+                                                <div style="font-size: 0.7em; color: #dc3545;">
+                                                    vs last: -2.7 hrs
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">8584</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Time Efficiency (sq ft/hr)</div>
+                                                <div style="font-size: 0.7em; color: #28a745;">
+                                                    vs last: +2810.0 sq ft/hr
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">19496</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Power Efficiency (sq ft/kWh)</div>
+                                                <div style="font-size: 0.7em; color: #28a745;">
+                                                    vs last: +5337.8 sq ft/kWh
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">0.0</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Water Efficiency (sq ft/fl oz)</div>
+                                                <div style="font-size: 0.7em; color: #6c757d;">
+                                                    vs last: 0 sq ft/fl oz
+                                                </div>
+                                            </div>
+                                            <div class="map-metric">
+                                                <div style="font-weight: bold;">2</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">Days with Tasks</div>
+                                                <div style="font-size: 0.7em; color: #dc3545;">
+                                                    vs last: -1.0 days
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                            </div>
+                        </div>
+        </section>
+        <section id="resource-utilization">
+            <h2>⚡ Resource Utilization & Efficiency</h2>
+            <h3>Resource Performance</h3>
+            <p>Resource utilization: 22.60 kWh total energy consumption, 114280 fl oz total water usage, 14930 sq ft per kWh energy efficiency, and 377 sq ft per gallon water efficiency.</p>
+
+            
+            <div class="chart-container">
+                <div class="chart-toggle-container">
+                    <button class="chart-toggle-btn" onclick="toggleResourceView()" id="resourceToggle">
+                        View Weekly Trend
+                    </button>
+                </div>
+                <canvas id="resourceChart"></canvas>
+            </div>
+            
+
+            
+            <div class="two-column">
+                <div>
+                    <h4>Energy Usage by Facility</h4>
+                    <ul><li><strong>Building 205 Dental Science:</strong> 9.2 kWh
+                    <span style="color: #28a745;">
+                        (vs last: -4.1 kWh)
+                    </span>
+                </li><li><strong>Building 43 Marston Science Library:</strong> 13.4 kWh
+                    <span style="color: #28a745;">
+                        (vs last: -4.2 kWh)
+                    </span>
+                </li>
+                    </ul>
+                </div>
+                <div>
+                    <h4>Water Usage by Facility</h4>
+                    <ul><li><strong>Building 205 Dental Science:</strong> 114280 fl oz
+                    <span style="color: #28a745;">
+                        (vs last: -116161.0 fl oz)
+                    </span>
+                </li><li><strong>Building 43 Marston Science Library:</strong> 0 fl oz
+                    <span style="color: #6c757d;">
+                        (vs last: 0 fl oz)
+                    </span>
+                </li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+        <section id="financial-performance">
+            <h2>💰 Financial Performance</h2>
+
+            <p>Financial analysis based on actual resource usage: $0.00/sq ft average cost per square foot, $0.00 total operational cost, 42.1 hours saved compared to manual cleaning, and $1,052.60 in realized savings.</p>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Operational Metric</th>
+                        <th>Value</th>
+                        <th>vs Previous Period</th>
+                        <th>Notes</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Cost per Sq Ft</td>
+                        <td>$0.00/sq ft</td>
+                        <td style="color: None;">0</td>
+                        <td>Operational efficiency (water + energy cost per area)</td>
+                    </tr>
+                    <tr>
+                        <td>Total Operational Cost</td>
+                        <td>$0.00</td>
+                        <td style="color: None;">0</td>
+                        <td>Robot operational cost this period</td>
+                    </tr>
+                    <tr>
+                        <td>ROI</td>
+                        <td>42.6%</td>
+                        <td style="color: #28a745;">+16.5%</td>
+                        <td>Return on Investment (cumulative savings ÷ total investment × 100)</td>
+                    </tr>
+                    <tr>
+                        <td>Total Investment</td>
+                        <td>$6,000.00</td>
+                        <td style="color: #6c757d;">N/A</td>
+                        <td>Cumulative lease investment ($1500/month per robot)</td>
+                    </tr>
+                    <tr>
+                        <td>Cost Efficiency Improvement</td>
+                        <td>100.0%</td>
+                        <td style="color: #28a745;">+0.0%</td>
+                        <td>Efficiency improvement vs manual cleaning</td>
+                    </tr>
+                    <tr>
+                        <td>Water Cost</td>
+                        <td>$0.00</td>
+                        <td style="color: None;">0</td>
+                        <td>Water resource cost component</td>
+                    </tr>
+                    <tr>
+                        <td>Energy Cost</td>
+                        <td>$0.00</td>
+                        <td style="color: None;">0</td>
+                        <td>Energy resource cost component</td>
+                    </tr>
+                </tbody>
+            </table>
+            <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #17a2b8;">
+                <h4 style="color: #17a2b8; margin-top: 0;">💡 ROI Calculation Method</h4>
+                <p><strong>ROI Formula:</strong> Cumulative Savings ÷ Total Investment × 100</p>
+                <p><strong>Investment:</strong> $1,500/month per robot × months elapsed (rounded up for billing)</p>
+                <p><strong>Cumulative Savings:</strong> All-time savings from first robot task to end of reporting period</p>
+                <p><strong>Chart Note:</strong> ROI trend shows daily cumulative values (not weekly averages, as ROI is cumulative by nature)</p>
+            </div>
+            
+            <div class="chart-container">
+                <div class="chart-toggle-container">
+                    <button class="chart-toggle-btn" onclick="toggleFinancialView()" id="financialToggle">
+                        View Weekly Trend
+                    </button>
+                </div>
+                <canvas id="financialChart"></canvas>
+            </div>
+            
+            <div class="highlight-box">
+                <h3 class="white-text">💡 Financial Impact Summary</h3>
+                <div class="metrics-grid">
+                    <div style="text-align: center;">
+                        <div style="font-size: 1.5em; margin-bottom: 5px;"><strong>$1,052.60</strong></div>
+                        <div>Manual Cleaning Cost</div>
+                        <div style="color: #28a745; font-size: 0.8em;">
+                            vs last: -451.2
+                        </div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 1.5em; margin-bottom: 5px;"><strong>$1,052.60</strong></div>
+                        <div>Savings Realized</div>
+                        <div style="color: #dc3545; font-size: 0.8em;">
+                            vs last: -451.2
+                        </div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 1.5em; margin-bottom: 5px;"><strong>42.1 hrs</strong></div>
+                        <div>Hours Saved vs Manual</div>
+                        <div style="color: #28a745; font-size: 0.8em;">
+                            vs last: -18.1 hrs
+                        </div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 1.5em; margin-bottom: 5px;"><strong>$12,631.16</strong></div>
+                        <div>Annual Projected Savings</div>
+                        <div style="color: #dc3545; font-size: 0.8em;">
+                            vs last: -5414.5
+                        </div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 1.5em; margin-bottom: 5px;"><strong>$2,556.40</strong></div>
+                        <div>Cumulative Savings</div>
+                        <div style="color: #28a745; font-size: 0.8em;">
+                            vs last: +988.8
+                        </div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 1.5em; margin-bottom: 5px;"><strong>4.7 months</strong></div>
+                        <div>Payback Period</div>
+                        <div style="color: #28a745; font-size: 0.8em;">
+                            vs last: 0 months
+                        </div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 1.5em; margin-bottom: 5px;"><strong>$1,278.20/month</strong></div>
+                        <div>Monthly Savings Rate</div>
+                        <div style="color: #28a745; font-size: 0.8em;">
+                            vs last: +494.4
+                        </div>
+                    </div>
+                </div>
+                <p style="margin-top: 15px; font-size: 0.9em; opacity: 0.8;">
+                    Financial calculations based on actual resource usage, lease model, and human cleaning speed benchmarks.
+                </p>
+            </div>
+
+        </section>
+        <section id="charging-performance">
+            <h2>🔋 Charging Sessions Performance</h2>
+
+            <p>Charging patterns and battery management during the reporting period: 80 total sessions, 339.5 minutes average duration, and 20.8% average power gain per session.</p>
+
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-value">80</div>
+                    <div class="metric-label">Total Charging Sessions</div>
+                    <div style="font-size: 0.8em; margin-top: 5px; color: #28a745;">
+                        vs last period: +8.0 sessions
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value tooltip">339.5 min
+                        <span class="tooltiptext">Average charging duration calculated from actual charging session data.</span>
+                    </div>
+                    <div class="metric-label">Avg Charging Duration</div>
+                    <div style="font-size: 0.8em; margin-top: 5px; color: #28a745;">
+                        vs last period: +32.7 min
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value tooltip">81.0 min
+                        <span class="tooltiptext">Median charging duration from actual charging session data - represents typical session length.</span>
+                    </div>
+                    <div class="metric-label">Median Charging Duration</div>
+                    <div style="font-size: 0.8em; margin-top: 5px; color: #dc3545;">
+                        vs last period: -60.0 min
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value tooltip">+20.8%
+                        <span class="tooltiptext">Average power gain per charging session from database records.</span>
+                    </div>
+                    <div class="metric-label">Avg Power Gain per Session</div>
+                    <div style="font-size: 0.8em; margin-top: 5px; color: #dc3545;">
+                        vs last period: -1.6%
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value tooltip">+8.0%
+                        <span class="tooltiptext">Median power gain per charging session - represents typical power increase.</span>
+                    </div>
+                    <div class="metric-label">Median Power Gain per Session</div>
+                    <div style="font-size: 0.8em; margin-top: 5px; color: #28a745;">
+                        vs last period: +1.0%
+                    </div>
+                </div>
+            </div>
+        
+            <div class="chart-container">
+                <div class="chart-toggle-container">
+                    <button class="chart-toggle-btn" onclick="toggleChargingView()" id="chargingToggle">
+                        View Weekly Trend
+                    </button>
+                </div>
+                <canvas id="chargingChart"></canvas>
+            </div>
+            
+            <h3>Charging Patterns by Location</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Location</th>
+                        <th>Total Sessions</th>
+                        <th>Avg Duration</th>
+                        <th>Median Duration</th>
+                        <th>Avg Power Gain</th>
+                        <th>Median Power Gain</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Building 205 Dental Science</td>
+                        <td>44
+                            <div style="font-size: 0.7em; color: #28a745;">
+                                vs last: +5.0 sessions
+                            </div>
+                        </td>
+                        <td>258.5 min
+                            <div style="font-size: 0.7em; color: #28a745;">
+                                vs last: +1.2 min
+                            </div>
+                        </td>
+                        <td>16.0 min
+                            <div style="font-size: 0.7em; color: #dc3545;">
+                                vs last: -91.0 min
+                            </div>
+                        </td>
+                        <td>+12.9%
+                            <div style="font-size: 0.7em; color: #dc3545;">
+                                vs last: -6.4%
+                            </div>
+                        </td>
+                        <td>+1.0%
+                            <div style="font-size: 0.7em; color: #dc3545;">
+                                vs last: -5.0%
+                            </div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Building 43 Marston Science Library</td>
+                        <td>36
+                            <div style="font-size: 0.7em; color: #28a745;">
+                                vs last: +3.0 sessions
+                            </div>
+                        </td>
+                        <td>422.8 min
+                            <div style="font-size: 0.7em; color: #28a745;">
+                                vs last: +61.5 min
+                            </div>
+                        </td>
+                        <td>192.0 min
+                            <div style="font-size: 0.7em; color: #28a745;">
+                                vs last: +20.5 min
+                            </div>
+                        </td>
+                        <td>+30.6%
+                            <div style="font-size: 0.7em; color: #28a745;">
+                                vs last: +4.4%
+                            </div>
+                        </td>
+                        <td>+31.0%
+                            <div style="font-size: 0.7em; color: #28a745;">
+                                vs last: +14.0%
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table></section>
+        <section id="conclusion">
+            <h2>🎯 Conclusion</h2>
+
+            <div class="highlight-box">
+                <p>2025-09-01 To 2025-09-22 performance summary: 81.0% task completion rate across
+                2.0 robot(s),
+                63.0 tasks completed,
+                336,831.0 sq ft cleaned,
+                80.0 charging sessions,
+                and 42.6% return on investment.</p>
+            </div>
+        </section>
+        <footer style="margin-top: 50px; padding-top: 20px; border-top: 2px solid #e9ecef; text-align: center; color: #7f8c8d;">
+            <p><strong>UF Report</strong><br>
+            Period: 2025-09-01 to 2025-09-22<br>
+            Robots Included: 2<br>
+            Generated: September 22, 2025 at 12:59 PM</p>
+        </footer>
+                </div>
+                
+    <script>
+        // Store original daily data
+        let originalData = {
+            dates: ["09/01", "09/02", "09/03", "09/04", "09/05", "09/06", "09/07", "09/08", "09/09", "09/10", "09/11", "09/12", "09/13", "09/14", "09/15", "09/16", "09/17", "09/18", "09/19", "09/20", "09/21", "09/22", "09/23"],
+            charging_sessions: [3, 7, 8, 18, 8, 1, 3, 3, 13, 4, 6, 4, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            charging_durations: [987.3, 234.5, 307.3, 128.9, 238.4, 1293.0, 1328.0, 519.7, 208.5, 408.5, 223.7, 435.3, 522.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            energy_data: [1.4, 1.8, 2.3, 1.7, 2.6, 0.5, 0.8, 1.3, 1.8, 2.2, 1.3, 1.5, 0.7, 0, 0, 0, 0, 1.5, 1.1, 0, 0, 0, 0],
+            water_data: [0.0, 16235.0, 21692.0, 8517.0, 14487.0, 0.0, 0.0, 10162.0, 12617.0, 8558.0, 10493.0, 0.0, 0.0, 0, 0, 0, 0, 7576.0, 3943.0, 0, 0, 0, 0],
+            hours_saved: [20.4, 31.6, 37.9, 24.3, 38.4, 7.5, 7.9, 24.7, 31.4, 21.8, 20.7, 17.7, 7.5, 0.0, 0.0, 0.0, 0.0, 27.5, 17.3, 0.0, 0.0, 0.0, 0.0],
+            savings_data: [510.38, 790.3, 948.67, 606.92, 961.03, 187.78, 197.98, 617.95, 784.14, 546.01, 518.11, 442.97, 187.78, 0.0, 0.0, 0.0, 0.0, 688.58, 432.18, 0.0, 0.0, 0.0, 0.0],
+            roi_data: [26.1, 27.8, 29.7, 31.0, 33.0, 33.4, 33.8, 35.1, 36.7, 37.9, 39.0, 39.9, 40.3, 40.3, 40.3, 40.3, 40.3, 41.7, 42.6, 42.6, 42.6, 42.6, 42.6]
+        };
+
+        // Store location efficiency data
+        let locationEfficiencyData = {"Building 205 Dental Science": {"dates": ["09/01", "09/02", "09/03", "09/04", "09/05", "09/06", "09/07", "09/08", "09/09", "09/10", "09/11", "09/12", "09/13", "09/14", "09/15", "09/16", "09/17", "09/18", "09/19", "09/20", "09/21", "09/22", "09/23"], "running_hours": [0, 2.48, 3.61, 1.41, 2.88, 0, 0, 1.9, 2.51, 1.46, 2.03, 0, 0, 0, 0, 0, 0, 4.59, 2.83, 0, 0, 0, 0], "coverage_percentages": [0, 100.0, 99.1, 100.0, 97.8, 0, 0, 93.1, 64.0, 100.0, 100.0, 0, 0, 0, 0, 0, 0, 76.6, 95.8, 0, 0, 0, 0]}, "Building 43 Marston Science Library": {"dates": ["09/01", "09/02", "09/03", "09/04", "09/05", "09/06", "09/07", "09/08", "09/09", "09/10", "09/11", "09/12", "09/13", "09/14", "09/15", "09/16", "09/17", "09/18", "09/19", "09/20", "09/21", "09/22", "09/23"], "running_hours": [4.07, 2.58, 2.59, 2.61, 3.91, 1.37, 1.41, 1.54, 2.34, 2.35, 1.24, 3.4, 1.42, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "coverage_percentages": [100.0, 100.0, 100.0, 66.1, 86.4, 100.0, 44.7, 81.4, 100.0, 83.4, 100.0, 100.0, 100.0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}};
+
+        // Store chart instances
+        let chartInstances = {};
+
+        // Helper function to aggregate data by day of week
+        function aggregateByDayOfWeek(dates, values) {
+            const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+            const dayTotals = new Array(7).fill(0);
+            const dayCounts = new Array(7).fill(0);
+
+            dates.forEach((dateStr, index) => {
+                if (values[index] !== undefined && values[index] !== null) {
+                    // Parse date (format: MM/DD)
+                    const [month, day] = dateStr.split('/').map(Number);
+                    const currentYear = new Date().getFullYear();
+                    const date = new Date(currentYear, month - 1, day);
+                    const dayOfWeek = (date.getDay() + 6) % 7; // Convert Sunday=0 to Monday=0
+
+                    dayTotals[dayOfWeek] += values[index] || 0;
+                    dayCounts[dayOfWeek]++;
+                }
+            });
+
+            // Calculate averages
+            const averages = dayTotals.map((total, index) =>
+                dayCounts[index] > 0 ? Math.round((total / dayCounts[index]) * 100) / 100 : 0
+            );
+
+            return { labels: dayNames, data: averages };
+        }
+
+        // Common chart options for interactivity
+        function getInteractiveChartOptions(yAxisTitle, y1AxisTitle) {
+            return {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    intersect: false,
+                    mode: 'index'
+                },
+                plugins: {
+                    tooltip: {
+                        enabled: true,
+                        mode: 'index',
+                        intersect: false,
+                        backgroundColor: 'rgba(0,0,0,0.8)',
+                        titleColor: 'white',
+                        bodyColor: 'white',
+                        borderColor: 'rgba(255,255,255,0.2)',
+                        borderWidth: 1
+                    },
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    }
+                },
+                scales: {
+                    y: {
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
+                        title: {
+                            display: true,
+                            text: yAxisTitle
+                        }
+                    },
+                    y1: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        title: {
+                            display: true,
+                            text: y1AxisTitle
+                        },
+                        grid: {
+                            drawOnChartArea: false,
+                        },
+                    }
+                }
+            };
+        }
+
+        // Toggle functions for global charts
+        function toggleChargingView() {
+            const btn = document.getElementById('chargingToggle');
+            const isWeekly = btn.textContent === 'View Daily Trend';
+
+            if (isWeekly) {
+                btn.textContent = 'View Weekly Trend';
+                btn.classList.remove('active');
+                createChargingChart(originalData.dates, originalData.charging_sessions, originalData.charging_durations);
+            } else {
+                btn.textContent = 'View Daily Trend';
+                btn.classList.add('active');
+
+                const weeklySessions = aggregateByDayOfWeek(originalData.dates, originalData.charging_sessions);
+                const weeklyDurations = aggregateByDayOfWeek(originalData.dates, originalData.charging_durations);
+
+                createChargingChart(weeklySessions.labels, weeklySessions.data, weeklyDurations.data);
+            }
+        }
+
+        function toggleResourceView() {
+            const btn = document.getElementById('resourceToggle');
+            const isWeekly = btn.textContent === 'View Daily Trend';
+
+            if (isWeekly) {
+                btn.textContent = 'View Weekly Trend';
+                btn.classList.remove('active');
+                createResourceChart(originalData.dates, originalData.energy_data, originalData.water_data);
+            } else {
+                btn.textContent = 'View Daily Trend';
+                btn.classList.add('active');
+
+                const weeklyEnergy = aggregateByDayOfWeek(originalData.dates, originalData.energy_data);
+                const weeklyWater = aggregateByDayOfWeek(originalData.dates, originalData.water_data);
+
+                createResourceChart(weeklyEnergy.labels, weeklyEnergy.data, weeklyWater.data);
+            }
+        }
+
+        function toggleFinancialView() {
+            const btn = document.getElementById('financialToggle');
+            const isWeekly = btn.textContent === 'View Daily Trend';
+
+            if (isWeekly) {
+                btn.textContent = 'View Weekly Trend';
+                btn.classList.remove('active');
+                // ROI always shows daily cumulative data (no aggregation)
+                createFinancialChart(
+                    originalData.dates,
+                    originalData.hours_saved,
+                    originalData.savings_data,
+                    originalData.roi_data
+                );
+            } else {
+                btn.textContent = 'View Daily Trend';
+                btn.classList.add('active');
+
+                const weeklyHours = aggregateByDayOfWeek(originalData.dates, originalData.hours_saved);
+                const weeklySavings = aggregateByDayOfWeek(originalData.dates, originalData.savings_data);
+
+                // ROI remains daily — don’t aggregate by day of week as it doesn’t make sense
+                createFinancialChart(
+                    weeklyHours.labels,
+                    weeklyHours.data,
+                    weeklySavings.data,
+                    [0, 0, 0, 0, 0, 0, 0] // ROI = 0 in weekly view
+                );
+            }
+        }
+
+        // Toggle function for location-specific charts
+        function toggleLocationView(locationName) {
+            const btn = document.getElementById(`locationToggle_${locationName}`);
+            if (!btn) {
+                console.error(`Button not found: locationToggle_${locationName}`);
+                return;
+            }
+
+            const isWeekly = btn.textContent === 'View Daily Trend';
+            const actualLocationName = locationName.replace(/_/g, ' ');
+            const locationData = locationEfficiencyData[actualLocationName];
+
+            if (!locationData || !locationData.dates || !locationData.running_hours || !locationData.coverage_percentages) {
+                console.error(`Invalid data for location: ${actualLocationName}`, locationData);
+                return;
+            }
+
+            if (isWeekly) {
+                btn.textContent = 'View Weekly Trend';
+                btn.classList.remove('active');
+                createLocationChart(locationName, locationData.dates, locationData.running_hours, locationData.coverage_percentages);
+            } else {
+                btn.textContent = 'View Daily Trend';
+                btn.classList.add('active');
+
+                const weeklyHours = aggregateByDayOfWeek(locationData.dates, locationData.running_hours);
+                const weeklyCoverage = aggregateByDayOfWeek(locationData.dates, locationData.coverage_percentages);
+
+                createLocationChart(locationName, weeklyHours.labels, weeklyHours.data, weeklyCoverage.data);
+            }
+        }
+
+        // Chart creation functions with full interactivity
+        function createChargingChart(labels, sessions, durations) {
+            if (chartInstances.charging) {
+                chartInstances.charging.destroy();
+            }
+
+            const ctx = document.getElementById('chargingChart');
+            if (ctx) {
+                chartInstances.charging = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels.length > 0 ? labels : ['No Data'],
+                        datasets: [{
+                            label: 'Charging Sessions',
+                            data: sessions.length > 0 ? sessions : [0],
+                            backgroundColor: 'rgba(23, 162, 184, 0.6)',
+                            borderColor: 'rgba(23, 162, 184, 1)',
+                            borderWidth: 1,
+                            yAxisID: 'y'
+                        }, {
+                            label: 'Avg Duration (min)',
+                            data: durations.length > 0 ? durations : [0],
+                            type: 'line',
+                            borderColor: '#e74c3c',
+                            backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                            tension: 0.4,
+                            yAxisID: 'y1',
+                            pointBackgroundColor: '#e74c3c',
+                            pointBorderColor: '#e74c3c',
+                            pointRadius: 4,
+                            pointHoverRadius: 6
+                        }]
+                    },
+                    options: getInteractiveChartOptions('Sessions', 'Duration (min)')
+                });
+            }
+        }
+
+        function createResourceChart(labels, energy, water) {
+            if (chartInstances.resource) {
+                chartInstances.resource.destroy();
+            }
+
+            const ctx = document.getElementById('resourceChart');
+            if (ctx) {
+                chartInstances.resource = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels.length > 0 ? labels : ['No Data'],
+                        datasets: [{
+                            label: 'Energy (kWh)',
+                            data: energy.length > 0 ? energy : [0],
+                            backgroundColor: 'rgba(231, 76, 60, 0.6)',
+                            borderColor: 'rgba(231, 76, 60, 1)',
+                            borderWidth: 1,
+                            yAxisID: 'y'
+                        }, {
+                            label: 'Water (fl oz)',
+                            data: water.length > 0 ? water : [0],
+                            backgroundColor: 'rgba(52, 152, 219, 0.6)',
+                            borderColor: 'rgba(52, 152, 219, 1)',
+                            borderWidth: 1,
+                            yAxisID: 'y1'
+                        }]
+                    },
+                    options: getInteractiveChartOptions('Energy (kWh)', 'Water (fl oz)')
+                });
+            }
+        }
+
+        function createFinancialChart(labels, hours, savings, roi) {
+            if (chartInstances.financial) {
+                chartInstances.financial.destroy();
+            }
+
+            const ctx = document.getElementById('financialChart');
+            if (ctx) {
+                chartInstances.financial = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels.length > 0 ? labels : ['No Data'],
+                        datasets: [{
+                            label: 'Hours Saved',
+                            data: hours.length > 0 ? hours : [0],
+                            backgroundColor: 'rgba(40, 167, 69, 0.6)',
+                            borderColor: 'rgba(40, 167, 69, 1)',
+                            borderWidth: 1,
+                            yAxisID: 'y'
+                        }, {
+                            label: 'Savings ($)',
+                            data: savings.length > 0 ? savings : [0],
+                            backgroundColor: 'rgba(23, 162, 184, 0.6)',
+                            borderColor: 'rgba(23, 162, 184, 1)',
+                            borderWidth: 1,
+                            yAxisID: 'y1'
+                        }, {
+                            label: 'ROI (%) - Daily Cumulative',
+                            data: roi.length > 0 ? roi : [0],
+                            type: 'line',
+                            borderColor: '#28a745',
+                            backgroundColor: 'rgba(40, 167, 69, 0.1)',
+                            tension: 0.4,
+                            yAxisID: 'y2',
+                            pointBackgroundColor: '#28a745',
+                            pointBorderColor: '#28a745',
+                            pointRadius: 4,
+                            pointHoverRadius: 6
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: {
+                            intersect: false,
+                            mode: 'index'
+                        },
+                        plugins: {
+                            tooltip: {
+                                enabled: true,
+                                mode: 'index',
+                                intersect: false,
+                                backgroundColor: 'rgba(0,0,0,0.8)',
+                                titleColor: 'white',
+                                bodyColor: 'white',
+                                borderColor: 'rgba(255,255,255,0.2)',
+                                borderWidth: 1,
+                                callbacks: {
+                                    afterLabel: function(context) {
+                                        return context.datasetIndex === 2
+                                            ? 'Cumulative ROI based on all-time data'
+                                            : '';
+                                    }
+                                }
+                            },
+                            legend: {
+                                display: true,
+                                position: 'top'
+                            }
+                        },
+                        scales: {
+                            y: {
+                                type: 'linear',
+                                display: true,
+                                position: 'left',
+                                title: {
+                                    display: true,
+                                    text: 'Hours Saved'
+                                }
+                            },
+                            y1: {
+                                type: 'linear',
+                                display: true,
+                                position: 'right',
+                                title: {
+                                    display: true,
+                                    text: 'Savings ($)'
+                                },
+                                grid: {
+                                    drawOnChartArea: false
+                                }
+                            },
+                            y2: {
+                                type: 'linear',
+                                display: false,
+                                position: 'right',
+                                title: {
+                                    display: true,
+                                    text: 'ROI (%)'
+                                },
+                                grid: {
+                                    drawOnChartArea: false
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        function createLocationChart(locationName, labels, runningHours, coverage) {
+            const chartKey = `taskEfficiency_${locationName}`;
+
+            if (chartInstances[chartKey]) {
+                chartInstances[chartKey].destroy();
+                delete chartInstances[chartKey];
+            }
+
+            const ctx = document.getElementById(`taskEfficiencyChart_${locationName}`);
+            if (!ctx) {
+                console.error(`Canvas not found: taskEfficiencyChart_${locationName}`);
+                return;
+            }
+
+            const validLabels = labels && labels.length > 0 ? labels : ['No Data'];
+            const validHours = runningHours && runningHours.length > 0 ? runningHours : [0];
+            const validCoverage = coverage && coverage.length > 0 ? coverage : [0];
+
+            chartInstances[chartKey] = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: validLabels,
+                    datasets: [{
+                        label: 'Running Hours',
+                        data: validHours,
+                        backgroundColor: 'rgba(52, 152, 219, 0.6)',
+                        borderColor: 'rgba(52, 152, 219, 1)',
+                        borderWidth: 1,
+                        yAxisID: 'y'
+                    }, {
+                        label: 'Coverage %',
+                        data: validCoverage,
+                        type: 'line',
+                        borderColor: '#e74c3c',
+                        backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                        tension: 0.4,
+                        yAxisID: 'y1',
+                        pointBackgroundColor: '#e74c3c',
+                        pointBorderColor: '#e74c3c',
+                        pointRadius: 4,
+                        pointHoverRadius: 6
+                    }]
+                },
+                options: getInteractiveChartOptions('Running Hours', 'Coverage %')
+            });
+        }
+
+        function createLocationTaskEfficiencyCharts() {
+            if (!locationEfficiencyData || Object.keys(locationEfficiencyData).length === 0) {
+                console.log('No locationEfficiencyData available');
+                return;
+            }
+
+            Object.keys(locationEfficiencyData).forEach(locationName => {
+                const locationData = locationEfficiencyData[locationName];
+                const safeName = locationName.replace(/\s+/g, '_');
+
+                if (locationData && locationData.dates && locationData.running_hours && locationData.coverage_percentages) {
+                    console.log(`Creating interactive chart for: ${locationName} (ID: ${safeName})`);
+                    createLocationChart(safeName, locationData.dates, locationData.running_hours, locationData.coverage_percentages);
+                } else {
+                    console.error(`Invalid data structure for location: ${locationName}`, locationData);
+                }
+            });
+        }
+
+        // Static charts with interactivity
+        const taskStatusCtx = document.getElementById('taskStatusChart');
+        if (taskStatusCtx) {
+            const taskStatusData = {"labels": ["Task Ended (Completed)", "Task Cancelled", "Task Interrupted"], "data": [51, 9, 3], "backgroundColor": ["#28a745", "#ffc107", "#dc3545"], "borderWidth": 2, "borderColor": "#fff"};
+            new Chart(taskStatusCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: taskStatusData.labels || ['Completed', 'Cancelled', 'Interrupted'],
+                    datasets: [{
+                        data: taskStatusData.data || [0, 0, 0],
+                        backgroundColor: taskStatusData.backgroundColor || ['#28a745', '#ffc107', '#dc3545'],
+                        borderWidth: 2,
+                        borderColor: '#fff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Task Status Distribution'
+                        },
+                        tooltip: {
+                            enabled: true,
+                            backgroundColor: 'rgba(0,0,0,0.8)',
+                            titleColor: 'white',
+                            bodyColor: 'white'
+                        },
+                        legend: {
+                            display: true,
+                            position: 'bottom'
+                        }
+                    }
+                }
+            });
+        }
+
+        const taskModeCtx = document.getElementById('taskModeChart');
+        if (taskModeCtx) {
+            const taskModeData = {"labels": ["Scrubbing", "Sweeping"], "data": [38, 25], "backgroundColor": ["#3498db", "#2ecc71"], "borderWidth": 2, "borderColor": "#fff"};
+            new Chart(taskModeCtx, {
+                type: 'pie',
+                data: {
+                    labels: taskModeData.labels || ['No Data'],
+                    datasets: [{
+                        data: taskModeData.data || [1],
+                        backgroundColor: taskModeData.backgroundColor || ['#6c757d'],
+                        borderWidth: 2,
+                        borderColor: '#fff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Task Mode Distribution'
+                        },
+                        tooltip: {
+                            enabled: true,
+                            backgroundColor: 'rgba(0,0,0,0.8)',
+                            titleColor: 'white',
+                            bodyColor: 'white'
+                        },
+                        legend: {
+                            display: true,
+                            position: 'bottom'
+                        }
+                    }
+                }
+            });
+        }
+
+        // Initialize all charts when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Initializing all charts...');
+            console.log('LocationEfficiencyData:', locationEfficiencyData);
+
+            // Global trend charts
+            createChargingChart(originalData.dates, originalData.charging_sessions, originalData.charging_durations);
+            createResourceChart(originalData.dates, originalData.energy_data, originalData.water_data);
+            createFinancialChart(originalData.dates, originalData.hours_saved, originalData.savings_data, originalData.roi_data); // UPDATED
+
+            // Location-specific charts
+            createLocationTaskEfficiencyCharts();
+
+            console.log('All charts initialized');
+        });
+    </script>
+            </body>
+            </html>

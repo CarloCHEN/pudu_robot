@@ -1936,9 +1936,15 @@ class PerformanceMetricsCalculator:
                             previous_facility_eff[facility_name].get('time_efficiency', 0),
                             "number", " sq ft/hr"
                         )
+                        facility_comp['days_with_tasks'] = calculate_change(
+                            current_facility_eff[facility_name].get('days_with_tasks', 0),
+                            previous_facility_eff[facility_name].get('days_with_tasks', 0),
+                            "number", " days"
+                        )
                     else:
                         facility_comp['water_efficiency'] = 'N/A'
                         facility_comp['time_efficiency'] = 'N/A'
+                        facility_comp['days_with_tasks'] = 'N/A'
 
                     # Add task metric comparisons
                     if facility_name in current_facility_task and facility_name in previous_facility_task:
@@ -2032,6 +2038,7 @@ class PerformanceMetricsCalculator:
                         'power_efficiency': 'N/A',
                         'water_efficiency': 'N/A',
                         'time_efficiency': 'N/A',
+                        'days_with_tasks': 'N/A',
                         'avg_task_duration': 'N/A',
                         'total_tasks': 'N/A',
                         'energy_consumption_facility': 'N/A',

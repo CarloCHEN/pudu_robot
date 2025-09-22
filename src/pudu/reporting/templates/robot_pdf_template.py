@@ -15,32 +15,33 @@ class RobotPDFTemplate:
     def generate_comprehensive_pdf_content(self, content: Dict[str, Any], config: ReportConfig) -> str:
         """Generate comprehensive PDF-ready HTML content (static version without interactivity)"""
         try:
+            detail_level = config.detail_level.value.lower()
             self.chart_images = self.chart_formatter.generate_pdf_chart_images(content)
 
             content_categories = config.content_categories
 
             # Always include executive summary
-            sections = [self._generate_executive_summary(content)]
+            sections = [self._generate_executive_summary(content, detail_level=detail_level)]
 
             # Task Performance section
             if any(cat in content_categories for cat in ['executive-summary', 'fleet-management', 'facility-performance', 'task-performance', 'cleaning-performance']):
-                sections.append(self._generate_task_section(content))
+                sections.append(self._generate_task_section(content, detail_level=detail_level))
 
             # Facility-Specific Performance section
             if any(cat in content_categories for cat in ['facility-performance', 'cleaning-performance']):
-                sections.append(self._generate_facility_section(content))
+                sections.append(self._generate_facility_section(content, detail_level=detail_level))
 
             # Resource Utilization & Efficiency section
             if 'resource-utilization' in content_categories:
-                sections.append(self._generate_resource_section(content))
+                sections.append(self._generate_resource_section(content, detail_level=detail_level))
 
             # Financial Performance section
             if 'financial-performance' in content_categories:
-                sections.append(self._generate_financial_section(content))
+                sections.append(self._generate_financial_section(content, detail_level=detail_level))
 
             # Charging Sessions Performance section
             if 'charging-performance' in content_categories:
-                sections.append(self._generate_charging_section(content))
+                sections.append(self._generate_charging_section(content, detail_level=detail_level))
 
             # Always include conclusion
             sections.append(self._generate_conclusion(content))
@@ -394,7 +395,7 @@ class RobotPDFTemplate:
             }
         </style>"""
 
-    def _generate_executive_summary(self, content: Dict[str, Any]) -> str:
+    def _generate_executive_summary(self, content: Dict[str, Any], detail_level: str = 'in-depth') -> str:
         """Generate executive summary section (PDF version - no tooltips)"""
         fleet_data = content.get('fleet_performance', {})
         task_data = content.get('task_performance', {})
@@ -421,15 +422,16 @@ class RobotPDFTemplate:
             if value == 'N/A' or not value:
                 return '#6c757d'
             elif value.startswith('+'):
-                return '#28a745'
+                return '#28a745' # Green for increased savings (good)
             elif value.startswith('-'):
                 return '#dc3545'
             else:
                 return '#6c757d'
 
+        # Get days with tasks ratio format
         days_ratio = fleet_data.get('days_ratio', fleet_data.get('days_with_tasks', 0))
 
-        # Generate robot performance table
+        # Generate robot performance table with NEW COLUMNS
         robot_rows = ""
         if individual_robots:
             for robot in individual_robots[:10]:
@@ -456,15 +458,16 @@ class RobotPDFTemplate:
                 <tr>
                     <td>{robot_sn}</td>
                     <td>{roi_data.get('months_elapsed', 0)}</td>
-                    <td>${roi_data.get('investment', 0):,.0f}</td>
-                    <td>${roi_data.get('savings', 0):,.0f}</td>
+                    <td>${roi_data.get('investment', 0):,.2f}</td>
+                    <td>${roi_data.get('savings', 0):,.2f}</td>
                     <td>{roi_data.get('roi_percent', 0):.1f}%</td>
                 </tr>'''
 
         if not roi_breakdown_rows:
-            roi_breakdown_rows = '<tr><td colspan="5">No ROI breakdown available</td></tr>'
+            roi_breakdown_rows = '<tr><td colspan="5">No ROI breakdown data available</td></tr>'
 
-        return f"""
+        # Base content always included
+        base_html = f"""
         <section id="executive-summary" class="section">
             <h2>📊 Executive Summary</h2>
             <div class="highlight-box">
@@ -501,7 +504,7 @@ class RobotPDFTemplate:
                 </div>
                 <div class="metric-card">
                     <div class="metric-value">{fleet_data.get('avg_daily_running_hours_per_robot', 0):.1f}</div>
-                    <div class="metric-label">Avg Daily Hours/Robot</div>
+                    <div class="metric-label">Avg Daily Running Hours per Robot (hrs/robot)</div>
                     <div style="font-size: 9px; margin-top: 3px; color: {get_comparison_color(comparisons.get('avg_daily_running_hours_per_robot', 'N/A'))};">
                         vs last: {format_comparison(comparisons.get('avg_daily_running_hours_per_robot', 'N/A'))}
                     </div>
@@ -529,7 +532,12 @@ class RobotPDFTemplate:
                 <li>{format_value(fleet_data.get('total_robots', 0))} robots actively deployed and monitored</li>
                 <li>{format_value(content.get('charging_performance', {}).get('total_sessions', 0))} charging sessions during the period</li>
             </ul>
+        """
 
+        # Conditional content
+        robot_performance_html = ""
+        if detail_level in ['detailed', 'in-depth']:
+            robot_performance_html = f"""
             <h3>🤖 Individual Robot Performance</h3>
             <table>
                 <thead>
@@ -537,9 +545,9 @@ class RobotPDFTemplate:
                         <th>Robot ID</th>
                         <th>Location</th>
                         <th>Total Tasks</th>
-                        <th>Completed</th>
-                        <th>Area Cleaned</th>
-                        <th>Avg Coverage</th>
+                        <th>Tasks Completed</th>
+                        <th>Total Area Cleaned</th>
+                        <th>Average Coverage</th>
                         <th>Days with Tasks</th>
                         <th>Running Hours</th>
                     </tr>
@@ -548,16 +556,20 @@ class RobotPDFTemplate:
                     {robot_rows}
                 </tbody>
             </table>
+            """
 
-            <h3>💰 Individual Robot ROI Analysis</h3>
-            <p>Investment and ROI breakdown per robot based on ${cost_data.get('monthly_lease_price', 1500)}/month lease model.</p>
+        roi_breakdown_html = ""
+        if detail_level == 'in-depth':
+            roi_breakdown_html = f"""
+            <h3>💰 Individual Robot ROI Breakdown</h3>
+            <p>Investment and ROI analysis per robot based on lease model and operational savings.</p>
             <table>
                 <thead>
                     <tr>
                         <th>Robot ID</th>
-                        <th>Months</th>
-                        <th>Investment</th>
-                        <th>Savings</th>
+                        <th>Months Deployed</th>
+                        <th>Total Investment</th>
+                        <th>Cumulative Savings</th>
                         <th>ROI</th>
                     </tr>
                 </thead>
@@ -565,17 +577,21 @@ class RobotPDFTemplate:
                     {roi_breakdown_rows}
                 </tbody>
             </table>
-        </section>"""
+            """
 
-    def _generate_task_section(self, content: Dict[str, Any]) -> str:
+        return base_html + robot_performance_html + roi_breakdown_html + "</section>"
+
+    def _generate_task_section(self, content: Dict[str, Any], detail_level: str = 'in-depth') -> str:
         """Generate task performance section (PDF version - shows weekly averages)"""
         task_data = content.get('task_performance', {})
         facilities = content.get('facility_performance', {}).get('facilities', {})
         comparisons = content.get('period_comparisons', {})
         facility_comparisons = comparisons.get('facility_comparisons', {})
+        daily_location_efficiency = content.get('daily_location_efficiency', {})
 
-        avg_duration = task_data.get('avg_task_duration_minutes', 0)
+        # Get real calculated values
         weekend_completion = task_data.get('weekend_schedule_completion', 0)
+        avg_duration = task_data.get('avg_task_duration_minutes', 0)
 
         def format_comparison(value):
             return value if value != 'N/A' else 'N/A'
@@ -590,91 +606,8 @@ class RobotPDFTemplate:
             else:
                 return '#6c757d'
 
-        # Generate location-based efficiency summaries (no charts in PDF)
-        location_efficiency_section = ""
-        facility_task_metrics = content.get('facility_task_metrics', {})
-        facility_breakdown_metrics = content.get('facility_breakdown_metrics', {})
-        facility_efficiency = content.get('facility_efficiency_metrics', {})
-
-        if facility_task_metrics:
-            location_efficiency_section = """
-            <h3>Task Efficiency by Location</h3>
-            <p>Location-specific performance showing average operational metrics for each facility.</p>
-
-            <div class="location-efficiency-single-column">"""
-
-            for location_name, facility_task_data in facility_task_metrics.items():
-                facility_comp = facility_comparisons.get(location_name, {}) if isinstance(facility_comparisons, dict) else {}
-                facility_breakdown = facility_breakdown_metrics.get(location_name, {}) if isinstance(facility_breakdown_metrics, dict) else {}
-                facility_eff = facility_efficiency.get(location_name, {}) if isinstance(facility_efficiency, dict) else {}
-
-                facility_avg_duration = facility_task_data.get('avg_duration_minutes', avg_duration) if facility_task_data else avg_duration
-                primary_mode = facility_task_data.get('primary_mode', 'Mixed tasks') if facility_task_data else 'Mixed tasks'
-
-                highest_coverage_day = facility_breakdown.get('highest_coverage_day', 'N/A') if facility_breakdown else 'N/A'
-                lowest_coverage_day = facility_breakdown.get('lowest_coverage_day', 'N/A') if facility_breakdown else 'N/A'
-
-                coverage_comparison_high = facility_comp.get('highest_coverage_day', 'N/A') if facility_comp else 'N/A'
-                coverage_comparison_low = facility_comp.get('lowest_coverage_day', 'N/A') if facility_comp else 'N/A'
-
-                days_ratio = facility_eff.get('days_ratio', 'N/A') if facility_eff else 'N/A'
-
-                location_efficiency_section += f"""
-                <div class="location-efficiency-single-line">
-                    <h4>{location_name}</h4>
-                    <div class="location-single-line-content">
-                        <div>
-                            {self._get_location_charts_html(location_name)}
-                        </div>
-                        <div class="location-stats-compact">
-                            <div class="stat-row">
-                                <span class="stat-label">Task Mode:</span>
-                                <span class="stat-value">{primary_mode}</span>
-                            </div>
-                            <div class="stat-row">
-                                <span class="stat-label">Avg Duration:</span>
-                                <span class="stat-value">{facility_avg_duration:.1f} min</span>
-                                <span class="stat-comparison" style="color: {get_comparison_color(facility_comp.get('avg_task_duration', 'N/A') if facility_comp else 'N/A')};">
-                                    (vs last: {format_comparison(facility_comp.get('avg_task_duration', 'N/A') if facility_comp else 'N/A')})
-                                </span>
-                            </div>
-                            <div class="stat-row">
-                                <span class="stat-label">Days with Tasks:</span>
-                                <span class="stat-value">{days_ratio}</span>
-                                <span class="stat-comparison" style="color: {get_comparison_color(facility_comp.get('days_with_tasks', 'N/A') if facility_comp else 'N/A')};">
-                                    (vs last: {format_comparison(facility_comp.get('days_with_tasks', 'N/A') if facility_comp else 'N/A')})
-                                </span>
-                            </div>
-                            <div class="stat-row">
-                                <span class="stat-label">Highest Coverage:</span>
-                                <span class="stat-value">{highest_coverage_day}</span>
-                                <span class="stat-comparison">(vs last: {coverage_comparison_high})</span>
-                            </div>
-                            <div class="stat-row">
-                                <span class="stat-label">Lowest Coverage:</span>
-                                <span class="stat-value">{lowest_coverage_day}</span>
-                                <span class="stat-comparison">(vs last: {coverage_comparison_low})</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>"""
-
-            location_efficiency_section += """
-            </div>"""
-        else:
-            location_efficiency_section = f"""
-            <h3>Task Performance Summary</h3>
-            <div class="two-column">
-                <div>
-                    <h4>Overall Task Patterns</h4>
-                    <ul>
-                        <li><strong>Average Task Duration:</strong> {avg_duration:.1f} minutes (vs last period: <span style="color: {get_comparison_color(comparisons.get('avg_duration', 'N/A'))};">{format_comparison(comparisons.get('avg_duration', 'N/A'))}</span>)</li>
-                        <li><strong>Weekend completion:</strong> {weekend_completion:.1f}%</li>
-                    </ul>
-                </div>
-            </div>"""
-
-        return f"""
+        # Base Task Management Efficiency (always included)
+        base_html = f"""
         <section id="task-performance" class="section">
             <h2>📋 Task & Schedule Performance</h2>
 
@@ -706,33 +639,149 @@ class RobotPDFTemplate:
                     </tr>
                 </tbody>
             </table>
-            <div class="chart-container" style="display: flex; justify-content: space-between; align-items: center; margin: 15px 0;">
-                <div style="flex: 1; text-align: center;">
-                    {self._get_chart_image_html('task_status_chart', 'Task Status Distribution', 80, 250)}
+
+            <div class="chart-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 15px 0;">
+                <div class="chart-small">
+                    {self._get_chart_image_html('task_status_chart', 'Task Status Distribution', max_height=200)}
                 </div>
-                <div style="flex: 1; text-align: center;">
-                    {self._get_chart_image_html('task_mode_chart', 'Task Mode Distribution', 80, 250)}
+                <div class="chart-small">
+                    {self._get_chart_image_html('task_mode_chart', 'Task Mode Distribution', max_height=200)}
                 </div>
             </div>
+        """
 
-            {location_efficiency_section}
-        </section>"""
+        # Generate location-based efficiency section conditionally
+        location_efficiency_section = ""
+        facility_task_metrics = content.get('facility_task_metrics', {})
+        facility_breakdown_metrics = content.get('facility_breakdown_metrics', {})
+        facility_efficiency = content.get('facility_efficiency_metrics', {})
 
-    def _get_location_charts_html(self, location_name: str) -> str:
-        """Generate HTML for all location-specific charts"""
-        html = ""
-        if hasattr(self, 'chart_images'):
-            if 'location_chart' in self.chart_images:
-                img_data = self.chart_images['location_chart'].get(location_name, '')
-                html = f"""
-                    <div style="text-align: center; margin: 15px 0;">
-                        <img src="{img_data}"
-                             alt="{location_name} Performance"
-                             style="max-width: 100%; height: 200px; border: 1px solid #ddd; border-radius: 5px;">
+        if detail_level == 'overview':
+            # For OVERVIEW: Omit location efficiency section
+            pass
+        elif daily_location_efficiency:
+            location_efficiency_section = """
+            <h3>Task Efficiency by Location</h3>
+            <p>Daily task performance showing running hours and coverage efficiency patterns for each location. Each chart displays actual operational data to identify location-specific performance trends.</p>
+
+            <div class="location-efficiency-single-column">"""
+
+            for location_name, efficiency_data in daily_location_efficiency.items():
+                # Safe access to facility data with proper fallbacks
+                facility_comp = facility_comparisons.get(location_name, {}) if isinstance(facility_comparisons, dict) else {}
+                facility_task_data = facility_task_metrics.get(location_name, {}) if isinstance(facility_task_metrics, dict) else {}
+                facility_breakdown = facility_breakdown_metrics.get(location_name, {}) if isinstance(facility_breakdown_metrics, dict) else {}
+                facility_eff = facility_efficiency.get(location_name, {}) if isinstance(facility_efficiency, dict) else {}
+
+                # Use facility-specific duration if available, otherwise use global average
+                facility_avg_duration = facility_task_data.get('avg_duration_minutes', avg_duration) if facility_task_data else avg_duration
+                primary_mode = facility_task_data.get('primary_mode', 'Mixed tasks') if facility_task_data else 'Mixed tasks'
+
+                # Get coverage by day info
+                highest_coverage_day = facility_breakdown.get('highest_coverage_day', 'N/A') if facility_breakdown else 'N/A'
+                lowest_coverage_day = facility_breakdown.get('lowest_coverage_day', 'N/A') if facility_breakdown else 'N/A'
+
+                # Get the comparison data correctly
+                coverage_comparison_high = facility_comp.get('highest_coverage_day', 'N/A') if facility_comp else 'N/A'
+                coverage_comparison_low = facility_comp.get('lowest_coverage_day', 'N/A') if facility_comp else 'N/A'
+
+                # Get days ratio safely
+                days_ratio = facility_eff.get('days_ratio', 'N/A') if facility_eff else 'N/A'
+
+                if detail_level in ['detailed', 'in-depth']:
+                    location_efficiency_section += f"""
+                    <div class="location-efficiency-single-line">
+                        <h4>{location_name}</h4>
+                        <div class="location-single-line-content">
+                            <div class="location-chart-compact">
+                                {self._get_chart_image_html(f'taskEfficiencyChart_{location_name.replace(" ", "_")}', f'{location_name} Task Efficiency', max_height=200)}
+                            </div>
+                            <div class="location-stats-compact">
+                                <div class="stat-row">
+                                    <span class="stat-label">Task Mode:</span>
+                                    <span class="stat-value">{primary_mode}</span>
+                                </div>
+                                <div class="stat-row">
+                                    <span class="stat-label">Avg Duration:</span>
+                                    <span class="stat-value">{facility_avg_duration:.1f} min</span>
+                                    <span class="stat-comparison" style="color: {get_comparison_color(facility_comp.get('avg_task_duration', 'N/A') if facility_comp else 'N/A')};">
+                                        (vs last: {format_comparison(facility_comp.get('avg_task_duration', 'N/A') if facility_comp else 'N/A')})
+                                    </span>
+                                </div>
+                                <div class="stat-row">
+                                    <span class="stat-label">Days with Tasks:</span>
+                                    <span class="stat-value">{days_ratio}</span>
+                                    <span class="stat-comparison" style="color: {get_comparison_color(facility_comp.get('days_with_tasks', 'N/A') if facility_comp else 'N/A')};">
+                                        (vs last: {format_comparison(facility_comp.get('days_with_tasks', 'N/A') if facility_comp else 'N/A')})
+                                    </span>
+                                </div>
+                                <div class="stat-row">
+                                    <span class="stat-label">Highest Coverage:</span>
+                                    <span class="stat-value">{highest_coverage_day}</span>
+                                    <span class="stat-comparison">(vs last: {coverage_comparison_high})</span>
+                                </div>
+                                <div class="stat-row">
+                                    <span class="stat-label">Lowest Coverage:</span>
+                                    <span class="stat-value">{lowest_coverage_day}</span>
+                                    <span class="stat-comparison">(vs last: {coverage_comparison_low})</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>"""
-        return html
 
-    def _generate_facility_section(self, content: Dict[str, Any]) -> str:
+            location_efficiency_section += """
+            </div>"""
+        else:
+            # Fallback if no location-specific efficiency data
+            facility_patterns = ""
+            for facility_name, metrics in facilities.items():
+                facility_comp = facility_comparisons.get(facility_name, {}) if isinstance(facility_comparisons, dict) else {}
+                facility_task_data = facility_task_metrics.get(facility_name, {}) if isinstance(facility_task_metrics, dict) else {}
+                facility_breakdown = facility_breakdown_metrics.get(facility_name, {}) if isinstance(facility_breakdown_metrics, dict) else {}
+
+                # Use facility-specific duration if available, otherwise use global average
+                facility_avg_duration = facility_task_data.get('avg_duration_minutes', avg_duration) if facility_task_data else avg_duration
+                primary_mode = facility_task_data.get('primary_mode', 'Mixed tasks') if facility_task_data else 'Mixed tasks'
+
+                # Get coverage by day info
+                highest_coverage_day = facility_breakdown.get('highest_coverage_day', 'N/A') if facility_breakdown else 'N/A'
+                lowest_coverage_day = facility_breakdown.get('lowest_coverage_day', 'N/A') if facility_breakdown else 'N/A'
+
+                # Get the comparison data correctly
+                coverage_comparison_high = facility_comp.get('highest_coverage_day', 'N/A') if facility_comp else 'N/A'
+                coverage_comparison_low = facility_comp.get('lowest_coverage_day', 'N/A') if facility_comp else 'N/A'
+
+                if detail_level in ['detailed', 'in-depth']:
+                    facility_patterns += f"""
+                    <div>
+                        <h4>{facility_name} Task Patterns</h4>
+                        <ul>
+                            <li><strong>Task Mode:</strong> {primary_mode}</li>
+                            <li><strong>Average Task Duration:</strong> {facility_avg_duration:.1f} minutes (vs last period: <span style="color: {get_comparison_color(facility_comp.get('avg_task_duration', 'N/A') if facility_comp else 'N/A')};">{format_comparison(facility_comp.get('avg_task_duration', 'N/A') if facility_comp else 'N/A')}</span>)</li>
+                            <li><strong>Day with Highest Coverage:</strong> {highest_coverage_day} (vs last period: {coverage_comparison_high})</li>
+                            <li><strong>Day with Lowest Coverage:</strong> {lowest_coverage_day} (vs last period: {coverage_comparison_low})</li>
+                        </ul>
+                    </div>"""
+
+            if not facility_patterns:
+                facility_patterns = f"""
+                <div>
+                    <h4>Overall Task Patterns</h4>
+                    <ul>
+                        <li><strong>Average Task Duration:</strong> {avg_duration:.1f} minutes (vs last period: <span style="color: {get_comparison_color(comparisons.get('avg_duration', 'N/A'))};">{format_comparison(comparisons.get('avg_duration', 'N/A'))}</span>)</li>
+                        <li><strong>Weekend schedule performance:</strong> {weekend_completion:.1f}% completion</li>
+                    </ul>
+                </div>"""
+
+            location_efficiency_section = f"""
+            <h3>Task Performance by Location</h3>
+            <div class="two-column">
+                {facility_patterns}
+            </div>"""
+
+        return base_html + location_efficiency_section + "</section>"
+
+    def _generate_facility_section(self, content: Dict[str, Any], detail_level: str = 'in-depth') -> str:
         """Generate facility performance section (PDF version)"""
         facilities = content.get('facility_performance', {}).get('facilities', {})
         facility_efficiency = content.get('facility_efficiency_metrics', {})
@@ -754,7 +803,7 @@ class RobotPDFTemplate:
             else:
                 return '#6c757d'
 
-        # Generate facility performance tables
+        # Generate facility performance tables with REAL efficiency metrics - Time Efficiency moved above Power Efficiency
         facility_sections = ""
         for facility_name, metrics in facilities.items():
             facility_comp = facility_comparisons.get(facility_name, {})
@@ -816,91 +865,122 @@ class RobotPDFTemplate:
         if not facility_sections:
             facility_sections = '<div><p>No facility-specific data available</p></div>'
 
-        # Generate map-specific performance section (PDF version)
+        # Generate map-specific performance section conditionally
         map_sections = ""
-        if map_performance_by_building:
-            map_sections = """
-            <h3>Map-Specific Performance</h3>
-            <p><strong>Coverage calculation:</strong> (actual area / planned area) × 100. Other metrics include area cleaned (sq ft), running hours, and efficiency ratios.</p>"""
+        if detail_level != 'overview':
+            if map_performance_by_building:
+                map_sections = """
+                <h3>Map-Specific Performance</h3>
+                <p>Coverage: (actual area / planned area) × 100. Area Cleaned: sum of actual cleaned area converted to sq ft. Running Hours: sum of task durations converted from seconds. Power Efficiency: area cleaned / energy consumption. Time Efficiency: area cleaned / running hours. Water Efficiency: area cleaned / water consumption. Days with Tasks: unique dates when tasks occurred.</p>"""
 
-            for building_name, maps in map_performance_by_building.items():
-                if maps and len(maps) > 0:
-                    map_sections += f"""
-                    <div class="map-section">
-                        <h4>{building_name} Maps</h4>
-                        <div class="building-maps">"""
-
-                    for map_data in maps:
-                        map_name = map_data.get('map_name', 'Unknown Map')
-                        coverage = map_data.get('coverage_percentage', 0)
-                        map_comp = map_comparisons.get(building_name, {}).get(map_name, {})
-
+                for building_name, maps in map_performance_by_building.items():
+                    if maps and len(maps) > 0:
+                        # Maps are already sorted by coverage % in descending order from calculator
                         map_sections += f"""
-                        <div style="margin: 10px 0; border: 1px solid #dee2e6; border-radius: 3px; padding: 10px;">
-                            <h5>{map_name}</h5>
-                            <div class="progress-container">
-                                <span>Coverage:</span>
-                                <div class="progress-bar">
-                                    <div class="progress-fill" style="width: {min(coverage, 100)}%"></div>
-                                </div>
-                                <span class="progress-text">{coverage:.1f}%</span>
-                                <span style="color: {get_comparison_color(map_comp.get('coverage_percentage', 'N/A'))}; font-size: 9px; margin-left: 8px;">
-                                    vs last: {format_comparison(map_comp.get('coverage_percentage', 'N/A'))}
-                                </span>
-                            </div>
-                            <div class="map-metrics">
-                                <div class="map-metric">
-                                    <div style="font-weight: bold;">{map_data.get('area_cleaned', 0):,.0f}</div>
-                                    <div style="font-size: 9px; color: #6c757d;">Area Cleaned (sq ft)</div>
-                                    <div style="font-size: 8px; color: {get_comparison_color(map_comp.get('area_cleaned', 'N/A'))};">
-                                        vs last: {format_comparison(map_comp.get('area_cleaned', 'N/A'))}
+                        <div class="map-section">
+                            <h4>{building_name} Maps</h4>
+                            <div class="building-maps">"""
+
+                        if detail_level == 'detailed':
+                            # DETAILED: Simple table with coverage only
+                            map_sections += """
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Map Name</th>
+                                        <th>Coverage %</th>
+                                        <th>vs Last Period</th>
+                                    </tr>
+                                </thead>
+                                <tbody>"""
+                            for map_data in maps:
+                                map_name = map_data.get('map_name', 'Unknown Map')
+                                coverage = map_data.get('coverage_percentage', 0)
+                                map_comp = map_comparisons.get(building_name, {}).get(map_name, {})
+                                map_sections += f"""
+                                <tr>
+                                    <td>{map_name}</td>
+                                    <td>{coverage:.1f}%</td>
+                                    <td style="color: {get_comparison_color(map_comp.get('coverage_percentage', 'N/A'))};">
+                                        {format_comparison(map_comp.get('coverage_percentage', 'N/A'))}
+                                    </td>
+                                </tr>"""
+                            map_sections += "</tbody></table>"
+                        elif detail_level == 'in-depth':
+                            # IN_DEPTH: Full detailed
+                            for map_data in maps:
+                                map_name = map_data.get('map_name', 'Unknown Map')
+                                coverage = map_data.get('coverage_percentage', 0)
+
+                                # Get comparison data for this map
+                                map_comp = map_comparisons.get(building_name, {}).get(map_name, {})
+
+                                map_sections += f"""
+                                <div style="margin: 10px 0; border: 1px solid #dee2e6; border-radius: 3px; padding: 10px;">
+                                    <h5>{map_name}</h5>
+                                    <div class="progress-container">
+                                        <span>Coverage:</span>
+                                        <div class="progress-bar">
+                                            <div class="progress-fill" style="width: {min(coverage, 100)}%"></div>
+                                        </div>
+                                        <span class="progress-text">{coverage:.1f}%</span>
+                                        <span style="color: {get_comparison_color(map_comp.get('coverage_percentage', 'N/A'))}; font-size: 9px; margin-left: 8px;">
+                                            vs last: {format_comparison(map_comp.get('coverage_percentage', 'N/A'))}
+                                        </span>
                                     </div>
-                                </div>
-                                <div class="map-metric">
-                                    <div style="font-weight: bold;">{map_data.get('running_hours', 0):.1f}</div>
-                                    <div style="font-size: 9px; color: #6c757d;">Running Hours</div>
-                                    <div style="font-size: 8px; color: {get_comparison_color(map_comp.get('running_hours', 'N/A'))};">
-                                        vs last: {format_comparison(map_comp.get('running_hours', 'N/A'))}
+                                    <div class="map-metrics">
+                                        <div class="map-metric">
+                                            <div style="font-weight: bold;">{map_data.get('area_cleaned', 0):,.0f}</div>
+                                            <div style="font-size: 9px; color: #6c757d;">Area Cleaned (sq ft)</div>
+                                            <div style="font-size: 8px; color: {get_comparison_color(map_comp.get('area_cleaned', 'N/A'))};">
+                                                vs last: {format_comparison(map_comp.get('area_cleaned', 'N/A'))}
+                                            </div>
+                                        </div>
+                                        <div class="map-metric">
+                                            <div style="font-weight: bold;">{map_data.get('running_hours', 0):.1f}</div>
+                                            <div style="font-size: 9px; color: #6c757d;">Running Hours</div>
+                                            <div style="font-size: 8px; color: {get_comparison_color(map_comp.get('running_hours', 'N/A'))};">
+                                                vs last: {format_comparison(map_comp.get('running_hours', 'N/A'))}
+                                            </div>
+                                        </div>
+                                        <div class="map-metric">
+                                            <div style="font-weight: bold;">{map_data.get('time_efficiency', 0):.0f}</div>
+                                            <div style="font-size: 9px; color: #6c757d;">Time Efficiency (sq ft/hr)</div>
+                                            <div style="font-size: 8px; color: {get_comparison_color(map_comp.get('time_efficiency', 'N/A'))};">
+                                                vs last: {format_comparison(map_comp.get('time_efficiency', 'N/A'))}
+                                            </div>
+                                        </div>
+                                        <div class="map-metric">
+                                            <div style="font-weight: bold;">{map_data.get('power_efficiency', 0):.0f}</div>
+                                            <div style="font-size: 9px; color: #6c757d;">Power Efficiency (sq ft/kWh)</div>
+                                            <div style="font-size: 8px; color: {get_comparison_color(map_comp.get('power_efficiency', 'N/A'))};">
+                                                vs last: {format_comparison(map_comp.get('power_efficiency', 'N/A'))}
+                                            </div>
+                                        </div>
+                                        <div class="map-metric">
+                                            <div style="font-weight: bold;">{map_data.get('water_efficiency', 0):.1f}</div>
+                                            <div style="font-size: 9px; color: #6c757d;">Water Efficiency (sq ft/fl oz)</div>
+                                            <div style="font-size: 8px; color: {get_comparison_color(map_comp.get('water_efficiency', 'N/A'))};">
+                                                vs last: {format_comparison(map_comp.get('water_efficiency', 'N/A'))}
+                                            </div>
+                                        </div>
+                                        <div class="map-metric">
+                                            <div style="font-weight: bold;">{map_data.get('days_with_tasks', 0)}</div>
+                                            <div style="font-size: 9px; color: #6c757d;">Days with Tasks</div>
+                                            <div style="font-size: 8px; color: {get_comparison_color(map_comp.get('days_with_tasks', 'N/A'))};">
+                                                vs last: {format_comparison(map_comp.get('days_with_tasks', 'N/A'))}
+                                            </div>
+                                        </div>
                                     </div>
-                                </div>
-                                <div class="map-metric">
-                                    <div style="font-weight: bold;">{map_data.get('time_efficiency', 0):.0f}</div>
-                                    <div style="font-size: 9px; color: #6c757d;">Time Eff (sq ft/hr)</div>
-                                    <div style="font-size: 8px; color: {get_comparison_color(map_comp.get('time_efficiency', 'N/A'))};">
-                                        vs last: {format_comparison(map_comp.get('time_efficiency', 'N/A'))}
-                                    </div>
-                                </div>
-                                <div class="map-metric">
-                                    <div style="font-weight: bold;">{map_data.get('power_efficiency', 0):.0f}</div>
-                                    <div style="font-size: 9px; color: #6c757d;">Power Eff (sq ft/kWh)</div>
-                                    <div style="font-size: 8px; color: {get_comparison_color(map_comp.get('power_efficiency', 'N/A'))};">
-                                        vs last: {format_comparison(map_comp.get('power_efficiency', 'N/A'))}
-                                    </div>
-                                </div>
-                                <div class="map-metric">
-                                    <div style="font-weight: bold;">{map_data.get('water_efficiency', 0):.1f}</div>
-                                    <div style="font-size: 9px; color: #6c757d;">Water Eff (sq ft/fl oz)</div>
-                                    <div style="font-size: 8px; color: {get_comparison_color(map_comp.get('water_efficiency', 'N/A'))};">
-                                        vs last: {format_comparison(map_comp.get('water_efficiency', 'N/A'))}
-                                    </div>
-                                </div>
-                                <div class="map-metric">
-                                    <div style="font-weight: bold;">{map_data.get('days_with_tasks', 0)}</div>
-                                    <div style="font-size: 9px; color: #6c757d;">Days with Tasks</div>
-                                    <div style="font-size: 8px; color: {get_comparison_color(map_comp.get('days_with_tasks', 'N/A'))};">
-                                        vs last: {format_comparison(map_comp.get('days_with_tasks', 'N/A'))}
-                                    </div>
-                                </div>
+                                </div>"""
+
+                        map_sections += """
                             </div>
                         </div>"""
-
-                    map_sections += """
-                        </div>
-                    </div>"""
-        else:
-            map_sections = """
-            <h3>Map-Specific Performance</h3>
-            <p>No map-specific performance data available</p>"""
+            else:
+                map_sections = """
+                <h3>Map-Specific Performance</h3>
+                <p>No map-specific performance data available</p>"""
 
         return f"""
         <section id="facility-performance" class="section">
@@ -913,7 +993,7 @@ class RobotPDFTemplate:
             {map_sections}
         </section>"""
 
-    def _generate_resource_section(self, content: Dict[str, Any]) -> str:
+    def _generate_resource_section(self, content: Dict[str, Any], detail_level: str = 'in-depth') -> str:
         """Generate resource utilization section (PDF version)"""
         resource_data = content.get('resource_utilization', {})
         comparisons = content.get('period_comparisons', {})
@@ -932,7 +1012,7 @@ class RobotPDFTemplate:
             else:
                 return '#6c757d'
 
-        # Calculate resource usage by facility
+        # Calculate resource usage by facility using facility-specific data
         facility_breakdown = ""
         facility_resource_metrics = content.get('facility_resource_metrics', {})
         if facility_resource_metrics:
@@ -1000,20 +1080,23 @@ class RobotPDFTemplate:
                 </div>
             </div>"""
 
+        # Conditional chart
+        chart_html = ""
+        if detail_level != 'overview':
+            chart_html = self._get_chart_image_html('resource_chart', 'Weekly Resource Utilization', max_height=200)
+
         return f"""
         <section id="resource-utilization" class="section">
             <h2>⚡ Resource Utilization & Efficiency</h2>
+            <h3>Resource Performance</h3>
+            <p>Resource utilization: {resource_data.get('total_energy_consumption_kwh', 0):.2f} kWh total energy consumption, {resource_data.get('total_water_consumption_floz', 0):.0f} fl oz total water usage, {resource_data.get('area_per_kwh', 0):.0f} sq ft per kWh energy efficiency, and {resource_data.get('area_per_gallon', 0):.0f} sq ft per gallon water efficiency.</p>
 
-            <h3>Resource Performance Overview</h3>
-            <p>Resource utilization summary: {resource_data.get('total_energy_consumption_kwh', 0):.2f} kWh total energy consumption, {resource_data.get('total_water_consumption_floz', 0):.0f} fl oz total water usage, {resource_data.get('area_per_kwh', 0):.0f} sq ft per kWh energy efficiency, and {resource_data.get('area_per_gallon', 0):.0f} sq ft per gallon water efficiency.</p>
-
-            {self._get_chart_image_html('resource_chart', 'Weekly Resource Utilization')}
+            {chart_html}
 
             {facility_breakdown}
-
         </section>"""
 
-    def _generate_financial_section(self, content: Dict[str, Any]) -> str:
+    def _generate_financial_section(self, content: Dict[str, Any], detail_level: str = 'in-depth') -> str:
         """Generate financial performance section (PDF version)"""
         cost_data = content.get('cost_analysis', {})
         comparisons = content.get('period_comparisons', {})
@@ -1024,7 +1107,7 @@ class RobotPDFTemplate:
         def get_comparison_color(value, metric_type):
             if value == 'N/A' or not value:
                 return '#6c757d'
-            if 'cost' in str(metric_type).lower():
+            if any([i in str(metric_type).lower() for i in ['cost', 'investment']]) and 'efficiency' not in str(metric_type).lower():
                 if value.startswith('+'):
                     return '#dc3545'  # Red for increased costs (bad)
                 elif value.startswith('-'):
@@ -1045,11 +1128,12 @@ class RobotPDFTemplate:
             except:
                 return str(value)
 
-        return f"""
+        # Base content
+        base_html = f"""
         <section id="financial-performance" class="section">
             <h2>💰 Financial Performance</h2>
 
-            <p>Financial analysis based on actual resource usage and lease model: {safe_format(cost_data.get('cost_per_sqft', 0), '$', '/sq ft')} average cost per square foot, {safe_format(cost_data.get('total_cost', 0))} total operational cost, {cost_data.get('hours_saved', 0):.1f} hours saved compared to manual cleaning, {safe_format(cost_data.get('savings', 0))} in realized savings, and {cost_data.get('roi_improvement', 'N/A')} return on investment based on {safe_format(cost_data.get('total_investment', 0))} total lease investment.</p>
+            <p>Financial analysis based on actual resource usage: {safe_format(cost_data.get('cost_per_sqft', 0), '$', '/sq ft')} average cost per square foot, {safe_format(cost_data.get('total_cost', 0))} total operational cost, {cost_data.get('hours_saved', 0):.1f} hours saved compared to manual cleaning, and {safe_format(cost_data.get('savings', 0))} in realized savings.</p>
 
             <table>
                 <thead>
@@ -1065,43 +1149,43 @@ class RobotPDFTemplate:
                         <td>Cost per Sq Ft</td>
                         <td>{safe_format(cost_data.get('cost_per_sqft', 0), '$', '/sq ft')}</td>
                         <td style="color: {get_comparison_color(comparisons.get('cost_per_sqft', 'N/A'), 'cost_per_sqft')};">{format_comparison(comparisons.get('cost_per_sqft', 'N/A'))}</td>
-                        <td>Operational efficiency</td>
+                        <td>Operational efficiency (water + energy cost per area)</td>
                     </tr>
                     <tr>
                         <td>Total Operational Cost</td>
                         <td>{safe_format(cost_data.get('total_cost', 0))}</td>
                         <td style="color: {get_comparison_color(comparisons.get('total_cost', 'N/A'), 'total_cost')};">{format_comparison(comparisons.get('total_cost', 'N/A'))}</td>
-                        <td>Robot operational cost</td>
+                        <td>Robot operational cost this period</td>
                     </tr>
                     <tr>
                         <td>ROI</td>
                         <td>{cost_data.get('roi_improvement', 'N/A')}</td>
                         <td style="color: {get_comparison_color(comparisons.get('roi_improvement', 'N/A'), 'roi')};">{format_comparison(comparisons.get('roi_improvement', 'N/A'))}</td>
-                        <td>Return on Investment</td>
+                        <td>Return on Investment (cumulative savings ÷ total investment × 100)</td>
                     </tr>
                     <tr>
                         <td>Total Investment</td>
                         <td>{safe_format(cost_data.get('total_investment', 0))}</td>
                         <td style="color: {get_comparison_color(comparisons.get('total_investment', 'N/A'), 'total_investment')};">{format_comparison(comparisons.get('total_investment', 'N/A'))}</td>
-                        <td>Cumulative lease investment</td>
+                        <td>Cumulative lease investment (${cost_data.get('monthly_lease_price', 1500)}/month per robot)</td>
                     </tr>
                     <tr>
-                        <td>Cost Efficiency</td>
+                        <td>Cost Efficiency Improvement</td>
                         <td>{cost_data.get('cost_efficiency_improvement', 0):.1f}%</td>
                         <td style="color: {get_comparison_color(comparisons.get('cost_efficiency_improvement', 'N/A'), 'cost_efficiency')};">{format_comparison(comparisons.get('cost_efficiency_improvement', 'N/A'))}</td>
-                        <td>Improvement vs manual</td>
+                        <td>Efficiency improvement vs manual cleaning</td>
                     </tr>
                     <tr>
                         <td>Water Cost</td>
                         <td>{safe_format(cost_data.get('water_cost', 0))}</td>
                         <td style="color: {get_comparison_color(comparisons.get('water_cost', 'N/A'), 'water_cost')};">{format_comparison(comparisons.get('water_cost', 'N/A'))}</td>
-                        <td>Water resource cost</td>
+                        <td>Water resource cost component</td>
                     </tr>
                     <tr>
                         <td>Energy Cost</td>
                         <td>{safe_format(cost_data.get('energy_cost', 0))}</td>
                         <td style="color: {get_comparison_color(comparisons.get('energy_cost', 'N/A'), 'energy_cost')};">{format_comparison(comparisons.get('energy_cost', 'N/A'))}</td>
-                        <td>Energy resource cost</td>
+                        <td>Energy resource cost component</td>
                     </tr>
                 </tbody>
             </table>
@@ -1111,8 +1195,15 @@ class RobotPDFTemplate:
                 <p><strong>Investment:</strong> $1,500/month per robot × months elapsed (rounded up for billing)</p>
                 <p><strong>Cumulative Savings:</strong> All-time savings from first robot task to end of reporting period</p>
             </div>
-            {self._get_chart_image_html('financial_chart', 'Weekly Financial Performance')}
+            """
 
+        # Conditional chart
+        chart_html = ""
+        if detail_level != 'overview':
+            chart_html = self._get_chart_image_html('financial_chart', 'Weekly Financial Performance', max_height=200)
+
+        # Highlight box always
+        highlight_html = f"""
             <div class="highlight-box">
                 <h3>💡 Financial Impact Summary</h3>
                 <div class="metrics-grid">
@@ -1167,13 +1258,15 @@ class RobotPDFTemplate:
                     </div>
                 </div>
                 <p style="margin-top: 15px; font-size: 10px; opacity: 0.8;">
-                    Financial calculations based on actual resource usage, ${cost_data.get('monthly_lease_price', 1500):,.0f}/month lease model, and human cleaning benchmarks.
+                    {cost_data.get('note', 'Financial calculations based on actual resource usage, lease model, and human cleaning speed benchmarks.')}
                 </p>
             </div>
 
         </section>"""
 
-    def _generate_charging_section(self, content: Dict[str, Any]) -> str:
+        return base_html + chart_html + highlight_html
+
+    def _generate_charging_section(self, content: Dict[str, Any], detail_level: str = 'in-depth') -> str:
         """Generate charging performance section (PDF version)"""
         charging_data = content.get('charging_performance', {})
         comparisons = content.get('period_comparisons', {})
@@ -1192,7 +1285,58 @@ class RobotPDFTemplate:
             else:
                 return '#6c757d'
 
-        # Calculate charging patterns by location
+        # Base metrics grid
+        base_html = f"""
+        <section id="charging-performance" class="section">
+            <h2>🔋 Charging Sessions Performance</h2>
+
+            <p>Charging patterns and battery management during the reporting period: {charging_data.get('total_sessions', 0)} total sessions, {charging_data.get('avg_charging_duration_minutes', 0):.1f} minutes average duration, and {charging_data.get('avg_power_gain_percent', 0):.1f}% average power gain per session.</p>
+
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-value">{charging_data.get('total_sessions', 0)}</div>
+                    <div class="metric-label">Total Charging Sessions</div>
+                    <div style="font-size: 9px; margin-top: 3px; color: {get_comparison_color(comparisons.get('charging_sessions', 'N/A'))};">
+                        vs last: {format_comparison(comparisons.get('charging_sessions', 'N/A'))}
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">{charging_data.get('avg_charging_duration_minutes', 0):.1f} min</div>
+                    <div class="metric-label">Avg Charging Duration</div>
+                    <div style="font-size: 9px; margin-top: 3px; color: {get_comparison_color(comparisons.get('avg_charging_duration', 'N/A'))};">
+                        vs last: {format_comparison(comparisons.get('avg_charging_duration', 'N/A'))}
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">{charging_data.get('median_charging_duration_minutes', 0):.1f} min</div>
+                    <div class="metric-label">Median Charging Duration</div>
+                    <div style="font-size: 9px; margin-top: 3px; color: {get_comparison_color(comparisons.get('median_charging_duration', 'N/A'))};">
+                        vs last: {format_comparison(comparisons.get('median_charging_duration', 'N/A'))}
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">+{charging_data.get('avg_power_gain_percent', 0):.1f}%</div>
+                    <div class="metric-label">Avg Power Gain per Session</div>
+                    <div style="font-size: 9px; margin-top: 3px; color: {get_comparison_color(comparisons.get('avg_power_gain', 'N/A'))};">
+                        vs last: {format_comparison(comparisons.get('avg_power_gain', 'N/A'))}
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">+{charging_data.get('median_power_gain_percent', 0):.1f}%</div>
+                    <div class="metric-label">Median Power Gain per Session</div>
+                    <div style="font-size: 9px; margin-top: 3px; color: {get_comparison_color(comparisons.get('median_power_gain', 'N/A'))};">
+                        vs last: {format_comparison(comparisons.get('median_power_gain', 'N/A'))}
+                    </div>
+                </div>
+            </div>
+        """
+
+        # Conditional chart
+        chart_html = ""
+        if detail_level != 'overview':
+            chart_html = self._get_chart_image_html('charging_chart', 'Weekly Charging Performance', max_height=200)
+
+        # Charging by location
         charging_by_location = ""
         facility_charging_metrics = content.get('facility_charging_metrics', {})
 
@@ -1203,7 +1347,7 @@ class RobotPDFTemplate:
                 <thead>
                     <tr>
                         <th>Location</th>
-                        <th>Sessions</th>
+                        <th>Total Sessions</th>
                         <th>Avg Duration</th>
                         <th>Median Duration</th>
                         <th>Avg Power Gain</th>
@@ -1250,56 +1394,7 @@ class RobotPDFTemplate:
         else:
             charging_by_location = "<h3>Charging Patterns by Location</h3><p>Location-specific charging data not available</p>"
 
-        return f"""
-        <section id="charging-performance" class="section">
-            <h2>🔋 Charging Sessions Performance</h2>
-
-            <p>Charging patterns and battery management during the reporting period: {charging_data.get('total_sessions', 0)} total sessions, {charging_data.get('avg_charging_duration_minutes', 0):.1f} minutes average duration, and {charging_data.get('avg_power_gain_percent', 0):.1f}% average power gain per session.</p>
-
-            <div class="metrics-grid">
-                <div class="metric-card">
-                    <div class="metric-value">{charging_data.get('total_sessions', 0)}</div>
-                    <div class="metric-label">Total Charging Sessions</div>
-                    <div style="font-size: 9px; margin-top: 3px; color: {get_comparison_color(comparisons.get('charging_sessions', 'N/A'))};">
-                        vs last: {format_comparison(comparisons.get('charging_sessions', 'N/A'))}
-                    </div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">{charging_data.get('avg_charging_duration_minutes', 0):.1f} min</div>
-                    <div class="metric-label">Avg Charging Duration</div>
-                    <div style="font-size: 9px; margin-top: 3px; color: {get_comparison_color(comparisons.get('avg_charging_duration', 'N/A'))};">
-                        vs last: {format_comparison(comparisons.get('avg_charging_duration', 'N/A'))}
-                    </div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">{charging_data.get('median_charging_duration_minutes', 0):.1f} min</div>
-                    <div class="metric-label">Median Charging Duration</div>
-                    <div style="font-size: 9px; margin-top: 3px; color: {get_comparison_color(comparisons.get('median_charging_duration', 'N/A'))};">
-                        vs last: {format_comparison(comparisons.get('median_charging_duration', 'N/A'))}
-                    </div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">+{charging_data.get('avg_power_gain_percent', 0):.1f}%</div>
-                    <div class="metric-label">Avg Power Gain per Session</div>
-                    <div style="font-size: 9px; margin-top: 3px; color: {get_comparison_color(comparisons.get('avg_power_gain', 'N/A'))};">
-                        vs last: {format_comparison(comparisons.get('avg_power_gain', 'N/A'))}
-                    </div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">+{charging_data.get('median_power_gain_percent', 0):.1f}%</div>
-                    <div class="metric-label">Median Power Gain per Session</div>
-                    <div style="font-size: 9px; margin-top: 3px; color: {get_comparison_color(comparisons.get('median_power_gain', 'N/A'))};">
-                        vs last: {format_comparison(comparisons.get('median_power_gain', 'N/A'))}
-                    </div>
-                </div>
-            </div>
-
-            <h3>Charging Performance Summary</h3>
-            <p>Weekly average charging performance shows consistent battery management across all locations with typical session duration of {charging_data.get('median_charging_duration_minutes', 0):.1f} minutes and median power gain of {charging_data.get('median_power_gain_percent', 0):.1f}% per session.</p>
-            {self._get_chart_image_html('charging_chart', 'Weekly Charging Performance')}
-            {charging_by_location}
-
-        </section>"""
+        return base_html + chart_html + charging_by_location + "</section>"
 
     def _generate_conclusion(self, content: Dict[str, Any]) -> str:
         """Generate conclusion section (PDF version)"""
@@ -1319,6 +1414,7 @@ class RobotPDFTemplate:
         return f"""
         <section id="conclusion" class="section">
             <h2>🎯 Conclusion</h2>
+
             <div class="highlight-box">
                 <p>{period.title()} performance summary: {format_value(task_data.get('completion_rate', 0), '%')} task completion rate across
                 {format_value(fleet_data.get('total_robots', 0))} robot(s),

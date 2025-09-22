@@ -517,17 +517,17 @@ class ReportGenerator:
             return []
 
     def _generate_comprehensive_report_content(self, comprehensive_metrics: Dict[str, Any],
-                                             report_config: ReportConfig, start_date: str,
-                                             end_date: str, target_robots: List[str]) -> Dict[str, Any]:
+                                         report_config: ReportConfig, start_date: str,
+                                         end_date: str, target_robots: List[str]) -> Dict[str, Any]:
         """
-        Generate structured report content from comprehensive metrics - UPDATED with all new metrics
+        Generate structured report content from comprehensive metrics - UPDATED with timezone-aware display
         """
         logger.info(f"Generating comprehensive report content with detail level: {report_config.detail_level.value}")
 
         # Build comprehensive content structure matching the enhanced template
         content = {
             'title': self._generate_report_title(report_config),
-            'period': f"{start_date.split(' ')[0]} to {end_date.split(' ')[0]}",
+            'period': report_config.get_display_date_range(),  # Use display-friendly date range
             'generation_time': datetime.now(),
             'detail_level': report_config.detail_level,
             'content_categories': report_config.content_categories,
@@ -552,13 +552,13 @@ class ReportGenerator:
             'facility_charging_metrics': comprehensive_metrics.get('facility_charging_metrics', {}),
             'facility_resource_metrics': comprehensive_metrics.get('facility_resource_metrics', {}),
             'facility_efficiency_metrics': comprehensive_metrics.get('facility_efficiency_metrics', {}),
-            'facility_breakdown_metrics': comprehensive_metrics.get('facility_breakdown_metrics', {}),  # for coverage by day
+            'facility_breakdown_metrics': comprehensive_metrics.get('facility_breakdown_metrics', {}),
             'map_performance_by_building': comprehensive_metrics.get('map_performance_by_building', {}),
             'event_location_mapping': comprehensive_metrics.get('event_location_mapping', {}),
             'event_type_by_location': comprehensive_metrics.get('event_type_by_location', {}),
-            'financial_trend_data': comprehensive_metrics.get('financial_trend_data', {}),  # for financial charts
+            'financial_trend_data': comprehensive_metrics.get('financial_trend_data', {}),
 
-            'daily_location_efficiency': comprehensive_metrics.get('daily_location_efficiency', {}),  # for location-specific task efficiency charts
+            'daily_location_efficiency': comprehensive_metrics.get('daily_location_efficiency', {}),
             'avg_task_duration_minutes': comprehensive_metrics.get('task_performance', {}).get('avg_task_duration_minutes', 0),
 
             # Metadata

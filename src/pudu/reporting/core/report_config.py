@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 import json
 import logging
 from enum import Enum
+import pytz  # Add this import
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,7 @@ class ReportConfig:
         # Report Configuration
         self.time_range = self.form_data.get('timeRange', 'last-30-days')
         self.custom_date_range = self._parse_custom_dates()
-        self.timezone = self.form_data.get('timezone', 'America/New_York') # default to America/New_York TODO: add timezone selection
+        self.timezone = self.form_data.get('timezone', 'America/New_York') # Enhanced to use form data
         self.detail_level = ReportDetailLevel(self.form_data.get('detailLevel', 'detailed'))
         self.delivery = DeliveryMethod(self.form_data.get('delivery', 'in-app'))
         self.schedule = ScheduleFrequency(self.form_data.get('schedule', 'immediate'))
@@ -64,6 +65,27 @@ class ReportConfig:
         # Recurring schedule configuration
         self.recurring_frequency = self.form_data.get('recurringFrequency', 'weekly')
         self.recurring_start_date = self.form_data.get('recurringStartDate')
+
+    def _get_user_timezone(self):
+        """Get timezone object for user's timezone"""
+        try:
+            return pytz.timezone(self.timezone)
+        except pytz.UnknownTimeZoneError:
+            logger.warning(f"Unknown timezone {self.timezone}, falling back to America/New_York")
+            return pytz.timezone('America/New_York')
+
+    def _convert_to_utc_string(self, dt: datetime) -> str:
+        """Convert datetime to UTC string for database queries"""
+        user_tz = self._get_user_timezone()
+        utc = pytz.UTC
+
+        # If datetime is naive, assume it's in user's timezone
+        if dt.tzinfo is None:
+            dt = user_tz.localize(dt)
+
+        # Convert to UTC
+        utc_dt = dt.astimezone(utc)
+        return utc_dt.strftime('%Y-%m-%d %H:%M:%S')
 
     def _parse_location(self) -> Dict[str, Union[str, List[str]]]:
         """Parse location selection - Enhanced to support multiple selections"""
@@ -124,121 +146,226 @@ class ReportConfig:
 
     def get_date_range(self, include_comparison_period: bool = False) -> Tuple[str, str]:
         """
-        Get actual start and end dates based on configuration
+        Get actual start and end dates based on configuration, converted to UTC for database queries
 
         Args:
             include_comparison_period: If True, extends date range to include previous period for comparison
 
         Returns:
-            Tuple of (start_date, end_date) strings
+            Tuple of (start_date, end_date) strings in UTC format for database queries
         """
-        now = datetime.now()
+        user_tz = self._get_user_timezone()
+        now = datetime.now(user_tz)
 
         if self.time_range == 'custom' and self.custom_date_range:
-            start_date = self.custom_date_range['start_date']
-            end_date = self.custom_date_range['end_date']
+            start_date_str = self.custom_date_range['start_date']
+            end_date_str = self.custom_date_range['end_date']
+
+            # Parse user dates (assume they are in user's timezone)
+            try:
+                if ' ' in start_date_str:
+                    start_dt = datetime.strptime(start_date_str, '%Y-%m-%d %H:%M:%S')
+                else:
+                    start_dt = datetime.strptime(start_date_str, '%Y-%m-%d')
+                    start_dt = start_dt.replace(hour=0, minute=0, second=0)
+
+                if ' ' in end_date_str:
+                    end_dt = datetime.strptime(end_date_str, '%Y-%m-%d %H:%M:%S')
+                else:
+                    end_dt = datetime.strptime(end_date_str, '%Y-%m-%d')
+                    end_dt = end_dt.replace(hour=23, minute=59, second=59)
+
+                # Localize to user timezone
+                start_dt = user_tz.localize(start_dt)
+                end_dt = user_tz.localize(end_dt)
+
+            except ValueError as e:
+                logger.error(f"Error parsing custom dates: {e}")
+                # Fallback to last 30 days
+                start_dt = now - timedelta(days=30)
+                start_dt = start_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+                end_dt = now.replace(hour=23, minute=59, second=59, microsecond=0)
 
             if include_comparison_period:
                 # Calculate previous period length and extend start date
-                current_start = datetime.strptime(start_date, '%Y-%m-%d %H:%M:%S') if ' ' in start_date else datetime.strptime(start_date, '%Y-%m-%d')
-                current_end = datetime.strptime(end_date, '%Y-%m-%d %H:%M:%S') if ' ' in end_date else datetime.strptime(end_date, '%Y-%m-%d')
-                period_length = current_end - current_start
-                comparison_start = current_start - period_length
-                start_date = comparison_start.strftime('%Y-%m-%d 00:00:00')
+                period_length = end_dt - start_dt
+                start_dt = start_dt - period_length
 
-            return start_date, end_date
+            return self._convert_to_utc_string(start_dt), self._convert_to_utc_string(end_dt)
 
         elif self.time_range == 'last-7-days' or self.time_range == 'last_7_days' or '7' in self.time_range:
             days = 7
             if include_comparison_period:
                 days = 14  # Include previous 7 days for comparison
-            start_date = (now - timedelta(days=days)).strftime('%Y-%m-%d 00:00:00')
-            end_date = now.strftime('%Y-%m-%d 23:59:59')
+            start_dt = now - timedelta(days=days)
+            start_dt = start_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_dt = now.replace(hour=23, minute=59, second=59, microsecond=0)
 
         elif self.time_range == 'last-30-days' or self.time_range == 'last_30_days' or '30' in self.time_range:
             days = 30
             if include_comparison_period:
                 days = 60  # Include previous 30 days for comparison
-            start_date = (now - timedelta(days=days)).strftime('%Y-%m-%d 00:00:00')
-            end_date = now.strftime('%Y-%m-%d 23:59:59')
+            start_dt = now - timedelta(days=days)
+            start_dt = start_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_dt = now.replace(hour=23, minute=59, second=59, microsecond=0)
 
         elif self.time_range == 'last-90-days' or self.time_range == 'last_90_days' or '90' in self.time_range:
             days = 90
             if include_comparison_period:
                 days = 180  # Include previous 90 days for comparison
-            start_date = (now - timedelta(days=days)).strftime('%Y-%m-%d 00:00:00')
-            end_date = now.strftime('%Y-%m-%d 23:59:59')
+            start_dt = now - timedelta(days=days)
+            start_dt = start_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_dt = now.replace(hour=23, minute=59, second=59, microsecond=0)
 
         else:
             # Default to last 30 days
             days = 30
             if include_comparison_period:
                 days = 60
-            start_date = (now - timedelta(days=days)).strftime('%Y-%m-%d 00:00:00')
-            end_date = now.strftime('%Y-%m-%d 23:59:59')
+            start_dt = now - timedelta(days=days)
+            start_dt = start_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_dt = now.replace(hour=23, minute=59, second=59, microsecond=0)
 
-        return start_date, end_date
+        return self._convert_to_utc_string(start_dt), self._convert_to_utc_string(end_dt)
 
     def get_comparison_periods(self) -> Tuple[Tuple[str, str], Tuple[str, str]]:
         """
-        Get current and previous period date ranges for comparison
+        Get current and previous period date ranges for comparison, converted to UTC for database queries
 
         Returns:
-            Tuple of ((current_start, current_end), (previous_start, previous_end))
+            Tuple of ((current_start, current_end), (previous_start, previous_end)) in UTC format
         """
-        now = datetime.now()
+        user_tz = self._get_user_timezone()
+        now = datetime.now(user_tz)
 
+        # --- Custom range ---
         if self.time_range == 'custom' and self.custom_date_range:
             current_start_str = self.custom_date_range['start_date']
             current_end_str = self.custom_date_range['end_date']
 
-            current_start = datetime.strptime(current_start_str, '%Y-%m-%d %H:%M:%S') if ' ' in current_start_str else datetime.strptime(current_start_str, '%Y-%m-%d')
-            current_end = datetime.strptime(current_end_str, '%Y-%m-%d %H:%M:%S') if ' ' in current_end_str else datetime.strptime(current_end_str, '%Y-%m-%d')
+            try:
+                if ' ' in current_start_str:
+                    current_start = datetime.strptime(current_start_str, '%Y-%m-%d %H:%M:%S')
+                else:
+                    current_start = datetime.strptime(current_start_str, '%Y-%m-%d')
+                    current_start = current_start.replace(hour=0, minute=0, second=0)
 
-            # FIX: Calculate period length and ensure no overlap
+                if ' ' in current_end_str:
+                    current_end = datetime.strptime(current_end_str, '%Y-%m-%d %H:%M:%S')
+                else:
+                    current_end = datetime.strptime(current_end_str, '%Y-%m-%d')
+                    current_end = current_end.replace(hour=23, minute=59, second=59)
+
+                # Localize to user timezone
+                current_start = user_tz.localize(current_start)
+                current_end = user_tz.localize(current_end)
+
+            except ValueError as e:
+                logger.error(f"Error parsing custom dates: {e}")
+                # Fallback to last 30 days
+                current_end = now.replace(hour=23, minute=59, second=59, microsecond=0)
+                current_start = now - timedelta(days=30)
+                current_start = current_start.replace(hour=0, minute=0, second=0, microsecond=0)
+
+            # Previous period (same length, ends right before current starts)
             period_length = current_end - current_start
-            previous_end = current_start - timedelta(days=1)  # End 1 day before current starts
-            previous_start = previous_end - period_length + timedelta(days=1)  # Same length period
+            previous_end = current_start - timedelta(seconds=1)
+            previous_start = previous_end - period_length
 
-        elif self.time_range == 'last-7-days' or self.time_range == 'last_7_days' or '7' in self.time_range:
-            current_end = now
-            current_start = now - timedelta(days=7)
-            # FIX: No overlap - previous period ends where current starts
-            previous_end = current_start - timedelta(days=1)
-            previous_start = previous_end - timedelta(days=6)  # 7-day period
+        # --- Last 7 days ---
+        elif self.time_range in ['last-7-days', 'last_7_days'] or '7' in self.time_range:
+            current_end = now.replace(hour=23, minute=59, second=59, microsecond=0)
+            current_start = (now - timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
 
-        elif self.time_range == 'last-30-days' or self.time_range == 'last_30_days' or '30' in self.time_range:
-            current_end = now
-            current_start = now - timedelta(days=30)
-            # FIX: No overlap - previous period ends where current starts
-            previous_end = current_start - timedelta(days=1)
-            previous_start = previous_end - timedelta(days=29)  # 30-day period
+            period_length = current_end - current_start
+            previous_end = current_start - timedelta(seconds=1)
+            previous_start = previous_end - period_length
 
-        elif self.time_range == 'last-90-days' or self.time_range == 'last_90_days' or '90' in self.time_range:
-            current_end = now
-            current_start = now - timedelta(days=90)
-            # FIX: No overlap - previous period ends where current starts
-            previous_end = current_start - timedelta(days=1)
-            previous_start = previous_end - timedelta(days=89)  # 90-day period
+        # --- Last 30 days ---
+        elif self.time_range in ['last-30-days', 'last_30_days'] or '30' in self.time_range:
+            current_end = now.replace(hour=23, minute=59, second=59, microsecond=0)
+            current_start = (now - timedelta(days=30)).replace(hour=0, minute=0, second=0, microsecond=0)
 
+            period_length = current_end - current_start
+            previous_end = current_start - timedelta(seconds=1)
+            previous_start = previous_end - period_length
+
+        # --- Last 90 days ---
+        elif self.time_range in ['last-90-days', 'last_90_days'] or '90' in self.time_range:
+            current_end = now.replace(hour=23, minute=59, second=59, microsecond=0)
+            current_start = (now - timedelta(days=90)).replace(hour=0, minute=0, second=0, microsecond=0)
+
+            period_length = current_end - current_start
+            previous_end = current_start - timedelta(seconds=1)
+            previous_start = previous_end - period_length
+
+        # --- Default: last 30 days ---
         else:
-            # Default to last 30 days
-            current_end = now
-            current_start = now - timedelta(days=30)
-            previous_end = current_start - timedelta(days=1)
-            previous_start = previous_end - timedelta(days=29)
+            current_end = now.replace(hour=23, minute=59, second=59, microsecond=0)
+            current_start = (now - timedelta(days=30)).replace(hour=0, minute=0, second=0, microsecond=0)
 
+            period_length = current_end - current_start
+            previous_end = current_start - timedelta(seconds=1)
+            previous_start = previous_end - period_length
+
+        # Convert to UTC strings
         current_period = (
-            current_start.strftime('%Y-%m-%d 00:00:00'),
-            current_end.strftime('%Y-%m-%d 23:59:59')
+            self._convert_to_utc_string(current_start),
+            self._convert_to_utc_string(current_end)
         )
-
         previous_period = (
-            previous_start.strftime('%Y-%m-%d 00:00:00'),
-            previous_end.strftime('%Y-%m-%d 23:59:59')
+            self._convert_to_utc_string(previous_start),
+            self._convert_to_utc_string(previous_end)
         )
-
         return current_period, previous_period
+
+    def get_display_date_range(self) -> str:
+        """
+        Get user-friendly date range string for display in user's timezone
+
+        Returns:
+            Human-readable date range string in user's timezone
+        """
+        user_tz = self._get_user_timezone()
+        now = datetime.now(user_tz)
+
+        if self.time_range == 'custom' and self.custom_date_range:
+            start_date_str = self.custom_date_range['start_date']
+            end_date_str = self.custom_date_range['end_date']
+
+            try:
+                if ' ' in start_date_str:
+                    start_dt = datetime.strptime(start_date_str, '%Y-%m-%d %H:%M:%S')
+                else:
+                    start_dt = datetime.strptime(start_date_str, '%Y-%m-%d')
+
+                if ' ' in end_date_str:
+                    end_dt = datetime.strptime(end_date_str, '%Y-%m-%d %H:%M:%S')
+                else:
+                    end_dt = datetime.strptime(end_date_str, '%Y-%m-%d')
+
+                return f"{start_dt.strftime('%Y-%m-%d')} to {end_dt.strftime('%Y-%m-%d')}"
+            except ValueError:
+                # Fallback to range description
+                pass
+
+        # For predefined ranges, calculate and display the actual dates
+        if '7' in self.time_range:
+            start_dt = now - timedelta(days=7)
+            end_dt = now
+            return f"{start_dt.strftime('%Y-%m-%d')} to {end_dt.strftime('%Y-%m-%d')} (Last 7 days)"
+        elif '30' in self.time_range:
+            start_dt = now - timedelta(days=30)
+            end_dt = now
+            return f"{start_dt.strftime('%Y-%m-%d')} to {end_dt.strftime('%Y-%m-%d')} (Last 30 days)"
+        elif '90' in self.time_range:
+            start_dt = now - timedelta(days=90)
+            end_dt = now
+            return f"{start_dt.strftime('%Y-%m-%d')} to {end_dt.strftime('%Y-%m-%d')} (Last 90 days)"
+        else:
+            start_dt = now - timedelta(days=30)
+            end_dt = now
+            return f"{start_dt.strftime('%Y-%m-%d')} to {end_dt.strftime('%Y-%m-%d')} (Last 30 days)"
 
     def get_target_robots(self) -> List[str]:
         """Get list of target robot serial numbers based on configuration - Enhanced for multiple selections"""
