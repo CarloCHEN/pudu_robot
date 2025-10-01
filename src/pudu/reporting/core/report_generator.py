@@ -395,14 +395,12 @@ class ReportGenerator:
             report_content = self._generate_comprehensive_report_content(
                 comprehensive_metrics, report_config, current_start, current_end, target_robots
             )
-
             # Create HTML or PDF report using template
             logger.info("Generating HTML or PDF report using comprehensive template...")
             if 'html' in report_config.output_format.lower(): # html
                 report_html = self.html_template.generate_comprehensive_report(report_content, report_config)
             else: # pdf
                 report_html = self.pdf_template.generate_comprehensive_pdf_content(report_content, report_config)
-
             # Calculate execution time and prepare metadata
             execution_time = (datetime.now() - start_time).total_seconds()
 
