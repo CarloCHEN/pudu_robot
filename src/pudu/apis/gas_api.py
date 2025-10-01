@@ -1,9 +1,8 @@
 import json
 import requests
-from typing import Dict, List, Optional, Any
-import time
+from typing import Dict, List, Optional, Any, Union
 from datetime import datetime
-from typing import Dict, Union
+
 
 class GaussianRobotAPI:
     """Gaussian Robot API Client
@@ -28,6 +27,82 @@ class GaussianRobotAPI:
         self.open_access_key = open_access_key
         self.access_token = None
         self.refresh_token = None
+
+    def _convert_to_timestamp(self, time_value: Union[int, str, datetime]) -> int:
+        """Convert various time formats to Unix timestamp seconds"""
+        if isinstance(time_value, int):
+            return time_value
+
+        if isinstance(time_value, datetime):
+            return int(time_value.timestamp())
+
+        # Handle string inputs
+        time_str = str(time_value).strip()
+
+        try:
+            # Try common datetime formats
+            formats = [
+                '%Y-%m-%dT%H:%M:%S',      # ISO without timezone
+                '%Y-%m-%d %H:%M:%S',      # Space separated
+                '%Y-%m-%dT%H:%M:%S.%f',   # ISO with microseconds
+                '%Y-%m-%d %H:%M:%S.%f',   # Space separated with microseconds
+                '%Y-%m-%dT%H:%M',         # ISO without seconds
+                '%Y-%m-%d %H:%M',         # Space separated without seconds
+                '%Y-%m-%dT%H:%M:%SZ',     # ISO with Z timezone
+                '%Y-%m-%d %H:%M:%S%z',    # Space separated with timezone
+            ]
+
+            for fmt in formats:
+                try:
+                    dt = datetime.strptime(time_str, fmt)
+                    return int(dt.timestamp())
+                except ValueError:
+                    continue
+
+            # If none of the formats work, try fromisoformat as fallback
+            dt = datetime.fromisoformat(time_str.replace('Z', '+00:00'))
+            return int(dt.timestamp())
+
+        except ValueError:
+            raise ValueError(f"Invalid time string format: {time_value}. Use formats like Unix timestamp, '2024-01-12T08:00:00', '2024-01-12 08:00:00', or datetime object")
+
+    def _convert_to_iso_format(self, time_value: Union[str, datetime]) -> str:
+        """Convert various time formats to ISO format string with Z timezone"""
+        if isinstance(time_value, datetime):
+            # Convert datetime to UTC ISO format with Z timezone
+            return time_value.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+        # Handle string inputs
+        time_str = str(time_value).strip()
+
+        # If it's already in ISO format with Z timezone
+        if time_str.endswith('Z') and 'T' in time_str:
+            return time_str
+
+        try:
+            # Try common datetime formats
+            formats = [
+                '%Y-%m-%dT%H:%M:%S',      # ISO without timezone
+                '%Y-%m-%d %H:%M:%S',      # Space separated
+                '%Y-%m-%dT%H:%M:%S.%f',   # ISO with microseconds
+                '%Y-%m-%d %H:%M:%S.%f',   # Space separated with microseconds
+                '%Y-%m-%dT%H:%M',         # ISO without seconds
+                '%Y-%m-%d %H:%M',         # Space separated without seconds
+            ]
+
+            for fmt in formats:
+                try:
+                    dt = datetime.strptime(time_str, fmt)
+                    return dt.strftime('%Y-%m-%dT%H:%M:%SZ')
+                except ValueError:
+                    continue
+
+            # If none of the formats work, try fromisoformat as fallback
+            dt = datetime.fromisoformat(time_str.replace('Z', '+00:00'))
+            return dt.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+        except ValueError:
+            raise ValueError(f"Invalid time string format: {time_value}. Use formats like '2024-01-12T08:00:00Z', '2024-01-12 08:00:00', or datetime object")
 
     def _make_request(self, method: str, endpoint: str, data: Optional[Dict] = None,
                      params: Optional[Dict] = None, headers: Optional[Dict] = None) -> Dict:
@@ -224,26 +299,9 @@ class GaussianRobotAPI:
                          {'date': '2025-09-01', 'onlineDuration': 64463, 'offlineDuration': 21906},
                          {'date': '2025-09-02', 'onlineDuration': 0, 'offlineDuration': 32376}]}
         """
-
-        def _convert_to_timestamp(time_value: Union[int, str, datetime]) -> int:
-            """Convert various time formats to Unix timestamp seconds"""
-            if isinstance(time_value, int):
-                return time_value
-            elif isinstance(time_value, str):
-                # Try to parse ISO format string
-                try:
-                    dt = datetime.fromisoformat(time_value.replace('Z', '+00:00'))
-                    return int(dt.timestamp())
-                except ValueError:
-                    raise ValueError(f"Invalid time string format: {time_value}. Use ISO format (e.g., '2023-10-01T12:00:00')")
-            elif isinstance(time_value, datetime):
-                return int(time_value.timestamp())
-            else:
-                raise TypeError(f"Unsupported time type: {type(time_value)}")
-
         # Convert times to timestamp seconds
-        start_time_seconds = _convert_to_timestamp(start_time)
-        end_time_seconds = _convert_to_timestamp(end_time)
+        start_time_seconds = self._convert_to_timestamp(start_time)
+        end_time_seconds = self._convert_to_timestamp(end_time)
 
         endpoint = f"/v1alpha1/robots/{serial_number}/statusReports"
         params = {
@@ -276,19 +334,25 @@ class GaussianRobotAPI:
 
         return self._make_request("GET", endpoint, params=params)
 
-    def get_cleaning_reports(self, serial_number: str, start_time_seconds: int,
-                           end_time_seconds: int, utc_offset_seconds: int = 3600) -> Dict:
+    def get_cleaning_reports(self, serial_number: str,
+                            start_time: Union[int, str, datetime],
+                            end_time: Union[int, str, datetime],
+                            utc_offset_seconds: int = 0) -> Dict:
         """Get robot cleaning reports
 
         Args:
             serial_number: Robot serial number
-            start_time_seconds: Start time (Unix timestamp seconds)
-            end_time_seconds: End time (Unix timestamp seconds)
+            start_time: Start time (Unix timestamp seconds, or string like "2025-09-01 09:00:01", or datetime object)
+            end_time: End time (Unix timestamp seconds, or string like "2025-09-01 09:00:01", or datetime object)
             utc_offset_seconds: UTC offset (seconds), multiples of 3600 represent different timezones
 
         Returns:
             Cleaning report data
         """
+        # Convert times to timestamp seconds
+        start_time_seconds = self._convert_to_timestamp(start_time)
+        end_time_seconds = self._convert_to_timestamp(end_time)
+
         endpoint = f"/v1alpha1/robots/{serial_number}/cleaningReports"
         params = {
             "timeSpan.startTime.seconds": start_time_seconds,
@@ -400,48 +464,9 @@ class GaussianRobotAPI:
                 "total": str
             }
         """
-
-        def _convert_to_iso_format(time_value: Union[str, datetime]) -> str:
-            """Convert various time formats to ISO format string with Z timezone"""
-            if isinstance(time_value, datetime):
-                # Convert datetime to UTC ISO format with Z timezone
-                return time_value.strftime('%Y-%m-%dT%H:%M:%SZ')
-
-            # Handle string inputs
-            time_str = str(time_value).strip()
-
-            # If it's already in ISO format with Z timezone
-            if time_str.endswith('Z') and 'T' in time_str:
-                return time_str
-
-            try:
-                # Try common datetime formats
-                formats = [
-                    '%Y-%m-%dT%H:%M:%S',      # ISO without timezone
-                    '%Y-%m-%d %H:%M:%S',      # Space separated
-                    '%Y-%m-%dT%H:%M:%S.%f',   # ISO with microseconds
-                    '%Y-%m-%d %H:%M:%S.%f',   # Space separated with microseconds
-                    '%Y-%m-%dT%H:%M',         # ISO without seconds
-                    '%Y-%m-%d %H:%M',         # Space separated without seconds
-                ]
-
-                for fmt in formats:
-                    try:
-                        dt = datetime.strptime(time_str, fmt)
-                        return dt.strftime('%Y-%m-%dT%H:%M:%SZ')
-                    except ValueError:
-                        continue
-
-                # If none of the formats work, try fromisoformat as fallback
-                dt = datetime.fromisoformat(time_str.replace('Z', '+00:00'))
-                return dt.strftime('%Y-%m-%dT%H:%M:%SZ')
-
-            except ValueError:
-                raise ValueError(f"Invalid time string format: {time_value}. Use formats like '2024-01-12T08:00:00Z', '2024-01-12 08:00:00', or datetime object")
-
         # Convert times to ISO format strings
-        start_time_floor_iso = _convert_to_iso_format(startTimeUtcFloor)
-        start_time_upper_iso = _convert_to_iso_format(startTimeUtcUpper)
+        start_time_floor_iso = self._convert_to_iso_format(startTimeUtcFloor)
+        start_time_upper_iso = self._convert_to_iso_format(startTimeUtcUpper)
 
         endpoint = f"/v1alpha1/robots/{serial_number}/taskReports"
         params = {
@@ -511,7 +536,7 @@ class GaussianRobotAPI:
         return self._make_request("GET", endpoint)
 
     def create_remote_task_command(self, serial_number: str, command_type: str,
-                                 start_time_seconds: int, start_delay: int = 180000,
+                                 start_time: Union[int, str, datetime], start_delay: int = 180000,
                                  user: str = "Gaussian", cleaning_mode: str = "middle_cleaning",
                                  map_name: str = "", task_name: str = "execute_task_fg1",
                                  loop: bool = False, loop_count: int = 1) -> Dict:
@@ -520,7 +545,7 @@ class GaussianRobotAPI:
         Args:
             serial_number: Robot serial number
             command_type: Remote task command type, options: START_TASK, PAUSE_TASK, RESUME_TASK, STOP_TASK
-            start_time_seconds: Start time (Unix timestamp seconds)
+            start_time: Start time (Unix timestamp seconds, or string like "2025-09-01 09:00:01", or datetime object)
             start_delay: Start delay (milliseconds)
             user: User name
             cleaning_mode: Cleaning mode, can be obtained from GetRobotStatus interface
@@ -532,6 +557,9 @@ class GaussianRobotAPI:
         Returns:
             Created command data
         """
+        # Convert start time to timestamp seconds
+        start_time_seconds = self._convert_to_timestamp(start_time)
+
         endpoint = f"/v1alpha1/robots/{serial_number}/commands"
         data = {
             "user": user,
@@ -558,7 +586,7 @@ class GaussianRobotAPI:
         return self._make_request("POST", endpoint, data=data)
 
     def create_remote_navigation_command(self, serial_number: str, command_type: str,
-                                       start_time_seconds: int, start_delay: int = 180000,
+                                       start_time: Union[int, str, datetime], start_delay: int = 180000,
                                        user: str = "Gaussian", map_name: str = "",
                                        position: str = "") -> Dict:
         """Create remote navigation command
@@ -566,7 +594,7 @@ class GaussianRobotAPI:
         Args:
             serial_number: Robot serial number
             command_type: Remote navigation command type, options: CROSS_NAVIGATE, PAUSE_NAVIGATE, RESUME_NAVIGATE, STOP_NAVIGATE
-            start_time_seconds: Start time (Unix timestamp seconds)
+            start_time: Start time (Unix timestamp seconds, or string like "2025-09-01 09:00:01", or datetime object)
             start_delay: Start delay (milliseconds)
             user: User name
             map_name: Map name, can be obtained from GetRobotStatus interface
@@ -575,6 +603,9 @@ class GaussianRobotAPI:
         Returns:
             Created command data
         """
+        # Convert start time to timestamp seconds
+        start_time_seconds = self._convert_to_timestamp(start_time)
+
         endpoint = f"/v1alpha1/robots/{serial_number}/commands"
         data = {
             "user": user,
