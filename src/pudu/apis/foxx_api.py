@@ -1,32 +1,16 @@
 import pandas as pd
 import ast
-from .core.api_factory import APIFactory
+from .pudu_api import *
 from .utils import convert_technical_string
-
-# 获取API工厂实例
-api_factory = APIFactory()
-
-def get_robot_api(robot_type="pudu"):
-    """
-    根据机器人类型获取对应的API实例
-    
-    Args:
-        robot_type: 机器人类型 ("pudu" 或 "gas")
-    
-    Returns:
-        API实例
-    """
-    return api_factory.create_api(robot_type)
 
 # 5 api functions: get_location_table, get_robot_status_table, get_robot_table (deprecated), get_events_table, get_schedule_table, get_charging_table, get_task_overview_data (deprecated)
 
-def get_robot_status(sn, robot_type="pudu"):
+def get_robot_status(sn):
     """
     Get robot status and comprehensive task information.
 
     Args:
         sn: Robot serial number
-        robot_type: Robot type ("pudu" or "gas")
 
     Returns:
         dict: {
@@ -110,8 +94,7 @@ def get_robot_status(sn, robot_type="pudu"):
 
     try:
         # Call the robot API
-        api = get_robot_api(robot_type)
-        response = api.get_robot_details(sn)
+        response = get_robot_details(sn)
 
         # Check if response is valid
         if not response:
@@ -234,15 +217,10 @@ def get_robot_status(sn, robot_type="pudu"):
             'position': None
         }
 
-def get_ongoing_tasks_table(location_id=None, robot_sn=None, robot_type="pudu"):
+def get_ongoing_tasks_table(location_id=None, robot_sn=None):
     """
     Get ongoing tasks for all robots by calling get_robot_status for each robot.
     Returns a DataFrame with ongoing task information with is_report=0.
-    
-    Args:
-        location_id: Optional location ID to filter by
-        robot_sn: Optional robot serial number to filter by
-        robot_type: Robot type ("pudu" or "gas")
     """
     ongoing_tasks_df = pd.DataFrame(columns=[
         'location_id', 'task_name', 'task_id', 'robot_sn', 'map_name', 'is_report', 'map_url',
@@ -253,8 +231,7 @@ def get_ongoing_tasks_table(location_id=None, robot_sn=None, robot_type="pudu"):
     ])
 
     # Get all stores
-    api = get_robot_api(robot_type)
-    all_shops = api.get_list_stores()['list']
+    all_shops = get_list_stores()['list']
 
     for shop in all_shops:
         shop_id = shop['shop_id']
@@ -265,7 +242,7 @@ def get_ongoing_tasks_table(location_id=None, robot_sn=None, robot_type="pudu"):
 
         try:
             # Get robots for this shop
-            shop_robots = api.get_list_robots(shop_id=shop_id)['list']
+            shop_robots = get_list_robots(shop_id=shop_id)['list']
 
             for robot in shop_robots:
                 sn = robot.get('sn')
@@ -276,7 +253,7 @@ def get_ongoing_tasks_table(location_id=None, robot_sn=None, robot_type="pudu"):
                     continue
                 try:
                     # Get robot status including task information
-                    robot_status = get_robot_status(sn, robot_type)
+                    robot_status = get_robot_status(sn)
 
                     if robot_status['is_in_task'] and robot_status['task_info']:
                         task_info = robot_status['task_info']
@@ -331,13 +308,13 @@ def get_robot_work_location_and_mapping_data():
     current_time = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
 
     # Get all stores
-    all_shops = pudu_api.get_list_stores()['list']
+    all_shops = get_list_stores()['list']
 
     for shop in all_shops:
         shop_id = shop['shop_id']
 
         try:
-            shop_robots = pudu_api.get_list_robots(shop_id=shop_id)['list']
+            shop_robots = get_list_robots(shop_id=shop_id)['list']
 
             for robot in shop_robots:
                 sn = robot.get('sn')
@@ -405,7 +382,7 @@ def get_location_table():
     Get the table for locations with location_id and location_name.
     """
     location_df = pd.DataFrame(columns=['Building ID', 'Building Name'])
-    all_shops = pudu_api.get_list_stores()['list']
+    all_shops = get_list_stores()['list']
     for shop in all_shops:
         shop_id, shop_name = shop['shop_id'], shop['shop_name']
         location_df = pd.concat([location_df, pd.DataFrame({'Building ID': [shop_id], 'Building Name': [shop_name]})], ignore_index=True)
@@ -414,10 +391,10 @@ def get_location_table():
 def get_robot_status_table(location_id=None, robot_sn=None):
     """
     Get a simplified table for robots with basic information.
-    Only uses pudu_api.get_robot_details() to get robot SN, nickname, status, and location info.
+    Only uses get_robot_details() to get robot SN, nickname, status, and location info.
     """
     robot_df = pd.DataFrame(columns=['Location ID', 'Robot SN', 'Robot Name', 'Robot Type', 'Water Level', 'Sewage Level', 'Battery Level', 'x', 'y', 'z', 'Status'])
-    all_shops = pudu_api.get_list_stores()['list']
+    all_shops = get_list_stores()['list']
 
     for shop in all_shops:
         shop_id, shop_name = shop['shop_id'], shop['shop_name']
@@ -427,7 +404,7 @@ def get_robot_status_table(location_id=None, robot_sn=None):
             continue
 
         # Get the list of robots for this shop
-        shop_robots = pudu_api.get_list_robots(shop_id=shop_id)['list']
+        shop_robots = get_list_robots(shop_id=shop_id)['list']
 
         # Process each robot in the shop
         for robot in shop_robots:
@@ -438,7 +415,7 @@ def get_robot_status_table(location_id=None, robot_sn=None):
                 continue
 
             # Get robot details
-            robot_details = pudu_api.get_robot_details(sn)
+            robot_details = get_robot_details(sn)
 
             # Get robot status
             is_online = str(robot_details.get('online', '')).strip().lower() == 'true'
@@ -481,9 +458,9 @@ def get_robot_status_table(location_id=None, robot_sn=None):
 def get_robot_table(start_time, end_time, location_id=None, robot_sn=None, timezone_offset=0):
     """
     Get the table for robots.
-    pudu_api.get_machine_run_analytics_list() is used to get the running hours, mileage, and task count of the robot.
-    pudu_api.get_robot_details() is used to get the water level, sewage level, and battery level of the robot.
-    pudu_api.get_cleaning_report_list() is used to get the area of the robot.
+    get_machine_run_analytics_list() is used to get the running hours, mileage, and task count of the robot.
+    get_robot_details() is used to get the water level, sewage level, and battery level of the robot.
+    get_cleaning_report_list() is used to get the area of the robot.
     """
     task_status_mapping = {
         0: "Not Started",
@@ -496,7 +473,7 @@ def get_robot_table(start_time, end_time, location_id=None, robot_sn=None, timez
     }
     robot_df = pd.DataFrame(columns=['Location ID', 'Robot Type', 'Robot Name', 'Robot SN', 'Current Task', 'Total Task', 'Total Running Hours', \
                                      'Total Mileage', 'Total Area', 'Water Level', 'Sewage Level', 'Battery Level', 'Status'])
-    all_shops = pudu_api.get_list_stores()['list']
+    all_shops = get_list_stores()['list']
 
     for shop in all_shops:
         shop_id, shop_name = shop['shop_id'], shop['shop_name']
@@ -508,10 +485,10 @@ def get_robot_table(start_time, end_time, location_id=None, robot_sn=None, timez
         location = shop_name
 
         # Get the list of robots for this shop
-        shop_robots = pudu_api.get_list_robots(shop_id=shop_id)['list']
+        shop_robots = get_list_robots(shop_id=shop_id)['list']
 
         # Get analytics data for this shop
-        analytics_data = pudu_api.get_machine_run_analytics_list(start_time=start_time, end_time=end_time, shop_id=shop_id, time_unit='day', timezone_offset=0)['list']
+        analytics_data = get_machine_run_analytics_list(start_time=start_time, end_time=end_time, shop_id=shop_id, time_unit='day', timezone_offset=0)['list']
 
         # Group analytics data by SN
         sn_groups = {}
@@ -531,7 +508,7 @@ def get_robot_table(start_time, end_time, location_id=None, robot_sn=None, timez
                 continue
 
             # get robot details
-            robot_details = pudu_api.get_robot_details(sn)
+            robot_details = get_robot_details(sn)
             # get robot status
 
             is_online = str(robot_details.get('online', '')).strip().lower() == 'true'
@@ -561,7 +538,7 @@ def get_robot_table(start_time, end_time, location_id=None, robot_sn=None, timez
             robot_name = robot_details.get('nickname', f"{shop_name}_{robot_type}")
             # Get cleaning reports for this SN
             try:
-                clean_reports = pudu_api.get_cleaning_report_list(start_time=start_time, end_time=end_time,
+                clean_reports = get_cleaning_report_list(start_time=start_time, end_time=end_time,
                                                         shop_id=shop_id, sn=sn,
                                                         timezone_offset=timezone_offset)['list']
 
@@ -634,7 +611,7 @@ def get_events_table(start_time, end_time, location_id=None, robot_sn=None, erro
     ])
 
     # Get list of stores and filter by location_id if provided
-    all_shops = pudu_api.get_list_stores()['list']
+    all_shops = get_list_stores()['list']
     stores = [shop for shop in all_shops if location_id is None or shop['shop_id'] == location_id]
 
     all_events = []
@@ -644,7 +621,7 @@ def get_events_table(start_time, end_time, location_id=None, robot_sn=None, erro
 
         # Get list of robots in this shop
         try:
-            shop_robots = pudu_api.get_list_robots(shop_id=shop_id)['list']
+            shop_robots = get_list_robots(shop_id=shop_id)['list']
             shop_robots_sn = [robot['sn'] for robot in shop_robots if 'sn' in robot]
 
             # Filter by robot_sn if provided
@@ -662,7 +639,7 @@ def get_events_table(start_time, end_time, location_id=None, robot_sn=None, erro
 
         # Get events for this shop
         try:
-            events_response = pudu_api.get_event_list(
+            events_response = get_event_list(
                 start_time=start_time,
                 end_time=end_time,
                 shop_id=shop_id,
@@ -812,14 +789,14 @@ def get_schedule_table(start_time, end_time, location_id=None, robot_sn=None, ti
     ])
 
     # Get list of stores and filter by location_id if provided
-    stores = [shop for shop in pudu_api.get_list_stores()['list']
+    stores = [shop for shop in get_list_stores()['list']
               if location_id is None or shop['shop_id'] == location_id]
 
     for shop in stores:
         shop_id, shop_name = shop['shop_id'], shop['shop_name']
 
         # Get all robots for this shop
-        shop_robots = pudu_api.get_list_robots(shop_id=shop_id)['list']
+        shop_robots = get_list_robots(shop_id=shop_id)['list']
         shop_robots = [robot['sn'] for robot in shop_robots if 'sn' in robot]
 
 
@@ -831,7 +808,7 @@ def get_schedule_table(start_time, end_time, location_id=None, robot_sn=None, ti
         robots_with_tasks = set()
 
         # Get cleaning reports for this shop for the entire period
-        results = pudu_api.get_cleaning_report_list(start_time, end_time, shop_id,
+        results = get_cleaning_report_list(start_time, end_time, shop_id,
                                            timezone_offset=timezone_offset)['list']
 
         # Filter by robot_sn if provided (redundant but keeping for safety)
@@ -861,7 +838,7 @@ def get_schedule_table(start_time, end_time, location_id=None, robot_sn=None, ti
                 task_end_time = pd.to_datetime(task['end_time'], unit='s')
 
                 # Get detailed cleaning report
-                report = pudu_api.get_cleaning_report_detail(
+                report = get_cleaning_report_detail(
                     start_time, end_time, sn, report_id, shop_id, timezone_offset=timezone_offset
                 )
                 task_id = report['task_id']
@@ -1043,22 +1020,22 @@ def get_charging_table(start_time, end_time, location_id=None, robot_sn=None, ti
     ])
 
     # Get list of stores and filter by location_id if provided
-    stores = [shop for shop in pudu_api.get_list_stores()['list']
+    stores = [shop for shop in get_list_stores()['list']
               if location_id is None or shop['shop_id'] == location_id]
 
     for shop in stores:
         shop_id, shop_name = shop['shop_id'], shop['shop_name']
         # Get list of robots in this shop
-        shop_robots = pudu_api.get_list_robots(shop_id=shop_id)['list']
+        shop_robots = get_list_robots(shop_id=shop_id)['list']
         shop_robots = [robot['sn'] for robot in shop_robots if 'sn' in robot]
 
         # Get charging records for this shop
-        results = pudu_api.get_charging_record_list(start_time, end_time, shop_id, timezone_offset=timezone_offset)['list']
+        results = get_charging_record_list(start_time, end_time, shop_id, timezone_offset=timezone_offset)['list']
         results = [record for record in results if 'sn' in record and record['sn'] in shop_robots]
 
         # Get battery health data for this shop
         try:
-            battery_health_data = pudu_api.get_battery_health_list(start_time, end_time, shop_id, timezone_offset=timezone_offset)['list']
+            battery_health_data = get_battery_health_list(start_time, end_time, shop_id, timezone_offset=timezone_offset)['list']
             # Create a dictionary for quick lookup by sn and task_time
             battery_health_dict = {}
             for health_record in battery_health_data:
@@ -1100,7 +1077,7 @@ def get_charging_table(start_time, end_time, location_id=None, robot_sn=None, ti
             health_key = record['sn']
             battery_health = battery_health_dict.get(health_key, {'cycle': None, 'soh': None})
 
-            robot_details = pudu_api.get_robot_details(record['sn'])
+            robot_details = get_robot_details(record['sn'])
             robot_name = robot_details.get('nickname', f"{shop_name}_{record['product_code']}")
 
             # Create a new entry for this charging record
@@ -1148,7 +1125,7 @@ def get_data(start_time, end_time, location_id=None, robot_sn=None, timezone_off
         'Cost Battery', 'Duration', 'Efficiency'
     ])
     # Filter stores by location_id
-    stores = [shop for shop in pudu_api.get_list_stores()['list']
+    stores = [shop for shop in get_list_stores()['list']
               if location_id is None or shop['shop_id'] == location_id]
     battery_capacity = 1228.8 / 1000 # kWh
 
@@ -1157,7 +1134,7 @@ def get_data(start_time, end_time, location_id=None, robot_sn=None, timezone_off
         shop_id, shop_name = shop['shop_id'], shop['shop_name']
 
         # Get list of robots in this shop
-        shop_robots = pudu_api.get_list_robots(shop_id=shop_id)['list']
+        shop_robots = get_list_robots(shop_id=shop_id)['list']
         shop_robots_sn = [robot['sn'] for robot in shop_robots if 'sn' in robot]
 
         # Filter robots by robot_sn if provided
@@ -1170,7 +1147,7 @@ def get_data(start_time, end_time, location_id=None, robot_sn=None, timezone_off
             continue
 
         # Get cleaning reports for this shop for the entire period
-        results = pudu_api.get_cleaning_report_list(start_time, end_time, shop_id, timezone_offset=timezone_offset)['list']
+        results = get_cleaning_report_list(start_time, end_time, shop_id, timezone_offset=timezone_offset)['list']
         results = [task for task in results if task['sn'] in shop_robots_sn]
 
         # Track which robots have tasks
@@ -1203,7 +1180,7 @@ def get_data(start_time, end_time, location_id=None, robot_sn=None, timezone_off
 
             # Get detailed cleaning report
             try:
-                report = pudu_api.get_cleaning_report_detail(
+                report = get_cleaning_report_detail(
                     start_time, end_time, sn, report_id, shop_id, timezone_offset=timezone_offset
                 )
 

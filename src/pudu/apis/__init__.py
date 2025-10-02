@@ -3,7 +3,6 @@ Robot Package
 """
 
 from .foxx_api import *
-from .gas_api import *
 
 __all__ = [
     # from foxx_api
@@ -17,7 +16,4 @@ __all__ = [
     "get_events_table",
     "get_ongoing_tasks_table",
     "get_robot_work_location_and_mapping_data"
-    # from gas_api
-    "GaussianRobotAPI",
-    "create_gaussian_api_client"
 ]
