@@ -1,3 +1,4 @@
+# callback_handler.py
 import logging
 from typing import Any, Dict, Tuple
 import time
@@ -5,134 +6,232 @@ import time
 from models import CallbackResponse, CallbackStatus
 from processors import RobotErrorProcessor, RobotPoseProcessor, RobotPowerProcessor, RobotStatusProcessor
 from database_writer import DatabaseWriter
+from core.brand_config import BrandConfig, FieldMapper
+from core.services.verification_service import VerificationService
 
 logger = logging.getLogger(__name__)
 
 
 class CallbackHandler:
     """
-    Callback handler with dynamic database routing and change detection
+    Enhanced callback handler with brand support
+    Handles verification, type mapping, field mapping, and database writing
     """
 
-    def __init__(self, config_path: str = "database_config.yaml"):
-        self.processors = {
-            "robotStatus": RobotStatusProcessor(),
-            "robotErrorWarning": RobotErrorProcessor(),
-            "notifyRobotPose": RobotPoseProcessor(),
-            "notifyRobotPower": RobotPowerProcessor(),
-        }
+    def __init__(self, database_config_path: str = "configs/database_config.yaml", brand: str = "pudu"):
+        """
+        Initialize callback handler with brand configuration
 
-        # Delivery-related callbacks to ignore (as requested)
-        self.ignored_callbacks = {
-            "deliveryStatus",
-            "deliveryComplete",
-            "deliveryError",
-            "orderStatus",
-            "orderComplete",
-            "orderError",
-            "orderReceived",
-            "deliveryStart",
-            "deliveryCancel",
+        Args:
+            database_config_path: Path to database configuration YAML
+            brand: Brand name (e.g., 'pudu', 'gas')
+        """
+        self.brand = brand
+
+        # Load brand-specific configuration
+        self.brand_config = BrandConfig(brand)
+        self.field_mapper = FieldMapper(self.brand_config)
+        self.verification_service = VerificationService(self.brand_config)
+
+        # Initialize processors (Pudu-style, will be used as base)
+        self.processors = {
+            "status_event": RobotStatusProcessor(),
+            "error_event": RobotErrorProcessor(),
+            "pose_event": RobotPoseProcessor(),
+            "power_event": RobotPowerProcessor(),
         }
 
         # Initialize enhanced database writer
-        self.database_writer = DatabaseWriter(config_path)
+        self.database_writer = DatabaseWriter(database_config_path)
+
+        logger.info(f"CallbackHandler initialized for brand: {brand}")
+
+    def verify_request(self, data: Dict[str, Any], headers: Dict[str, str]) -> Tuple[bool, str]:
+        """
+        Verify incoming request using brand-specific verification
+
+        Args:
+            data: Request body
+            headers: Request headers
+
+        Returns:
+            tuple: (is_valid, error_message)
+        """
+        return self.verification_service.verify(data, headers)
 
     def process_callback(self, data: Dict[str, Any]) -> CallbackResponse:
         """
-        Process incoming callback based on callback type
+        Process incoming callback with brand-aware type mapping
+
+        Args:
+            data: Raw callback data from brand
+
+        Returns:
+            CallbackResponse with processing result
         """
         try:
-            callback_type = data.get("callback_type")
-
-            if not callback_type:
-                logger.error("No callback type specified")
-                return CallbackResponse(status=CallbackStatus.ERROR, message="No callback type specified")
-
-            # Check if this is a delivery-related callback to ignore
-            if callback_type in self.ignored_callbacks:
-                logger.info(f"Ignoring delivery-related callback: {callback_type}")
-                return CallbackResponse(status=CallbackStatus.SUCCESS, message=f"Delivery callback ignored: {callback_type}")
-
-            # Get appropriate processor
-            processor = self.processors.get(callback_type)
-
-            if not processor:
-                logger.warning(f"No processor found for callback type: {callback_type}")
+            # Check if this callback type should be ignored
+            if self.brand_config.is_ignored_type(data):
+                callback_identifier = data.get('callback_type') or data.get('messageTypeId')
+                logger.info(f"Ignoring callback type: {callback_identifier}")
                 return CallbackResponse(
-                    status=CallbackStatus.WARNING,
-                    message=f"Unknown callback type: {callback_type}",
-                    data={"callback_type": callback_type},
+                    status=CallbackStatus.SUCCESS,
+                    message=f"Callback type ignored: {callback_identifier}"
                 )
 
+            # Map brand-specific callback type to abstract type
+            abstract_type = self.brand_config.map_callback_type(data)
+
+            if not abstract_type:
+                logger.warning(f"No mapping found for callback")
+                return CallbackResponse(
+                    status=CallbackStatus.WARNING,
+                    message="Unknown callback type",
+                    data={"brand": self.brand},
+                )
+
+            # Check if this is a report event (placeholder)
+            if abstract_type == "report_event":
+                logger.info("Report event received - placeholder processing")
+                return CallbackResponse(
+                    status=CallbackStatus.SUCCESS,
+                    message="Report event received (placeholder)",
+                    data={"abstract_type": abstract_type}
+                )
+
+            # Get appropriate processor for abstract type
+            processor = self.processors.get(abstract_type)
+
+            if not processor:
+                logger.warning(f"No processor found for abstract type: {abstract_type}")
+                return CallbackResponse(
+                    status=CallbackStatus.WARNING,
+                    message=f"No processor for type: {abstract_type}",
+                    data={"abstract_type": abstract_type},
+                )
+
+            # Extract the actual data payload based on brand
+            callback_data = self._extract_callback_data(data)
+
             # Process the callback
-            return processor.process(data.get("data"))
+            return processor.process(callback_data)
 
         except Exception as e:
             logger.error(f"Error in callback processing: {str(e)}", exc_info=True)
             return CallbackResponse(status=CallbackStatus.ERROR, message=f"Processing error: {str(e)}")
 
-    def write_to_database_with_change_detection(self, data: Dict[str, Any]) -> Tuple[list, list, dict]:
+    def _extract_callback_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Write callback data to database with dynamic routing and change detection
+        Extract callback data payload based on brand format
+
+        Args:
+            data: Raw callback data
+
+        Returns:
+            Extracted data payload
+        """
+        # Pudu format: {'callback_type': 'xxx', 'data': {...}}
+        if 'callback_type' in data and 'data' in data:
+            return data.get('data', {})
+
+        # Gas format: {'messageTypeId': 1, 'payload': {...}}
+        # For Gas, we'll return the entire data since field mapper handles nested paths
+        if 'messageTypeId' in data:
+            return data
+
+        # Fallback: return as-is
+        return data
+
+    def write_to_database_with_change_detection(
+        self,
+        raw_data: Dict[str, Any]
+    ) -> Tuple[list, list, dict]:
+        """
+        Write callback data to database with brand-aware field mapping and change detection
+
+        Args:
+            raw_data: Raw callback data from brand
 
         Returns:
             tuple: (database_names, table_names, changes_detected)
         """
         try:
-            callback_type = data.get("callback_type")
-            callback_data = data.get("data", {})
-            robot_sn = callback_data.get("sn", "")
+            # Map to abstract type
+            abstract_type = self.brand_config.map_callback_type(raw_data)
 
-            if not robot_sn:
-                logger.warning("No robot SN found in callback data")
+            if not abstract_type:
+                logger.warning("Cannot write to database: unknown callback type")
                 return [], [], {}
 
-            if callback_type == "robotStatus":
-                status_data = {
-                    "robot_sn": robot_sn,
-                    "status": callback_data.get("run_status", "").lower(),
-                    "timestamp": callback_data.get("timestamp"),
-                }
-                return self.database_writer.write_robot_status(robot_sn, status_data)
+            # Skip report events for now (placeholder)
+            if abstract_type == "report_event":
+                logger.info("Report event - skipping database write (placeholder)")
+                return [], [], {}
 
-            elif callback_type == "notifyRobotPose":
-                pose_data = {
-                    "robot_sn": robot_sn,
-                    "x": callback_data.get("x"),
-                    "y": callback_data.get("y"),
-                    "z": callback_data.get("yaw"),  # Note: API uses 'yaw' for z-coordinate
-                    "timestamp": callback_data.get("timestamp"),
-                }
-                return self.database_writer.write_robot_pose(robot_sn, pose_data)
+            # Extract callback data
+            callback_data = self._extract_callback_data(raw_data)
 
-            elif callback_type == "notifyRobotPower":
-                power_data = {
-                    "robot_sn": robot_sn,
-                    "battery_level": callback_data.get("power"),
-                    "charge_state": callback_data.get("charge_state"),
-                    "timestamp": callback_data.get("timestamp"),
-                }
-                return self.database_writer.write_robot_power(robot_sn, power_data)
+            # Map fields using brand-specific field mapper
+            mapped_data = self.field_mapper.map_fields(abstract_type, callback_data)
 
-            elif callback_type == "robotErrorWarning":
-                event_data = {
+            if not mapped_data:
+                logger.warning(f"No data after field mapping for {abstract_type}")
+                return [], [], {}
+
+            # Drop brand-specific fields
+            cleaned_data = self.field_mapper.drop_fields(abstract_type, mapped_data)
+
+            # Extract robot_sn for database routing
+            robot_sn = cleaned_data.get("robot_sn", "")
+
+            if not robot_sn:
+                logger.warning("No robot_sn found after field mapping")
+                return [], [], {}
+
+            # Route to appropriate database writer method based on abstract type
+            if abstract_type == "status_event":
+                return self.database_writer.write_robot_status(robot_sn, cleaned_data)
+
+            elif abstract_type == "pose_event":
+                return self.database_writer.write_robot_pose(robot_sn, cleaned_data)
+
+            elif abstract_type == "power_event":
+                return self.database_writer.write_robot_power(robot_sn, cleaned_data)
+
+            elif abstract_type == "error_event":
+                # Ensure required fields for error events
+                error_data = {
                     "robot_sn": robot_sn,
-                    "event_id": callback_data.get("error_id", ""),
-                    "error_id": callback_data.get("error_id", ""),
-                    "event_level": callback_data.get("error_level", "").lower(),
-                    "event_type": callback_data.get("error_type", ""),
-                    "event_detail": callback_data.get("error_detail", ""),
-                    "task_time": callback_data.get("timestamp", int(time.time())),
+                    "event_id": cleaned_data.get("event_id", ""),
+                    "error_id": cleaned_data.get("error_id", cleaned_data.get("event_id", "")),
+                    "event_level": cleaned_data.get("event_level", ""),
+                    "event_type": cleaned_data.get("event_type", ""),
+                    "event_detail": cleaned_data.get("event_detail", ""),
+                    "task_time": cleaned_data.get("task_time", int(time.time())),
                     "upload_time": int(time.time()),
                 }
-                return self.database_writer.write_robot_event(robot_sn, event_data)
+                return self.database_writer.write_robot_event(robot_sn, error_data)
 
             return [], [], {}
 
         except Exception as e:
-            logger.error(f"Error writing callback to database: {str(e)}")
+            logger.error(f"Error writing callback to database: {str(e)}", exc_info=True)
             return [], [], {}
+
+    def get_handler_info(self) -> Dict[str, Any]:
+        """
+        Get handler configuration info (for debugging/health checks)
+
+        Returns:
+            Dictionary with handler configuration details
+        """
+        return {
+            "brand": self.brand,
+            "verification": self.verification_service.get_verification_info(),
+            "supported_types": list(self.brand_config.type_mappings.values()),
+            "ignored_types": list(self.brand_config.ignored_types),
+            "transform_enabled": self.brand_config.transform_enabled
+        }
 
     def close(self):
         """Close database connections"""

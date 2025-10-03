@@ -1,0 +1,128 @@
+---
+# Gas Robot Brand Configuration
+# Handles callback type mapping, field mapping, and verification
+
+brand: gas
+
+# Verification configuration
+verification:
+  method: body  # Gas uses body-based verification
+  key: appId  # Body field name for verification
+
+# Callback type mappings: Gas messageTypeId -> abstract type
+type_mappings:
+  "1": error_event  # Incident callback
+  "2": report_event  # Task report (cleaning report)
+
+# No delivery callbacks to ignore for Gas
+ignored_types: []
+
+# Field mappings for each abstract type
+field_mappings:
+  # Error/Incident event mapping (messageTypeId = 1)
+  error_event:
+    source_to_db:
+      payload.serialNumber: robot_sn
+      payload.content.incidentId: event_id
+      payload.content.incidentCode: error_id
+      payload.content.incidentName: event_type
+      payload.content.incidentLevel: event_level
+      payload.content.incidentStatus: incident_status  # Gas-specific field (nullable)
+      messageTimestamp: task_time
+    conversions:
+      event_level:
+        type: lowercase
+        mapping:
+          # Map Gas incident levels to unified levels
+          "H7": "fatal"
+          "H6": "error"
+          "H5": "warning"
+          "H4": "error"
+          "H3": "warning"
+          "H2": "event"
+          "H1": "event"
+          "H0": "event"
+      task_time:
+        type: timestamp_ms_to_s  # Gas uses milliseconds, DB uses seconds
+      event_type:
+        type: lowercase
+    drop_fields:
+      # Gas-specific fields not in unified schema
+      - traceId
+      - messageId
+      - productId
+      - messageTypeId
+      - appId
+      - payload.modelTypeCode
+      - payload.content.taskId
+      - payload.content.startTime
+      - payload.content.endTime
+
+  # Task report event (messageTypeId = 2) - PLACEHOLDER
+  # SELECT id, task_id, robot_sn, task_name, start_time, end_time,progress,duration,  actual_area, plan_area, efficiency, water_consumption,mode,status
+
+  # is_report, sub_mode, `type`, vacuum_speed, vacuum_suction, wash_speed, wash_suction, wash_water,
+  # map_name, map_url, new_map_url,remaining_time, battery_usage,
+  # consumption, create_time, update_time
+
+  report_event:
+    placeholder: true  # To be implemented later
+    source_to_db:
+      payload.serialNumber: robot_sn
+      payload.taskReport.taskInstanceId: task_id
+      payload.taskReport.displayName: task_name
+      payload.taskReport.startTime: start_time
+      payload.taskReport.endTime: end_time
+      payload.taskReport.completionPercentage: progress
+      payload.taskReport.durationSeconds: duration
+      payload.taskReport.plannedCleaningAreaSquareMeter: plan_area
+      payload.taskReport.actualCleaningAreaSquareMeter: actual_area
+      payload.taskReport.efficiencySquareMeterPerHour: efficiency
+      payload.taskReport.waterConsumptionLiter: water_consumption # L to mL
+      payload.taskReport.cleaningMode: mode
+      payload.taskReport.taskEndStatus: status
+      
+
+    conversions:
+      start_time:
+        type: timestamp_ms_to_s
+      end_time:
+        type: timestamp_ms_to_s
+      completion_percentage:
+        type: float
+      cleaning_area:
+        type: float
+      water_consumption:
+        type: div_by_1000
+
+
+    drop_fields:
+      - traceId
+      - messageId
+      - productId
+      - messageTypeId
+      - appId
+      - payload.modelTypeCode
+      - payload.taskReport.taskInstanceId
+      - payload.taskReport.displayName
+      - payload.taskReport.operator
+      - payload.taskReport.robot
+      - payload.taskReport.robotSerialNumber
+      - payload.taskReport.durationSeconds
+      - payload.taskReport.plannedCleaningAreaSquareMeter
+      - payload.taskReport.efficiencySquareMeterPerHour
+      - payload.taskReport.plannedPolishingAreaSquareMeter
+      - payload.taskReport.actualPolishingAreaSquareMeter
+      - payload.taskReport.waterConsumptionLiter
+      - payload.taskReport.startBatteryPercentage
+      - payload.taskReport.endBatteryPercentage
+      - payload.taskReport.consumablesResidualPercentage
+      - payload.taskReport.cleaningMode
+      - payload.taskReport.taskEndStatus
+      - payload.taskReport.subTasks
+      - payload.taskReport.taskReportPngUri
+      - payload.taskReport.areaNameList
+
+# Coordinate transformation support
+# Gas robots may use different coordinate system - disabled for now
+transform_enabled: false

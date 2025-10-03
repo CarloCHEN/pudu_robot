@@ -1,0 +1,93 @@
+---
+# Pudu Robot Brand Configuration
+# Handles callback type mapping, field mapping, and verification
+
+brand: pudu
+
+# Verification configuration
+verification:
+  method: header  # Pudu uses header-based verification
+  key: callbackcode  # Header key name (case-insensitive)
+
+# Callback type mappings: Pudu callback_type -> abstract type
+type_mappings:
+  robotStatus: status_event
+  robotErrorWarning: error_event
+  notifyRobotPose: pose_event
+  notifyRobotPower: power_event
+
+# Callbacks to ignore (delivery-related)
+ignored_types:
+  - deliveryStatus
+  - deliveryComplete
+  - deliveryError
+  - orderStatus
+  - orderComplete
+  - orderError
+  - orderReceived
+  - deliveryStart
+  - deliveryCancel
+
+# Field mappings for each abstract type
+field_mappings:
+  # Status event mapping
+  status_event:
+    source_to_db:
+      sn: robot_sn
+      run_status: status
+      timestamp: timestamp
+    conversions:
+      status:
+        type: lowercase
+    drop_fields: []
+
+  # Error/Warning event mapping
+  error_event:
+    source_to_db:
+      sn: robot_sn
+      error_id: error_id
+      event_id: error_id
+      error_level: event_level
+      error_type: event_type
+      error_detail: event_detail
+      timestamp: task_time
+    conversions:
+      event_level:
+        type: lowercase
+      task_time:
+        type: int  # Ensure it's integer timestamp
+    drop_fields:
+      - callback_type  # Pudu-specific, not in DB
+
+  # Pose event mapping
+  pose_event:
+    source_to_db:
+      sn: robot_sn
+      x: x
+      y: y
+      yaw: z  # Pudu uses 'yaw' but DB expects 'z'
+      timestamp: timestamp
+    conversions:
+      x:
+        type: float
+      y:
+        type: float
+      z:
+        type: float
+    drop_fields: []
+
+  # Power event mapping
+  power_event:
+    source_to_db:
+      sn: robot_sn
+      power: battery_level  # Pudu uses 'power', DB uses 'battery_level'
+      charge_state: charge_state
+    conversions:
+      battery_level:
+        type: int
+      charge_state:
+        type: lowercase
+    drop_fields: []
+
+# Coordinate transformation support
+transform_enabled: true
