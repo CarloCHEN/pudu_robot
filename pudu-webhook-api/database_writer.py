@@ -177,6 +177,33 @@ class DatabaseWriter:
         # Remove None values
         return {k: v for k, v in db_data.items() if v is not None}
 
+    def _transform_robot_task_data(self, robot_sn: str, task_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Transform callback task data to database format"""
+        import time
+        from datetime import datetime
+
+        db_data = {
+            "robot_sn": robot_sn,
+            "task_id": task_data.get("task_id", ""),
+            "task_name": task_data.get("task_name", ""),
+            "start_time": datetime.fromtimestamp(task_data.get("start_time", int(time.time()))).strftime('%Y-%m-%d %H:%M:%S') if task_data.get("start_time") else None,
+            "end_time": datetime.fromtimestamp(task_data.get("end_time", int(time.time()))).strftime('%Y-%m-%d %H:%M:%S') if task_data.get("end_time") else None,
+            "progress": task_data.get("progress"),
+            "duration": task_data.get("duration"),
+            "actual_area": task_data.get("actual_area"),
+            "plan_area": task_data.get("plan_area"),
+            "efficiency": task_data.get("efficiency"),
+            "water_consumption": task_data.get("water_consumption"),
+            "mode": task_data.get("mode", ""),
+            "status": task_data.get("status"),
+            "map_url": task_data.get("map_url", ""),
+            "battery_usage": task_data.get("battery_usage"),
+            "extra_data": task_data.get("extra_data"),  # JSON string
+        }
+
+        # Remove None values
+        return {k: v for k, v in db_data.items() if v is not None}
+
     def write_robot_status(self, robot_sn: str, status_data: Dict[str, Any]) -> Tuple[List[str], List[str], Dict]:
         """Write robot status data with change detection  and get database IDs"""
         return self._write_with_change_detection(
@@ -231,6 +258,15 @@ class DatabaseWriter:
             self._transform_robot_event_data
         )
 
+    def write_robot_task(self, robot_sn: str, task_data: Dict[str, Any]) -> Tuple[List[str], List[str], Dict]:
+        """Write robot task report data with change detection"""
+        return self._write_with_change_detection(
+            'robot_task',
+            robot_sn,
+            task_data,
+            self._transform_robot_task_data
+        )
+
     def _get_table_columns(self, table: RDSTable) -> List[str]:
         """Get actual column names from database table"""
         try:
@@ -282,12 +318,15 @@ class DatabaseWriter:
             logger.warning(f"No data to write after transformation for {robot_sn}")
             return [], [], {}
 
+        logger.info(f"Transformed data: {transformed_data}")
+
         # Get table configurations for this robot
         table_configs = self.config.get_table_configs_for_robots(table_type, [robot_sn])
 
         database_names = []
         table_names = []
         all_changes = {}
+        return database_names, table_names, all_changes
 
         for table_config in table_configs:
             try:

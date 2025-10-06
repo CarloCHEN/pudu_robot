@@ -1,112 +1,105 @@
-# Pudu Robot Webhook API
+# Multi-Brand Robot Webhook API
 
-A Flask-based webhook receiver for Pudu cleaning robot callbacks, designed for deployment on AWS ECS with ECR. Now includes real-time database integration for storing robot data.
+A Flask-based webhook receiver for multiple robot brands (Pudu, Gas, and future brands), designed for deployment on AWS ECS with ECR. Features real-time database integration, multi-brand support, and flexible configuration.
 
 ## Table of Contents
 
 - [Overview](#overview)
+- [Supported Brands](#supported-brands)
 - [Supported Callback Types](#supported-callback-types)
 - [Database Integration](#database-integration)
 - [Project Structure](#project-structure)
 - [Setup and Configuration](#setup-and-configuration)
 - [Local Development](#local-development)
 - [Deployment to AWS ECS](#deployment-to-aws-ecs)
+- [Adding New Robot Brands](#adding-new-robot-brands)
 - [Health Check Testing](#health-check-testing)
 - [API Endpoints](#api-endpoints)
 - [Troubleshooting](#troubleshooting)
 
 ## Overview
 
-This webhook API receives and processes real-time notifications from Pudu cleaning robots. It handles robot status updates, error warnings, position updates, and power/battery information, automatically storing the data in RDS MySQL databases for real-time monitoring and analytics.
+This webhook API receives and processes real-time notifications from multiple robot brands. It uses a **config-driven architecture** that allows adding new robot brands with minimal code changes - just configuration updates!
 
 ### Key Features
 
-- **Secure webhook authentication** using callback codes in headers
-- **Modular processor architecture** for different callback types
+- **Multi-brand support** - Currently supports Pudu and Gas robots with extensible architecture
+- **Config-driven field mapping** - No code changes needed for new brands
+- **Secure webhook authentication** - Header-based (Pudu) and body-based (Gas) verification
 - **Real-time database integration** with AWS RDS MySQL
-- **Automatic data storage** for robot status, pose, power, and events
-- **Comprehensive logging** and error handling
-- **Health check endpoint** for monitoring
+- **Automatic data transformation** - Brand-specific data → unified database schema
+- **Task report support** - Gas cleaning task reports with calculated fields
+- **Notification system** - Real-time alerts for critical events
 - **Production-ready** with ECS deployment
-- **Environment-based configuration**
-- **Graceful degradation** if database is unavailable
+- **Multi-region deployment** - Independent deployments per brand and region
+
+## Supported Brands
+
+### 1. Pudu Robots
+- **Verification**: Header-based (`CallbackCode` header)
+- **Endpoints**: `/api/pudu/webhook`
+- **Callback Types**: Status, Error/Warning, Pose, Power
+- **Coordinate Transform**: Supported
+
+### 2. Gas (Gaussium) Robots
+- **Verification**: Body-based (`appId` field)
+- **Endpoints**: `/api/gas/webhook`
+- **Callback Types**: Incidents (errors), Task Reports (cleaning reports)
+- **Features**: Nested field mapping, timestamp conversion, status code mapping
+- **Coordinate Transform**: Disabled (different coordinate system)
 
 ## Supported Callback Types
 
-The API handles four types of callbacks from Pudu robots and automatically stores them in the database:
+### Abstract Types (Brand-Agnostic)
 
-### 1. Robot Status (`robotStatus`)
+The system uses abstract types internally:
+- `status_event` - Robot status updates
+- `error_event` - Errors, warnings, incidents
+- `pose_event` - Position/location updates
+- `power_event` - Battery/power status
+- `report_event` - Task/cleaning reports (Gas only)
 
-Handles robot operational status changes and updates the `mnt_robots_management` table.
+### Pudu Callback Types
 
-**Supported Status Values:**
-- `online` - Robot is connected and ready
-- `offline` - Robot is disconnected
-- `working` - Robot is actively cleaning
-- `idle` - Robot is connected but not working
-- `charging` - Robot is charging
-- `error` - Robot is in error state
-- `maintenance` - Robot requires maintenance
+#### 1. Robot Status (`robotStatus` → `status_event`)
 
-**Example Callback:**
+**Example:**
 ```json
 {
   "callback_type": "robotStatus",
   "data": {
-    "sn": "811064412050012",
-    "run_status": "ONLINE",
+    "sn": "PUDU-001",
+    "run_status": "WORKING",
     "timestamp": 1640995800
   }
 }
 ```
 
-**Database Storage:** Updates `mnt_robots_management` table with robot status and timestamp.
+#### 2. Robot Error Warning (`robotErrorWarning` → `error_event`)
 
-### 2. Robot Error Warning (`robotErrorWarning`)
-
-Processes error notifications and warnings from robots, storing them in the `mnt_robot_events` table.
-
-**Severity Levels:**
-- `critical` - Immediate attention required
-- `high` - High priority error
-- `medium` - Standard error (default)
-- `warning` - Warning level
-- `info` - Informational
-
-**Example Callback:**
+**Example:**
 ```json
 {
   "callback_type": "robotErrorWarning",
   "data": {
-    "sn": "811064412050012",
-    "error_level": "WARNING",
+    "sn": "PUDU-001",
+    "error_level": "ERROR",
     "error_type": "LostLocalization",
     "error_detail": "OdomSlip",
-    "error_id": "vir_1726794796",
+    "error_id": "evt_12345",
     "timestamp": 1640995800
   }
 }
 ```
 
-**Database Storage:** Inserts new records into `mnt_robot_events` table with event details.
+#### 3. Robot Pose (`notifyRobotPose` → `pose_event`)
 
-### 3. Robot Pose (`notifyRobotPose`)
-
-Tracks robot position and orientation for navigation monitoring, updating the `mnt_robots_management` table.
-
-**Position Data:**
-- `x`, `y` - Coordinates in meters
-- `yaw` - Rotation angle in degrees
-- `sn` - Robot serial number
-- `mac` - Robot MAC address
-
-**Example Callback:**
+**Example:**
 ```json
 {
   "callback_type": "notifyRobotPose",
   "data": {
-    "sn": "811064412050012",
-    "mac": "B0:0C:9D:59:16:E8",
+    "sn": "PUDU-001",
     "x": 15.5,
     "y": 8.2,
     "yaw": 90.5,
@@ -115,25 +108,14 @@ Tracks robot position and orientation for navigation monitoring, updating the `m
 }
 ```
 
-**Database Storage:** Updates robot position fields in `mnt_robots_management` table.
+#### 4. Robot Power (`notifyRobotPower` → `power_event`)
 
-### 4. Robot Power (`notifyRobotPower`)
-
-Monitors battery and power consumption data, updating the `mnt_robots_management` table.
-
-**Power Metrics:**
-- `power` - Battery percentage (0-100)
-- `charge_state` - Charging status (charging, discharging, etc.)
-- `sn` - Robot serial number
-- `mac` - Robot MAC address
-
-**Example Callback:**
+**Example:**
 ```json
 {
   "callback_type": "notifyRobotPower",
   "data": {
-    "sn": "811064412050012",
-    "mac": "B0:0C:9D:59:16:E8",
+    "sn": "PUDU-001",
     "power": 75,
     "charge_state": "discharging",
     "timestamp": 1640995800
@@ -141,69 +123,140 @@ Monitors battery and power consumption data, updating the `mnt_robots_management
 }
 ```
 
-**Database Storage:** Updates battery level and charging state in `mnt_robots_management` table.
+### Gas Callback Types
+
+#### 1. Incident Callback (`messageTypeId: 1` → `error_event`)
+
+**Example:**
+```json
+{
+  "appId": "24416c36-d9c7-4d74-a047-d6ca461fxxxx",
+  "messageTypeId": 1,
+  "payload": {
+    "serialNumber": "GAS-001",
+    "content": {
+      "incidentId": "12345",
+      "incidentCode": "1011",
+      "incidentName": "Clean water full",
+      "incidentLevel": "H2",
+      "incidentStatus": 1
+    }
+  },
+  "messageTimestamp": 1715740800000
+}
+```
+
+**Field Mappings:**
+- `payload.serialNumber` → `robot_sn`
+- `payload.content.incidentId` → `event_id`
+- `payload.content.incidentLevel` → `event_level` (H7→fatal, H6→error, H5→warning, etc.)
+- `messageTimestamp` → `task_time` (converted from milliseconds to seconds)
+
+#### 2. Task Report Callback (`messageTypeId: 2` → `report_event`)
+
+**Example:**
+```json
+{
+  "appId": "24416c36-aaaa-4d74-aaaa-d6ca461faaaa",
+  "messageTypeId": 2,
+  "payload": {
+    "serialNumber": "GAS-001",
+    "taskReport": {
+      "id": "684c183c-4ad9-467b-ac7c-55835255AAAA",
+      "taskId": "task-123",
+      "displayName": "Floor 2 Cleaning",
+      "startTime": 1714124784000,
+      "endTime": 1714124890000,
+      "completionPercentage": 0.95,
+      "actualCleaningAreaSquareMeter": 150.5,
+      "waterConsumptionLiter": 5.2,
+      "startBatteryPercentage": 95.0,
+      "endBatteryPercentage": 78.0,
+      "taskEndStatus": 0,
+      "subTasks": [...]
+    }
+  },
+  "messageTimestamp": 1715769600000
+}
+```
+
+**Special Features:**
+- **Calculated fields**: `battery_usage` = endBattery - startBattery
+- **Unit conversion**: `waterConsumption` converted from liters to milliliters
+- **JSON storage**: `subTasks` and other brand-specific data stored as JSON
+- **Status mapping**: Gas codes (0=completed, 1=in_progress, 2=abnormal, 3=failed) → common text strings
 
 ## Database Integration
 
-### Database Tables
+### Unified Database Schema
 
-The webhook automatically writes to two main tables:
+All brands write to the same tables with a unified schema:
 
 #### 1. `mnt_robots_management`
-- **Purpose:** Stores current robot status, position, and power data
-- **Primary Key:** `robot_sn`
-- **Updated by:** `robotStatus`, `notifyRobotPose`, `notifyRobotPower` callbacks
-- **Behavior:** Updates existing records (upsert operation)
+- Stores current robot status, position, and power
+- Common fields across all brands
 
 #### 2. `mnt_robot_events`
-- **Purpose:** Stores robot error events and warnings
-- **Primary Key:** `robot_sn`, `event_id`
-- **Updated by:** `robotErrorWarning` callbacks
-- **Behavior:** Inserts new event records
+- Stores error events from all brands
+- Unified event levels: `fatal`, `error`, `warning`, `event`, `info`
 
-### Database Configuration
+#### 3. `mnt_robots_task` (NEW)
+- Stores task/cleaning reports
+- Common status strings: `completed`, `in_progress`, `abnormal`, `failed`, `not_started`
+- Includes `extra_data` JSON field for brand-specific data
 
-Database connections are configured through:
-- `credentials.yaml` - RDS connection details and AWS Secrets Manager configuration
-- `database_config.yaml` - Table mappings and primary key definitions
+### Field Mapping Examples
 
-### Data Flow
+**Gas Incident Level Mapping:**
+```yaml
+H7 → fatal
+H6 → error
+H5 → warning
+H2 → event
+```
 
-1. **Webhook receives callback** → Validates and processes data
-2. **Data transformation** → Converts callback data to database format
-3. **Database write** → Updates/inserts data using MySQL upsert operations
-4. **Error handling** → Logs failures but continues processing other callbacks
-5. **Connection management** → Maintains persistent connections with automatic reconnection
+**Gas Task Status Mapping:**
+```yaml
+-1 → not_started   # Unknown
+0  → completed     # Normal
+1  → in_progress   # Manual
+2  → abnormal      # Abnormal
+3  → failed        # Startup Failed
+```
 
 ## Project Structure
 
 ```
-pudu-webhook-api/
-├── callback_handler.py      # Main callback dispatcher with DB integration
-├── config.py               # Configuration management
-├── database_config.py      # Database configuration manager
-├── database_writer.py      # Database operations handler
-├── rds_utils.py           # RDS connection utilities
-├── Dockerfile             # Container configuration
-├── main.py               # Flask application entry point
-├── models.py             # Data models and enums
-├── processors.py         # Individual callback processors
-├── credentials.yaml      # Database connection configuration
-├── database_config.yaml  # Table mapping configuration
-├── README.md            # This file
-└── requirements.txt     # Python dependencies (updated)
+robot-webhook-api/
+├── core/                           # Brand-agnostic core
+│   ├── brand_config.py            # Brand config loader & field mapper
+│   └── services/
+│       └── verification_service.py # Request verification
+│
+├── brands/                         # Brand-specific extensions (optional)
+│   ├── pudu/
+│   └── gas/
+│
+├── configs/                        # Configuration
+│   ├── database_config.yaml       # Database routing
+│   ├── database_config.py         # Database resolver
+│   ├── pudu/
+│   │   └── config.yaml           # Pudu field mappings
+│   └── gas/
+│       └── config.yaml           # Gas field mappings
+│
+├── notifications/                  # Notification system
+├── rds/                           # Database utilities
+├── services/                      # Shared services
+│
+├── callback_handler.py            # Main handler (brand-aware)
+├── database_writer.py             # Database operations
+├── processors.py                  # Base processors
+├── models.py                     # Data models
+├── main.py                       # Flask app (multi-brand endpoints)
+├── config.py                     # Environment config
+└── README.md                     # This file
 ```
-
-### Key Components
-
-- **`main.py`** - Flask app with webhook endpoint, health check, and database initialization
-- **`callback_handler.py`** - Routes callbacks to processors and handles database writes
-- **`database_writer.py`** - Manages database connections and write operations
-- **`database_config.py`** - Loads and manages database configuration
-- **`rds_utils.py`** - RDS connection utilities and SQL operations
-- **`processors.py`** - Individual processors for each callback type
-- **`models.py`** - Data models for type safety and validation
-- **`config.py`** - Environment-based configuration
 
 ## Setup and Configuration
 
@@ -217,78 +270,58 @@ pudu-webhook-api/
 
 ### Environment Variables
 
-The application requires the following environment variables:
-
 ```bash
-# Required
-PUDU_CALLBACK_CODE_callback_code_from_pudu
+# Brand configuration
+BRAND=pudu  # or 'gas'
 
-# Optional (with defaults)
+# Brand verification codes
+PUDU_CALLBACK_CODE=your-pudu-secret-code
+GAS_CALLBACK_CODE=your-gas-secret-code
+
+# Server config
 HOST=0.0.0.0
 PORT=8000
 DEBUG=false
 LOG_LEVEL=INFO
-LOG_FILE=pudu_callbacks.log
+LOG_FILE=robot_callbacks.log
+
+# Database
+MAIN_DATABASE=ry-vue
+
+# Notifications
+NOTIFICATION_API_HOST=your-notification-host
 ```
 
-### Database Configuration
+### Brand Configuration Files
 
-1. **Update `credentials.yaml`** with RDS details:
+Each brand has a configuration file in `configs/<brand>/config.yaml`:
+
+**Example: `configs/gas/config.yaml`**
 ```yaml
-database:
-  host: -rds-endpoint.region.rds.amazonaws.com"
-  secret_name: -secret-name"
-  region_name: -region"
-```
+brand: gas
 
-2. **Configure `database_config.yaml`** for database setup:
-```yaml
-databases:
-  - -database-name"
+verification:
+  method: body
+  key: appId
 
-tables:
-  robot_status:
-    - database: -database-name"
-      table_name: "mnt_robots_management"
-      primary_keys: ["robot_sn"]
+type_mappings:
+  "1": error_event
+  "2": report_event
 
-  robot_events:
-    - database: -database-name"
-      table_name: "mnt_robot_events"
-      primary_keys: ["robot_sn", "event_id"]
-```
-
-### Required Database Schema
-
-Ensure RDS instance has the following tables:
-
-```sql
--- Robot management table
-CREATE TABLE mnt_robots_management (
-    robot_sn VARCHAR(50) PRIMARY KEY,
-    status VARCHAR(50),
-    battery_level INT,
-    water_level INT,
-    sewage_level INT,
-    x DECIMAL(10,6),
-    y DECIMAL(10,6),
-    z DECIMAL(10,6),
-    yaw DECIMAL(10,6),
-    charge_state VARCHAR(50),
-    last_updated INT
-);
-
--- Robot events table
-CREATE TABLE mnt_robot_events (
-    robot_sn VARCHAR(50),
-    event_id VARCHAR(100),
-    event_level VARCHAR(20),
-    event_type VARCHAR(100),
-    event_detail TEXT,
-    task_time INT,
-    upload_time INT,
-    PRIMARY KEY (robot_sn, event_id)
-);
+field_mappings:
+  error_event:
+    source_to_db:
+      payload.serialNumber: robot_sn
+      payload.content.incidentLevel: event_level
+    conversions:
+      event_level:
+        type: lowercase
+        mapping:
+          "h7": "fatal"
+          "h6": "error"
+    drop_fields:
+      - traceId
+      - messageId
 ```
 
 ## Local Development
@@ -296,488 +329,292 @@ CREATE TABLE mnt_robot_events (
 ### 1. Install Dependencies
 
 ```bash
-cd pudu-webhook-api
 pip install -r requirements.txt
 ```
 
-### 2. Create Local Environment File
+### 2. Create Environment File
 
 ```bash
-# Create .env file
 cat > .env << EOF
-PUDU_CALLBACK_CODE=local_test_code
+BRAND=pudu
+PUDU_CALLBACK_CODE=test_code
+GAS_CALLBACK_CODE=test_code
 HOST=0.0.0.0
 PORT=8000
 DEBUG=true
-LOG_LEVEL=DEBUG
 EOF
 ```
 
-### 3. Configure Database Connection
-
-Update `credentials.yaml` and `database_config.yaml` with local or development database settings.
-
-### 4. Run Locally
+### 3. Run Locally
 
 ```bash
 python main.py
 ```
 
-The application will start and attempt to connect to the database. If the database is unavailable, it will log warnings but continue to process callbacks.
-
-### 5. Test Locally
+### 4. Test Endpoints
 
 ```bash
-# Health check
-curl http://localhost:8000/api/pudu/webhook/health
-
-# Test webhook with robot status
-curl -X POST http://localhost:8000/api/pudu/webhook \
+# Test Pudu endpoint
+curl -X POST http://18.212.150.119:8000/api/pudu/webhook \
   -H "Content-Type: application/json" \
-  -H "CallbackCode: local_test_code" \
+  -H "CallbackCode: vFpG5Ga9o8NqdymFLicLfJVfqj6JU50qQYCs" \
   -d '{
     "callback_type": "robotStatus",
-    "data": {
-      "sn": "test_robot_123",
-      "run_status": "ONLINE",
-      "timestamp": 1640995800
-    }
+    "data": {"sn": "PUDU-001", "run_status": "ONLINE", "timestamp": 1640995800}
   }'
 
-# Test webhook with robot error
-curl -X POST http://localhost:8000/api/pudu/webhook \
+# Test Gas endpoint
+curl -X POST http://localhost:8000/api/gas/webhook \
   -H "Content-Type: application/json" \
-  -H "CallbackCode: local_test_code" \
   -d '{
-    "callback_type": "robotErrorWarning",
-    "data": {
-      "sn": "test_robot_123",
-      "error_level": "WARNING",
-      "error_type": "LostLocalization",
-      "error_detail": "OdomSlip",
-      "error_id": "test_error_001",
-      "timestamp": 1640995800
-    }
+    "appId": "test_code",
+    "messageTypeId": 1,
+    "payload": {
+      "serialNumber": "GAS-001",
+      "content": {"incidentId": "123", "incidentLevel": "H2"}
+    },
+    "messageTimestamp": 1715740800000
   }'
 ```
 
 ## Deployment to AWS ECS
 
-### Step 1: Configure Root Directory Environment
+### Multi-Brand, Multi-Region Deployment
 
-In the **root directory** (not in `pudu-webhook-api`), create a `.env` file with AWS configuration:
+Each brand can be deployed independently to different regions:
 
 ```bash
-# In root directory (same level as Makefile)
-cat > .env << EOF
-AWS_ACCOUNT_ID=123456789012
-AWS_REGION=us-east-1
-EOF
+# Deploy Pudu to us-east-2
+make deploy-us-east-2-pudu
+
+# Deploy Gas to us-east-1
+make deploy-us-east-1-gas
+
+# Deploy both brands to same region
+make deploy-us-east-2-pudu
+make deploy-us-east-2-gas
 ```
 
-### Step 2: Deploy Container to ECR
-
-From the root directory, run:
+### Setup Commands
 
 ```bash
+# Setup for specific brand and region
+./setup-environment.sh us-east-2 pudu
+./setup-environment.sh us-east-1 gas
+
+# Or use make commands
+make setup-us-east-2-pudu
+make setup-us-east-1-gas
+```
+
+### Registry Names
+
+Each brand gets its own ECR registry:
+- `foxx_monitor_pudu_webhook_api`
+- `foxx_monitor_gas_webhook_api`
+
+## Adding New Robot Brands
+
+### Step 1: Create Brand Config
+
+Create `configs/newbrand/config.yaml`:
+
+```yaml
+brand: newbrand
+
+verification:
+  method: header  # or 'body'
+  key: X-API-Key
+
+type_mappings:
+  robot_online: status_event
+  robot_alert: error_event
+
+field_mappings:
+  error_event:
+    source_to_db:
+      robot_id: robot_sn
+      alert.severity: event_level
+    conversions:
+      event_level:
+        mapping:
+          CRITICAL: fatal
+          HIGH: error
+    drop_fields:
+      - internal_id
+```
+
+### Step 2: Add Environment Variable
+
+```bash
+NEWBRAND_CALLBACK_CODE=your-secret-code
+```
+
+### Step 3: Register Endpoint
+
+In `main.py`:
+```python
+@app.route("/api/newbrand/webhook", methods=["POST"])
+def newbrand_webhook():
+    return create_webhook_endpoint("newbrand")()
+```
+
+### Step 4: Deploy
+
+```bash
+./setup-environment.sh us-east-2 newbrand
 make deploy-container
 ```
 
-This command will:
-1. Build the Docker image from `pudu-webhook-api/Dockerfile` (now includes database files)
-2. Tag the image for ECR
-3. Push to ECR repository
-4. Output the image URI for ECS deployment
-
-### Step 3: Create ECS Task Definition
-
-1. **Navigate to ECS Console** → **Task Definitions** → **Create new task definition**
-
-2. **Configure Task Definition:**
-   - **Family name**: `pudu-webhook`
-   - **Launch type**: `Fargate`
-   - **Operating system**: `Linux/X86_64`
-   - **CPU**: `0.25 vCPU`
-   - **Memory**: `0.5 GB`
-
-3. **Container Configuration:**
-   - **Container name**: `pudu-webhook`
-   - **Image URI**: Use the URI from ECR push output
-   - **Port mappings**: `8000` (TCP)
-
-4. **Environment Variables:**
-   Add the following environment variables:
-   ```
-   HOST = 0.0.0.0
-   PORT = 8000
-   DEBUG = false
-   LOG_LEVEL = INFO
-   PUDU_CALLBACK_CODE =_actual_callback_code_from_pudu
-   ```
-
-5. **IAM Permissions:**
-   Ensure the ECS task role has permissions for:
-   - **Secrets Manager**: `secretsmanager:GetSecretValue`
-   - **RDS**: Network access to RDS instance
-
-6. **Logging Configuration:**
-   - **Log driver**: `awslogs`
-   - **Log group**: `/ecs/pudu-webhook`
-   - **Region**: AWS region
-   - **Stream prefix**: `ecs`
-
-### Step 4: Create ECS Cluster
-
-1. **Navigate to ECS Console** → **Clusters** → **Create cluster**
-2. **Cluster name**: `pudu-webhook-cluster`
-3. **Infrastructure**: `AWS Fargate (serverless)`
-4. **Create cluster**
-
-### Step 5: Create and Run Task
-
-1. **Go to cluster** → **Tasks** → **Run new task**
-
-2. **Task Configuration:**
-   - **Launch type**: `Fargate`
-   - **Platform version**: `LATEST`
-   - **Task definition**: `pudu-webhook:1` (or latest revision)
-
-3. **Network Configuration:**
-   - **VPC**: Same VPC as RDS instance
-   - **Subnets**: Select public subnets with RDS access
-   - **Security group**: Create new or use existing
-   - **Auto-assign public IP**: `ENABLED`
-
-4. **Security Group Rules:**
-   Ensure the security group allows:
-   ```
-   Inbound:
-   Type: Custom TCP
-   Port: 8000
-   Source: 0.0.0.0/0 (or specific IP ranges)
-
-   Outbound:
-   Type: MYSQL/Aurora
-   Port: 3306
-   Destination: RDS security group
-   ```
-
-### Step 6: Get Public IP Address
-
-1. **Wait for task status** to become `RUNNING`
-2. **Click on the task** → **Configuration** tab
-3. **Copy the Public IP** from the network section
+**That's it!** No other code changes needed.
 
 ## Health Check Testing
 
-### External Health Check from Laptop
-
-Once the ECS task is running and we have the public IP address:
+### Multi-Brand Health Checks
 
 ```bash
-# Replace with actual public IP
-PUBLIC_IP="13.220.117.7"
+# General health check
+curl http://$PUBLIC_IP:8000/api/webhook/health
 
-# Test health check endpoint
+# Brand-specific health checks
 curl http://$PUBLIC_IP:8000/api/pudu/webhook/health
-
-# Expected response:
-# {
-#   "status": "healthy",
-#   "timestamp": "2025-07-10",
-#   "service": "pudu-callback-api"
-# }
+curl http://$PUBLIC_IP:8000/api/gas/webhook/health
 ```
 
-### Test the Webhook Endpoint
+### Response Example
 
-```bash
-# Test with sample robot status callback
-curl -X POST http://$PUBLIC_IP:8000/api/pudu/webhook \
-  -H "Content-Type: application/json" \
-  -H "CallbackCode:_actual_callback_code" \
-  -d '{
-    "callback_type": "robotStatus",
-    "data": {
-      "sn": "811064412050012",
-      "run_status": "ONLINE",
-      "timestamp": 1640995800
-    }
-  }'
-
-# Test with sample robot error callback
-curl -X POST http://$PUBLIC_IP:8000/api/pudu/webhook \
-  -H "Content-Type: application/json" \
-  -H "CallbackCode:_actual_callback_code" \
-  -d '{
-    "callback_type": "robotErrorWarning",
-    "data": {
-      "sn": "811064412050012",
-      "error_level": "WARNING",
-      "error_type": "LostLocalization",
-      "error_detail": "OdomSlip",
-      "error_id": "vir_1726794796",
-      "timestamp": 1640995800
-    }
-  }'
-
-# Expected success response:
-# {
-#   "status": "success",
-#   "message": "Robot status processed: online",
-#   "timestamp": 1640995800,
-#   "data": {
-#     "robot_sn": "811064412050012",
-#     "status": "online"
-#   }
-# }
-```
-
-### Continuous Health Monitoring
-
-```bash
-# Monitor health check every 30 seconds
-watch -n 30 "curl -s http://$PUBLIC_IP:8000/api/pudu/webhook/health | jq ."
-
-# Check if service is responding
-while true; do
-  if curl -f -s http://$PUBLIC_IP:8000/api/pudu/webhook/health > /dev/null; then
-    echo "$(date): Service is healthy"
-  else
-    echo "$(date): Service is down!"
-  fi
-  sleep 60
-done
+```json
+{
+  "status": "healthy",
+  "timestamp": "2025-10-03 12:00:00",
+  "service": "robot-webhook-api",
+  "configured_brand": "pudu",
+  "features": {
+    "multi_brand_support": "enabled",
+    "dynamic_database_routing": "enabled",
+    "change_detection": "enabled"
+  },
+  "brand_config": {
+    "brand": "pudu",
+    "method": "header",
+    "key": "callbackcode",
+    "configured": true
+  },
+  "supported_endpoints": [
+    "/api/pudu/webhook",
+    "/api/gas/webhook"
+  ]
+}
 ```
 
 ## API Endpoints
 
-### Health Check
-- **URL**: `GET /api/pudu/webhook/health`
-- **Purpose**: Service health monitoring
-- **Response**: JSON with status and timestamp
+### General Endpoints
 
-### Webhook Endpoint
-- **URL**: `POST /api/pudu/webhook`
-- **Headers**: `CallbackCode:_callback_code`
-- **Content-Type**: `application/json`
-- **Purpose**: Receive Pudu robot callbacks and store in database
-- **Database**: Automatically writes to configured RDS tables
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/webhook/health` | GET | Overall system health |
 
-## Pudu Integration
+### Brand-Specific Endpoints
 
-### Webhook Registration
-
-When applying to Pudu for webhook access, provide:
-
-```
-Webhook URL: http:/_PUBLIC_IP:8000/api/pudu/webhook
-Health Check URL: http:/_PUBLIC_IP:8000/api/pudu/webhook/health
-Contact:-email@company.com
-Use Case: Real-time monitoring of cleaning robot fleet with database storage
-```
-
-### Expected Callback Format
-
-All Pudu callbacks will include the `CallbackCode` header:
-
-```http
-POST /api/pudu/webhook HTTP/1.1
-Host:_PUBLIC_IP:8000
-Content-Type: application/json
-CallbackCode:_callback_code_from_pudu
-
-{
-  "callback_type": "robotStatus",
-  "data": {
-    "sn": "811064412050012",
-    "run_status": "ONLINE",
-    "timestamp": 1640995800
-  }
-}
-```
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/pudu/webhook` | POST | Pudu robot callbacks |
+| `/api/pudu/webhook/health` | GET | Pudu health check |
+| `/api/gas/webhook` | POST | Gas robot callbacks |
+| `/api/gas/webhook/health` | GET | Gas health check |
 
 ## Troubleshooting
 
 ### Common Issues
 
-#### 1. Health Check Fails
-```bash
-# Check if container is running
-aws ecs describe-tasks --cluster pudu-webhook-cluster --tasks_TASK_ARN
+#### 1. Verification Fails
 
-# Check container logs
-aws logs get-log-events \
-  --log-group-name /ecs/pudu-webhook \
-  --log-stream-name ecs/pudu-webhook_TASK_ID
+```bash
+# Check brand configuration
+curl http://localhost:8000/api/pudu/webhook/health
+
+# Verify environment variable is set
+echo $PUDU_CALLBACK_CODE
+echo $GAS_CALLBACK_CODE
 ```
 
-#### 2. Database Connection Issues
+#### 2. Field Mapping Issues
+
+Check logs for field mapping errors:
 ```bash
-# Check logs for database connection errors
 aws logs filter-log-events \
-  --log-group-name /ecs/pudu-webhook \
-  --filter-pattern "database"
-
-# Common database issues:
-# - Security group not allowing MySQL traffic
-# - Incorrect credentials in Secrets Manager
-# - RDS instance not accessible from ECS subnet
-# - Wrong database name in configuration
+  --log-group-name /ecs/robot-webhook \
+  --filter-pattern "field mapping\|conversion"
 ```
 
-#### 3. Callback Processing but No Database Updates
-- Check ECS task role permissions for Secrets Manager
-- Verify RDS security group allows connections from ECS
-- Review database configuration files
-- Check application logs for SQL errors
+#### 3. Database Write Failures
 
-#### 4. Connection Refused
-- Verify security group allows port 8000
-- Ensure task has public IP assigned
-- Check if container is binding to 0.0.0.0
-
-#### 5. Invalid Callback Code
-- Verify `PUDU_CALLBACK_CODE` environment variable is set
-- Check ECS task definition environment variables
-- Ensure Pudu is sending correct header
-
-#### 6. Container Won't Start
 ```bash
-# Check task stopped reason
-aws ecs describe-tasks --cluster pudu-webhook-cluster --tasks_TASK_ARN \
-  --query 'tasks[0].stoppedReason'
-
-# Check container logs for startup errors
-aws logs get-log-events \
-  --log-group-name /ecs/pudu-webhook \
-  --log-stream-name ecs/pudu-webhook_TASK_ID \
-  --start-time $(date -d '10 minutes ago' +%s)000
+# Check for database errors
+aws logs filter-log-events \
+  --log-group-name /ecs/robot-webhook \
+  --filter-pattern "database\|ERROR"
 ```
+
+#### 4. Wrong Brand Endpoint
+
+Ensure you're using the correct endpoint:
+- Pudu → `/api/pudu/webhook`
+- Gas → `/api/gas/webhook`
 
 ### Debug Mode
 
-For debugging, update the ECS task definition to enable debug mode:
-
-```json
-{
-  "name": "DEBUG",
-  "value": "true"
-}
-```
-
-This will provide more verbose logging and error details.
-
-### Database Troubleshooting
-
-#### Check Database Connection
+Enable debug logging:
 ```bash
-# Test database connectivity from ECS task
-aws ecs execute-command \
-  --cluster pudu-webhook-cluster \
-  --task_TASK_ARN \
-  --container pudu-webhook \
-  --interactive \
-  --command "python -c \"from database_writer import DatabaseWriter; dw = DatabaseWriter(); print('Database connected successfully')\""
+DEBUG=true
+LOG_LEVEL=DEBUG
 ```
 
-#### Monitor Database Operations
-```bash
-# Filter logs for database operations
-aws logs filter-log-events \
-  --log-group-name /ecs/pudu-webhook \
-  --filter-pattern "Updated robot\|Inserted robot\|Failed to write"
+## Monitoring and Notifications
 
-# Monitor specific robot updates
-aws logs filter-log-events \
-  --log-group-name /ecs/pudu-webhook \
-  --filter-pattern "robot_sn_here"
-```
+### Notification System
 
-### Log Analysis
+The webhook sends real-time notifications for:
+- **Critical events**: Fatal errors, battery critical
+- **Task completions**: Cleaning reports (Gas)
+- **Status changes**: Robot online/offline
+- **Warnings**: Low battery, abnormal status
 
-View real-time logs:
+### CloudWatch Monitoring
 
-```bash
-# Follow logs in real-time
-aws logs tail /ecs/pudu-webhook --follow
-
-# Search for specific robot events
-aws logs filter-log-events \
-  --log-group-name /ecs/pudu-webhook \
-  --filter-pattern "robot_sn"
-
-# Search for database errors
-aws logs filter-log-events \
-  --log-group-name /ecs/pudu-webhook \
-  --filter-pattern "ERROR.*database"
-```
+Set up alarms for:
+- Brand-specific endpoint health
+- Database write failures
+- Field mapping errors
+- Verification failures
 
 ## Security Considerations
 
-### Production Recommendations
+### Multi-Brand Security
 
-1. **Use HTTPS**: Deploy behind an Application Load Balancer with SSL
-2. **Restrict Access**: Limit security group rules to Pudu's IP ranges
-3. **Environment Isolation**: Use separate clusters for staging/production
-4. **Secret Management**: Store `PUDU_CALLBACK_CODE` in AWS Parameter Store
-5. **Database Security**: Use RDS encryption and restrict access
-6. **Monitoring**: Set up CloudWatch alarms for health check failures and database errors
-7. **Network Security**: Place RDS in private subnets
+1. **Separate verification codes** for each brand
+2. **Brand-specific endpoints** for isolation
+3. **Independent deployments** per brand
+4. **Separate ECR registries** per brand
 
-### Database Security
+### Best Practices
 
-1. **Encryption**: Enable RDS encryption at rest and in transit
-2. **Access Control**: Use IAM database authentication when possible
-3. **Network Isolation**: Place RDS in private subnets
-4. **Secrets Rotation**: Regularly rotate database credentials
-5. **Monitoring**: Enable RDS Performance Insights and CloudWatch monitoring
+1. Store secrets in AWS Secrets Manager
+2. Use HTTPS with ALB
+3. Restrict security groups per brand
+4. Enable RDS encryption
+5. Rotate credentials regularly
+6. Monitor brand-specific metrics
 
-### AWS Parameter Store Integration
+## License
 
-For enhanced security, store secrets in Parameter Store:
+Internal use only - [Your Company Name]
 
-```bash
-# Store callback code securely
-aws ssm put-parameter \
-  --name "/pudu/callback-code" \
-  --value _actual_callback_code" \
-  --type "SecureString"
+## Support
 
-# Store database credentials
-aws ssm put-parameter \
-  --name "/pudu/database/host" \
-  --value -rds-endpoint" \
-  --type "SecureString"
-```
-
-Then update task definition to use secrets:
-
-```json
-{
-  "secrets": [
-    {
-      "name": "PUDU_CALLBACK_CODE",
-      "valueFrom": "/pudu/callback-code"
-    }
-  ]
-}
-```
-
-## Monitoring and Observability
-
-### CloudWatch Metrics
-
-Set up CloudWatch alarms for:
-- **ECS task health**: Monitor task status and container exits
-- **HTTP errors**: Track 4xx and 5xx responses
-- **Database connections**: Monitor connection failures
-- **Callback processing**: Track callback success/failure rates
-
-### Database Monitoring
-
-Monitor database operations:
-- **Connection pool usage**: Track active database connections
-- **Query performance**: Monitor slow queries and errors
-- **Table sizes**: Track growth of robot data tables
-- **Replication lag**: If using read replicas
+For issues or questions:
+- Check logs: `aws logs tail /ecs/robot-webhook --follow`
+- Review configuration: `make verify-config`
+- Test locally: `make test-local`
+- Contact: your-team@company.com

@@ -46,6 +46,12 @@ field_mappings:
         type: timestamp_ms_to_s  # Gas uses milliseconds, DB uses seconds
       event_type:
         type: lowercase
+    # Extra brand-specific fields to store as JSON
+    extra_fields:
+      - payload.content.taskId
+      - payload.content.startTime
+      - payload.content.endTime
+      - payload.content.incidentStatus
     drop_fields:
       # Gas-specific fields not in unified schema
       - traceId
@@ -53,21 +59,11 @@ field_mappings:
       - productId
       - messageTypeId
       - appId
-      - payload.modelTypeCode
-      - payload.content.taskId
-      - payload.content.startTime
-      - payload.content.endTime
 
-  # Task report event (messageTypeId = 2) - PLACEHOLDER
-  # SELECT id, task_id, robot_sn, task_name, start_time, end_time,progress,duration,  actual_area, plan_area, efficiency, water_consumption,mode,status
-
-  # is_report, sub_mode, `type`, vacuum_speed, vacuum_suction, wash_speed, wash_suction, wash_water,
-  # map_name, map_url, new_map_url,remaining_time, battery_usage,
-  # consumption, create_time, update_time
-
+# Task report event (messageTypeId = 2)
   report_event:
-    placeholder: true  # To be implemented later
     source_to_db:
+      # Basic mappings
       payload.serialNumber: robot_sn
       payload.taskReport.taskInstanceId: task_id
       payload.taskReport.displayName: task_name
@@ -78,51 +74,60 @@ field_mappings:
       payload.taskReport.plannedCleaningAreaSquareMeter: plan_area
       payload.taskReport.actualCleaningAreaSquareMeter: actual_area
       payload.taskReport.efficiencySquareMeterPerHour: efficiency
-      payload.taskReport.waterConsumptionLiter: water_consumption # L to mL
+      payload.taskReport.waterConsumptionLiter: water_consumption
       payload.taskReport.cleaningMode: mode
       payload.taskReport.taskEndStatus: status
-      
+      payload.taskReport.taskReportPngUri: map_url
 
     conversions:
       start_time:
         type: timestamp_ms_to_s
       end_time:
         type: timestamp_ms_to_s
-      completion_percentage:
+      progress:
         type: float
-      cleaning_area:
+      duration:
+        type: int
+      plan_area:
+        type: float
+      actual_area:
+        type: float
+      efficiency:
         type: float
       water_consumption:
-        type: div_by_1000
+        type: multiply_by_1000  # L to mL (multiply by 1000)
+      mode:
+        type: lowercase
+      status:
+        # Map Gas task status codes to common text strings
+        mapping:
+          -1: "Unknown"         # Unknown
+          0: "Task Ended"        # Normal (completed successfully)
+          1: "Manual"           # Manual
+          2: "Task Abnormal"         # Abnormal
+          3: "Task Failed"           # Startup Failed
 
+    # Calculated fields (NEW)
+    calculations:
+      battery_usage:
+        operation: subtract
+        fields:
+          - payload.taskReport.endBatteryPercentage
+          - payload.taskReport.startBatteryPercentage
 
+    # Extra brand-specific fields to store as JSON
+    extra_fields:
+      - payload.taskReport.subTasks
+      - payload.taskReport.consumablesResidualPercentage
+      - payload.taskReport.areaNameList
+      - payload.taskReport.operator
+      - payload.taskReport.robot
+      - payload.modelTypeCode
+
+    # Fields to drop (no longer needed since we're storing extras as JSON)
     drop_fields:
       - traceId
       - messageId
       - productId
       - messageTypeId
       - appId
-      - payload.modelTypeCode
-      - payload.taskReport.taskInstanceId
-      - payload.taskReport.displayName
-      - payload.taskReport.operator
-      - payload.taskReport.robot
-      - payload.taskReport.robotSerialNumber
-      - payload.taskReport.durationSeconds
-      - payload.taskReport.plannedCleaningAreaSquareMeter
-      - payload.taskReport.efficiencySquareMeterPerHour
-      - payload.taskReport.plannedPolishingAreaSquareMeter
-      - payload.taskReport.actualPolishingAreaSquareMeter
-      - payload.taskReport.waterConsumptionLiter
-      - payload.taskReport.startBatteryPercentage
-      - payload.taskReport.endBatteryPercentage
-      - payload.taskReport.consumablesResidualPercentage
-      - payload.taskReport.cleaningMode
-      - payload.taskReport.taskEndStatus
-      - payload.taskReport.subTasks
-      - payload.taskReport.taskReportPngUri
-      - payload.taskReport.areaNameList
-
-# Coordinate transformation support
-# Gas robots may use different coordinate system - disabled for now
-transform_enabled: false

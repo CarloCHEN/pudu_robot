@@ -4,12 +4,14 @@ FROM mcr.microsoft.com/playwright:v1.48.0-jammy
 WORKDIR /app
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
-    python3\
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    python3 \
     python3-pip \
     gcc \
     g++ \
     gettext-base \
+    ca-certificates \
+    gnupg \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better Docker layer caching

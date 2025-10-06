@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "🚀 Creating template files for multi-region deployment..."
+echo "🚀 Creating template files for multi-brand, multi-region deployment..."
 
 # Create the credentials.yaml.template
 echo "📝 Creating rds/credentials.yaml.template..."
@@ -20,13 +20,19 @@ HOST=0.0.0.0
 PORT=8000
 DEBUG=false
 
+# Brand Configuration
+BRAND=pudu  # Default brand: pudu, gas
+
 # Pudu Configuration
 PUDU_CALLBACK_CODE=${PUDU_CALLBACK_CODE}
 PUDU_API_KEY=your_api_key_here
 
+# Gas Configuration
+GAS_CALLBACK_CODE=${GAS_CALLBACK_CODE}
+
 # Logging
 LOG_LEVEL=INFO
-LOG_FILE=pudu_callbacks.log
+LOG_FILE=robot_callbacks.log
 
 # Notification API Configuration
 NOTIFICATION_API_HOST=${NOTIFICATION_API_HOST}
@@ -67,11 +73,6 @@ if [ -f "notifications/.env" ]; then
     cp notifications/.env notifications/.env.backup
 fi
 
-if [ -f ".env" ]; then
-    echo "💾 Backing up existing root .env to .env.backup"
-    cp .env .env.backup
-fi
-
 echo ""
 echo "✅ Template files created successfully!"
 echo ""
@@ -82,5 +83,7 @@ echo "   - notifications/.env.template"
 echo ""
 echo "🔧 Next steps:"
 echo "   1. Make setup script executable: chmod +x setup-environment.sh"
-echo "   2. Run setup for your target region: ./setup-environment.sh us-east-1"
+echo "   2. Run setup for your target region and brand:"
+echo "      ./setup-environment.sh us-east-1 pudu"
+echo "      ./setup-environment.sh us-east-2 gas"
 echo "   3. Deploy: make deploy-container"

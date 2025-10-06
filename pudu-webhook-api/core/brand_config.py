@@ -1,4 +1,5 @@
 # core/brand_config.py
+import json
 import os
 import yaml
 import logging
@@ -114,84 +115,6 @@ class FieldMapper:
 
         return value
 
-    def _convert_value(self, value: Any, conversion_rules: Dict[str, Any]) -> Any:
-        """
-        Apply conversion rules to a value
-
-        Supported conversions:
-        - type: 'lowercase', 'uppercase', 'int', 'float', 'timestamp_ms_to_s'
-        - mapping: dict for value mapping (e.g., 'H2' -> 'fatal')
-        """
-        if value is None:
-            return None
-
-        # Apply type conversion
-        value_type = conversion_rules.get('type')
-        if value_type == 'lowercase':
-            return str(value).lower()
-        elif value_type == 'uppercase':
-            return str(value).upper()
-        elif value_type == 'int':
-            try:
-                return int(value)
-            except (ValueError, TypeError):
-                return None
-        elif value_type == 'float':
-            try:
-                return float(value)
-            except (ValueError, TypeError):
-                return None
-        elif value_type == 'timestamp_ms_to_s':
-            try:
-                # Convert millisecond timestamp to seconds
-                return int(value) // 1000
-            except (ValueError, TypeError):
-                return None
-        elif value_type == 'div_by_1000':
-            try:
-                return int(value) / 1000
-            except (ValueError, TypeError):
-                return None
-
-        # Apply value mapping
-        mapping = conversion_rules.get('mapping')
-        if mapping and isinstance(mapping, dict):
-            return mapping.get(str(value), value)
-
-        return value
-
-    def map_fields(self, abstract_type: str, source_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Map source data fields to database schema fields
-
-        Args:
-            abstract_type: Abstract type (e.g., 'error_event')
-            source_data: Raw callback data from brand
-
-        Returns:
-            Mapped data ready for database insertion
-        """
-        field_mapping = self.config.get_field_mapping(abstract_type)
-        source_to_db = field_mapping.get('source_to_db', {})
-        conversions = field_mapping.get('conversions', {})
-
-        mapped_data = {}
-
-        for source_path, db_field in source_to_db.items():
-            # Get value from source (supports nested paths)
-            value = self._get_nested_value(source_data, source_path)
-
-            # Apply conversions if defined
-            if db_field in conversions:
-                value = self._convert_value(value, conversions[db_field])
-
-            # Set in mapped data
-            if value is not None:
-                mapped_data[db_field] = value
-
-        logger.debug(f"Mapped {len(mapped_data)} fields for {abstract_type}")
-        return mapped_data
-
     def drop_fields(self, abstract_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Drop brand-specific fields that don't belong in unified schema
@@ -215,3 +138,184 @@ class FieldMapper:
             logger.debug(f"Dropped {len(data) - len(cleaned_data)} fields for {abstract_type}")
 
         return cleaned_data
+
+    def _convert_value(self, value: Any, conversion_rules: Dict[str, Any]) -> Any:
+        """
+        Apply conversion rules to a value
+
+        Conversions are applied in order:
+        1. Type conversion (lowercase, int, etc.)
+        2. Value mapping (H2 -> error, etc.)
+        """
+        if value is None:
+            return None
+
+        # Step 1: Apply type conversion first (but don't return yet!)
+        value_type = conversion_rules.get('type')
+        if value_type == 'lowercase':
+            value = str(value).lower()
+        elif value_type == 'uppercase':
+            value = str(value).upper()
+        elif value_type == 'int':
+            try:
+                value = int(value)
+            except (ValueError, TypeError):
+                return None
+        elif value_type == 'float':
+            try:
+                value = float(value)
+            except (ValueError, TypeError):
+                return None
+        elif value_type == 'timestamp_ms_to_s':
+            try:
+                value = int(value) // 1000
+            except (ValueError, TypeError):
+                return None
+        elif value_type == 'multiply_by_1000':
+            try:
+                value = float(value) * 1000
+            except (ValueError, TypeError):
+                return None
+        elif value_type == 'divide_by_1000':
+            try:
+                value = float(value) / 1000
+            except (ValueError, TypeError):
+                return None
+
+        # Step 2: Apply value mapping (after type conversion)
+        mapping = conversion_rules.get('mapping')
+        if mapping and isinstance(mapping, dict):
+            # Support both string and integer keys
+            mapped_value = mapping.get(str(value)) or mapping.get(value)
+            if mapped_value is not None:
+                value = mapped_value
+
+        return value
+
+    def _calculate_field(self, source_data: Dict[str, Any], calculation: Dict[str, Any]) -> Any:
+        """
+        Calculate field value using formula
+
+        Supported calculations:
+        - operation: 'subtract', 'add', 'multiply', 'divide'
+        - fields: [field1, field2] (supports nested paths)
+
+        Example:
+        {
+            'operation': 'subtract',
+            'fields': ['payload.taskReport.endBatteryPercentage', 'payload.taskReport.startBatteryPercentage']
+        }
+        """
+        operation = calculation.get('operation')
+        fields = calculation.get('fields', [])
+
+        if not operation or len(fields) < 2:
+            logger.warning(f"Invalid calculation config: {calculation}")
+            return None
+
+        # Get values for all fields
+        values = []
+        for field_path in fields:
+            value = self._get_nested_value(source_data, field_path)
+            if value is None:
+                logger.debug(f"Missing value for calculation field: {field_path}")
+                return None
+            try:
+                values.append(float(value))
+            except (ValueError, TypeError):
+                logger.warning(f"Cannot convert to float for calculation: {field_path} = {value}")
+                return None
+
+        # Perform calculation
+        try:
+            if operation == 'subtract':
+                result = values[0] - values[1]
+            elif operation == 'add':
+                result = sum(values)
+            elif operation == 'multiply':
+                result = values[0]
+                for v in values[1:]:
+                    result *= v
+            elif operation == 'divide':
+                result = values[0] / values[1] if values[1] != 0 else None
+            else:
+                logger.warning(f"Unknown calculation operation: {operation}")
+                return None
+
+            return result
+        except Exception as e:
+            logger.error(f"Calculation error: {e}")
+            return None
+
+    def _collect_extra_fields(
+        self,
+        source_data: Dict[str, Any],
+        extra_fields_config: List[str]
+    ) -> Dict[str, Any]:
+        """
+        Collect extra brand-specific fields into a JSON object
+
+        Args:
+            source_data: Raw callback data
+            extra_fields_config: List of field paths to collect
+
+        Returns:
+            Dictionary with collected fields
+        """
+        extra_data = {}
+
+        for field_path in extra_fields_config:
+            value = self._get_nested_value(source_data, field_path)
+            if value is not None:
+                # Use the last part of the path as the key
+                key = field_path.split('.')[-1]
+                extra_data[key] = value
+
+        return extra_data
+
+    def map_fields(self, abstract_type: str, source_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Map source data fields to database schema fields
+
+        Args:
+            abstract_type: Abstract type (e.g., 'error_event', 'report_event')
+            source_data: Raw callback data from brand
+
+        Returns:
+            Mapped data ready for database insertion
+        """
+        field_mapping = self.config.get_field_mapping(abstract_type)
+        source_to_db = field_mapping.get('source_to_db', {})
+        conversions = field_mapping.get('conversions', {})
+        calculations = field_mapping.get('calculations', {})
+        extra_fields = field_mapping.get('extra_fields', [])
+
+        mapped_data = {}
+
+        # 1. Map direct fields
+        for source_path, db_field in source_to_db.items():
+            # Get value from source (supports nested paths)
+            value = self._get_nested_value(source_data, source_path)
+
+            # Apply conversions if defined
+            if db_field in conversions:
+                value = self._convert_value(value, conversions[db_field])
+
+            # Set in mapped data
+            if value is not None:
+                mapped_data[db_field] = value
+
+        # 2. Calculate computed fields
+        for db_field, calculation in calculations.items():
+            calculated_value = self._calculate_field(source_data, calculation)
+            if calculated_value is not None:
+                mapped_data[db_field] = calculated_value
+
+        # 3. Collect extra brand-specific fields as JSON
+        if extra_fields:
+            extra_data = self._collect_extra_fields(source_data, extra_fields)
+            if extra_data:
+                mapped_data['extra_data'] = json.dumps(extra_data)  # Store as JSON string
+
+        logger.debug(f"Mapped {len(mapped_data)} fields for {abstract_type}")
+        return mapped_data

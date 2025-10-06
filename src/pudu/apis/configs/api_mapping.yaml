@@ -1,0 +1,103 @@
+# API函数映射配置
+# 定义不同API中函数名的映射关系
+
+function_mapping:
+  get_robot_details:
+    pudu: "get_robot_details"
+    gas: "get_robot_status"
+    
+  get_robot_status:
+    pudu: "get_robot_details"  # 普渡API没有直接的get_robot_status
+    gas: "get_robot_status"
+    
+  get_list_stores:
+    pudu: "get_list_stores"
+    gas: "list_robots"  # 高斯API没有门店概念，使用机器人列表
+    
+  get_list_robots:
+    pudu: "get_list_robots"
+    gas: "list_robots"
+    
+  get_robot_overview_data:
+    pudu: "get_robot_overview_data"
+    gas: "get_robot_overview_data"  # 需要适配器实现
+    
+  get_robot_overview_operation_data:
+    pudu: "get_robot_overview_operation_data"
+    gas: "get_robot_overview_operation_data"
+    
+  get_store_overview_data:
+    pudu: "get_store_overview_data"
+    gas: "get_store_overview_data"
+    
+  get_store_analytics:
+    pudu: "get_store_analytics"
+    gas: "get_store_analytics"
+    
+  get_store_analytics_list:
+    pudu: "get_store_analytics_list"
+    gas: "get_store_analytics_list"
+    
+  get_machine_run_analytics:
+    pudu: "get_machine_run_analytics"
+    gas: "get_machine_run_analytics"
+    
+  get_machine_run_analytics_list:
+    pudu: "get_machine_run_analytics_list"
+    gas: "get_machine_run_analytics_list"
+    
+  get_log_list:
+    pudu: "get_log_list"
+    gas: "get_log_list"
+    
+  get_event_list:
+    pudu: "get_event_list"
+    gas: "get_event_list"
+    
+  get_charging_record_list:
+    pudu: "get_charging_record_list"
+    gas: "get_charging_record_list"
+    
+  get_battery_health_list:
+    pudu: "get_battery_health_list"
+    gas: "get_battery_health_list"
+    
+  get_task_list:
+    pudu: "get_task_list"
+    gas: "get_task_reports"
+    
+  get_scheduled_task_list:
+    pudu: "get_scheduled_task_list"
+    gas: "get_scheduled_task_list"
+    
+  get_cleaning_report_list:
+    pudu: "get_cleaning_report_list"
+    gas: "get_cleaning_reports"
+    
+  get_cleaning_report_detail:
+    pudu: "get_cleaning_report_detail"
+    gas: "get_cleaning_report_detail"
+    
+  get_task_schema_analytics:
+    pudu: "get_task_schema_analytics"
+    gas: "get_task_schema_analytics"
+    
+  get_task_schema_analytics_list:
+    pudu: "get_task_schema_analytics_list"
+    gas: "get_task_schema_analytics_list"
+    
+  get_task_distribution_schema_analytics:
+    pudu: "get_task_distribution_schema_analytics"
+    gas: "get_task_distribution_schema_analytics"
+    
+  get_list_maps:
+    pudu: "get_list_maps"
+    gas: "get_list_maps"
+    
+  get_map_details:
+    pudu: "get_map_details"
+    gas: "get_map_details"
+    
+  get_robot_current_position:
+    pudu: "get_robot_current_position"
+    gas: "get_robot_current_position"

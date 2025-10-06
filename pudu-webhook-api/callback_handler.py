@@ -4,7 +4,6 @@ from typing import Any, Dict, Tuple
 import time
 
 from models import CallbackResponse, CallbackStatus
-from processors import RobotErrorProcessor, RobotPoseProcessor, RobotPowerProcessor, RobotStatusProcessor
 from database_writer import DatabaseWriter
 from core.brand_config import BrandConfig, FieldMapper
 from core.services.verification_service import VerificationService
@@ -33,14 +32,6 @@ class CallbackHandler:
         self.field_mapper = FieldMapper(self.brand_config)
         self.verification_service = VerificationService(self.brand_config)
 
-        # Initialize processors (Pudu-style, will be used as base)
-        self.processors = {
-            "status_event": RobotStatusProcessor(),
-            "error_event": RobotErrorProcessor(),
-            "pose_event": RobotPoseProcessor(),
-            "power_event": RobotPowerProcessor(),
-        }
-
         # Initialize enhanced database writer
         self.database_writer = DatabaseWriter(database_config_path)
 
@@ -60,65 +51,20 @@ class CallbackHandler:
         return self.verification_service.verify(data, headers)
 
     def process_callback(self, data: Dict[str, Any]) -> CallbackResponse:
-        """
-        Process incoming callback with brand-aware type mapping
+        # Just validate and map
+        abstract_type = self.brand_config.map_callback_type(data)
 
-        Args:
-            data: Raw callback data from brand
+        if not abstract_type:
+            return CallbackResponse(status=CallbackStatus.WARNING, message="Unknown type")
 
-        Returns:
-            CallbackResponse with processing result
-        """
-        try:
-            # Check if this callback type should be ignored
-            if self.brand_config.is_ignored_type(data):
-                callback_identifier = data.get('callback_type') or data.get('messageTypeId')
-                logger.info(f"Ignoring callback type: {callback_identifier}")
-                return CallbackResponse(
-                    status=CallbackStatus.SUCCESS,
-                    message=f"Callback type ignored: {callback_identifier}"
-                )
+        if self.brand_config.is_ignored_type(data):
+            return CallbackResponse(status=CallbackStatus.SUCCESS, message="Type ignored")
 
-            # Map brand-specific callback type to abstract type
-            abstract_type = self.brand_config.map_callback_type(data)
-
-            if not abstract_type:
-                logger.warning(f"No mapping found for callback")
-                return CallbackResponse(
-                    status=CallbackStatus.WARNING,
-                    message="Unknown callback type",
-                    data={"brand": self.brand},
-                )
-
-            # Check if this is a report event (placeholder)
-            if abstract_type == "report_event":
-                logger.info("Report event received - placeholder processing")
-                return CallbackResponse(
-                    status=CallbackStatus.SUCCESS,
-                    message="Report event received (placeholder)",
-                    data={"abstract_type": abstract_type}
-                )
-
-            # Get appropriate processor for abstract type
-            processor = self.processors.get(abstract_type)
-
-            if not processor:
-                logger.warning(f"No processor found for abstract type: {abstract_type}")
-                return CallbackResponse(
-                    status=CallbackStatus.WARNING,
-                    message=f"No processor for type: {abstract_type}",
-                    data={"abstract_type": abstract_type},
-                )
-
-            # Extract the actual data payload based on brand
-            callback_data = self._extract_callback_data(data)
-
-            # Process the callback
-            return processor.process(callback_data)
-
-        except Exception as e:
-            logger.error(f"Error in callback processing: {str(e)}", exc_info=True)
-            return CallbackResponse(status=CallbackStatus.ERROR, message=f"Processing error: {str(e)}")
+        # Just return success - all real work happens in write_to_database
+        return CallbackResponse(
+            status=CallbackStatus.SUCCESS,
+            message=f"Callback received: {abstract_type}"
+        )
 
     def _extract_callback_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -201,7 +147,7 @@ class CallbackHandler:
             elif abstract_type == "error_event":
                 # Ensure required fields for error events
                 error_data = {
-                    "robot_sn": robot_sn,
+                    "robot_sn": cleaned_data.get("robot_sn", robot_sn),
                     "event_id": cleaned_data.get("event_id", ""),
                     "error_id": cleaned_data.get("error_id", cleaned_data.get("event_id", "")),
                     "event_level": cleaned_data.get("event_level", ""),
@@ -212,6 +158,26 @@ class CallbackHandler:
                 }
                 return self.database_writer.write_robot_event(robot_sn, error_data)
 
+            elif abstract_type == "report_event":
+                task_data = {
+                    "robot_sn": cleaned_data.get("robot_sn", robot_sn),
+                    "task_id": cleaned_data.get("task_id", ""),
+                    "task_name": cleaned_data.get("task_name", ""),
+                    "start_time": cleaned_data.get("start_time"),
+                    "end_time": cleaned_data.get("end_time"),
+                    "progress": cleaned_data.get("progress"),
+                    "duration": cleaned_data.get("duration"),
+                    "actual_area": cleaned_data.get("actual_area"),
+                    "plan_area": cleaned_data.get("plan_area"),
+                    "efficiency": cleaned_data.get("efficiency"),
+                    "water_consumption": cleaned_data.get("water_consumption"),
+                    "mode": cleaned_data.get("mode", ""),
+                    "status": cleaned_data.get("status"),
+                    "map_url": cleaned_data.get("map_url", ""),
+                    "battery_usage": cleaned_data.get("battery_usage"),
+                    "extra_data": cleaned_data.get("extra_data"),  # JSON string
+                }
+                return self.database_writer.write_robot_task(robot_sn, task_data)
             return [], [], {}
 
         except Exception as e:

@@ -1,8 +1,9 @@
 #!/bin/bash
 
 ENVIRONMENT=${1:-us-east-2}
+BRAND=${2:-pudu}  # NEW: Support brand parameter
 
-echo "🚀 Setting up Webhook API environment for: $ENVIRONMENT"
+echo "🚀 Setting up Webhook API environment for: $ENVIRONMENT (Brand: $BRAND)"
 
 # Define region-specific variables
 case $ENVIRONMENT in
@@ -27,7 +28,20 @@ case $ENVIRONMENT in
     ;;
 esac
 
+# Validate brand
+case $BRAND in
+  "pudu"|"gas")
+    echo "✅ Valid brand: $BRAND"
+    ;;
+  *)
+    echo "❌ Unknown brand: $BRAND"
+    echo "Available brands: pudu, gas"
+    exit 1
+    ;;
+esac
+
 echo "📋 Configuration for $ENVIRONMENT:"
+echo "   Brand: $BRAND"
 echo "   AWS_REGION: $AWS_REGION"
 echo "   AWS_ACCOUNT_ID: $AWS_ACCOUNT_ID"
 echo "   RDS_HOST: $RDS_HOST"
@@ -44,11 +58,11 @@ if ! command -v envsubst &> /dev/null; then
 fi
 
 # Generate .env file for root directory (deployment variables)
-echo "📝 Generating deployment .env file..."
+echo "📝 Generating deployment .env file for $BRAND..."
 cat > .env << EOF
 AWS_ACCOUNT_ID=$AWS_ACCOUNT_ID
 AWS_REGION=$AWS_REGION
-REGISTRY_NAME=foxx_monitor_pudu_webhook_api
+REGISTRY_NAME=foxx_monitor_${BRAND}_webhook_api
 TAG=latest
 
 # Application Configuration
@@ -56,13 +70,19 @@ HOST=0.0.0.0
 PORT=8000
 DEBUG=false
 
+# Brand Configuration
+BRAND=$BRAND
+
 # Pudu Configuration
-PUDU_CALLBACK_CODE=${PUDU_CALLBACK_CODE:-actual_callback_code_here}
+PUDU_CALLBACK_CODE=${PUDU_CALLBACK_CODE:-actual_pudu_callback_code_here}
 PUDU_API_KEY=your_api_key_here
+
+# Gas Configuration
+GAS_CALLBACK_CODE=${GAS_CALLBACK_CODE:-actual_gas_callback_code_here}
 
 # Logging
 LOG_LEVEL=INFO
-LOG_FILE=pudu_callbacks.log
+LOG_FILE=robot_callbacks.log
 
 # Notification API Configuration
 NOTIFICATION_API_HOST=$NOTIFICATION_API_HOST
@@ -106,7 +126,7 @@ echo "📝 Generating rds/credentials.yaml file..."
 envsubst < rds/credentials.yaml.template > rds/credentials.yaml
 
 echo ""
-echo "✅ Environment setup complete for $ENVIRONMENT"
+echo "✅ Environment setup complete for $ENVIRONMENT (Brand: $BRAND)"
 echo ""
 echo "📁 Generated files:"
 echo "   - .env (deployment and application config)"
@@ -114,14 +134,13 @@ echo "   - notifications/.env"
 echo "   - rds/credentials.yaml"
 echo ""
 echo "🔧 Next steps:"
-echo "   1. Update PUDU_CALLBACK_CODE in the script or set it as environment variable"
-echo "   2. Verify AWS_ACCOUNT_ID in the script"
-echo "   3. Run: make deploy-container"
+echo "   1. Update ${BRAND^^}_CALLBACK_CODE in environment or .env file"
+echo "   2. Run: make deploy-container"
 echo ""
 
 # Show generated file contents for verification
 echo "📋 Generated .env:"
-head -15 .env
+head -20 .env
 echo ""
 
 echo "📋 Generated notifications/.env:"

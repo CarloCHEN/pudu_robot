@@ -43,7 +43,7 @@ if __name__ == "__main__":
         'reportName': 'UF Report',
         'customStartDate': '2025-09-01',
         'customEndDate': '2025-09-22',
-        'detailLevel': 'overview',
+        'detailLevel': 'in-depth',
         'delivery': 'in-app',
         'schedule': 'immediate'
     }
