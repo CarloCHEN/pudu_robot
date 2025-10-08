@@ -1,6 +1,5 @@
-import json
 import requests
-from typing import Dict, List, Optional, Any, Union
+from typing import Dict, List, Optional, Union
 from datetime import datetime
 
 
@@ -145,7 +144,7 @@ class GaussianRobotAPI:
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
-            return {"error": str(e), "status_code": getattr(e.response, 'status_code', None)}
+            return {"error": str(e), "status_code": getattr(e.response, 'status_code', None), "url": url}
 
     def get_oauth_token(self) -> Dict:
         """Get OAuth access token
@@ -214,66 +213,76 @@ class GaussianRobotAPI:
             serial_number: Robot serial number
 
         Returns:
-             Data Structure:
-             {
-                 'serialNumber': str,
-                 'name': str,
-                 'position': {
-                     'latitude': float,
-                     'longitude': float,
-                     'angle': float
-                 },
-                 'taskState': str,
-                 'online': bool,
-                 'speedKilometerPerHour': float,
-                 'battery': {
-                     'charging': bool,
-                     'powerPercentage': float,
-                     'totalVoltage': float,
-                     'current': float,
-                     'fullCapacity': float,
-                     'soc': float,
-                     'soh': str,
-                     'cycleTimes': int,
-                     'protectorStatus': list,
-                     'temperature1': float,
-                     'temperature2': float,
-                     'temperature3': float,
-                     'temperature4': float,
-                     'temperature5': float,
-                     'temperature6': float,
-                     'temperature7': float,
-                     'cellVoltage1': float,
-                     'cellVoltage2': float,
-                     'cellVoltage3': float,
-                     'cellVoltage4': float,
-                     'cellVoltage5': float,
-                     'cellVoltage6': float,
-                     'cellVoltage7': float
-                 },
-                 'emergencyStop': {
-                     'enabled': bool
-                 },
-                 'localizationInfo': {
-                     'localizationState': str,
-                     'map': {
-                         'id': str,
-                         'name': str
-                     },
-                     'mapPosition': {
-                         'x': float,
-                         'y': float,
-                         'angle': float
-                     }
-                 },
-                 'navStatus': str,
-                 'currentElevatorStatus': str,
-                 'executableTasks': list[dict],
-                 'executingTask': dict,
-                 'cleanModes': list[dict],
-                 'device': dict,
-                 'workModes': list[dict]
-             }
+            Data Structure:
+            {
+                "serialNumber": str,
+                "name": str,
+                "position": {
+                    "latitude": float,
+                    "longitude": float,
+                    "angle": float
+                },
+                "taskState": str,  # "OTHER", "IDLE", "WORKING", "PAUSED", etc.
+                "online": bool,
+                "speedKilometerPerHour": float,
+                "battery": {
+                    "charging": bool,
+                    "powerPercentage": int,
+                    "fullCapacity": int,
+                    "soc": int,
+                    "soh": str,
+                    "cycleTimes": int
+
+                },
+                "emergencyStop": {
+                    "enabled": bool
+                },
+                "localizationInfo": {
+                    "localizationState": str,  # "NORMAL", "LOST", etc.
+                    "map": {
+                        "id": str,
+                        "name": str
+                    },
+                    "mapPosition": {
+                        "x": float,
+                        "y": float,
+                        "angle": float
+                    }
+                },
+                "executableTasks": list[{
+                    "id": str,
+                    "name": str,
+                    "map": {
+                        "id": str,
+                        "name": str
+                    }
+                }],
+                "cleanModes": list[{
+                    "name": str
+                }],
+                "device": {
+                    "vacuum": {
+                        "enabled": bool
+                    },
+                    "cleanWaterTank": {
+                        "level": int  # percentage
+                    },
+                    "recoveryWaterTank": {
+                        "level": int  # percentage
+                    },
+                    "rollingBrush": {
+                        "enabled": bool,
+                        "ifPutDown": bool
+                    },
+                    "spray": {
+                        "isRunning": bool,
+                        "waterLevel": int  # percentage
+                    }
+                },
+                "workModes": list[Any],  # empty array in example, structure unknown
+                "navStatus": str,  # "NAVI_IDLE", "NAVIGATING", etc.
+                "currentElevatorStatus": str  # "ELEVATOR_CONTROLLER_IDLE", etc.
+            }
         """
         endpoint = f"/v1alpha1/robots/{serial_number}/status"
         return self._make_request("GET", endpoint)
@@ -312,7 +321,7 @@ class GaussianRobotAPI:
 
         return self._make_request("GET", endpoint, params=params)
 
-    def batch_get_robot_statuses(self, serial_numbers: List[str]) -> Dict:
+    def batch_get_robot_status(self, serial_numbers: List[str]) -> Dict:
         """Batch query real-time status of multiple robots
 
         Args:
@@ -338,7 +347,7 @@ class GaussianRobotAPI:
                             start_time: Union[int, str, datetime],
                             end_time: Union[int, str, datetime],
                             utc_offset_seconds: int = 0) -> Dict:
-        """Get robot cleaning reports 
+        """Get robot cleaning reports
         TODO: Check the current status of this api
 
         Args:
@@ -417,6 +426,35 @@ class GaussianRobotAPI:
         endpoint = f"/v1alpha1/robots/{serial_number}/records/{record_id}"
         return self._make_request("GET", endpoint)
 
+    def get_site_info(self, serial_number: str) -> Dict:
+        """Query robot's site info
+
+        Args:
+            serial_number: Robot serial number
+
+        Returns:
+            Robot's site info
+            {
+                "id": str,              # Site ID
+                "name": str,            # Site name
+                "buildings": list[{     # Site building details
+                    "name": str,        # Building name
+                    "floorNum": int,    # Number of floors
+                    "uuid": str,        # Building unique serial number
+                    "floors": list[{    # Floor descriptions
+                        "index": int,   # Floor index ID
+                        "name": str,    # Floor name
+                        "maps": list[{  # Bound maps list
+                            "id": str,  # Map ID
+                            "name": str # Map name
+                        }]
+                    }]
+                }]
+            }
+        """
+        endpoint = f"/openapi/v2alpha1/robots/{serial_number}/getSiteInfo"
+        return self._make_request("GET", endpoint)
+
     def get_task_reports(self, serial_number: str,
                         startTimeUtcFloor: Union[str, datetime],
                         startTimeUtcUpper: Union[str, datetime],
@@ -435,15 +473,13 @@ class GaussianRobotAPI:
             {
                 "robotTaskReports": list[{
                     "id": str,
-                    "name": str,
-                    "areaNameList": str,
-                    "map": str,
                     "displayName": str,
                     "robot": str,
                     "robotSerialNumber": str,
                     "operator": str,
                     "completionPercentage": float,
                     "durationSeconds": int,
+                    "areaNameList": str,
                     "plannedCleaningAreaSquareMeter": float,
                     "actualCleaningAreaSquareMeter": float,
                     "efficiencySquareMeterPerHour": float,
@@ -457,6 +493,19 @@ class GaussianRobotAPI:
                         "filter": int,
                         "suctionBlade": int
                     },
+                    "taskInstanceId": str,
+                    "cleaningMode": str,
+                    "taskEndStatus": int,
+                    "taskReportPngUri": str,
+                    "subTasks": list[{
+                        "mapId": str,
+                        "mapName": str,
+                        "actualCleaningAreaSquareMeter": float,
+                        "taskId": str
+                    }],
+                    "taskId": str,
+                    "planId": str,
+                    "planRunningTime": int,
                     "startTime": str,
                     "endTime": str
                 }],
@@ -469,7 +518,7 @@ class GaussianRobotAPI:
         start_time_floor_iso = self._convert_to_iso_format(startTimeUtcFloor)
         start_time_upper_iso = self._convert_to_iso_format(startTimeUtcUpper)
 
-        endpoint = f"/v1alpha1/robots/{serial_number}/taskReports"
+        endpoint = f"/openapi/v2alpha1/robots/{serial_number}/taskReports"
         params = {
             "page": page,
             "pageSize": page_size,
@@ -662,5 +711,5 @@ if __name__ == "__main__":
 
     # Get robot status
     robots_list = ["GS438-6030-74Q-Q100","GS442-6130-82R-6000"]
-    status = api.batch_get_robot_statuses(robots_list)
+    status = api.batch_get_robot_status(robots_list)
     print("Robot status:", status)

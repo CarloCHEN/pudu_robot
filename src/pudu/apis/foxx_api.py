@@ -172,7 +172,6 @@ def get_location_table(robot_type: str = "pudu") -> pd.DataFrame:
 
     return location_df
 
-
 def get_robot_status(sn: str, robot_type: str = "pudu") -> dict:
     """
     Get robot status and comprehensive task information
@@ -187,21 +186,21 @@ def get_robot_status(sn: str, robot_type: str = "pudu") -> dict:
     """
     adapter = get_robot_api(robot_type)
 
-    # Get robot details
-    robot_details = adapter.get_robot_details(sn)
-
-    if not robot_details:
-        return {
-            'is_in_task': False,
-            'task_info': None,
-            'position': None
-        }
-
-    # Extract position
-    position = robot_details.get('position', {})
-
-    # Check if robot is in task (Pudu-specific logic)
     if robot_type == "pudu":
+        # For Pudu robots, use get_robot_details as before
+        robot_details = adapter.get_robot_details(sn)
+
+        if not robot_details:
+            return {
+                'is_in_task': False,
+                'task_info': None,
+                'position': None
+            }
+
+        # Extract position
+        position = robot_details.get('position', {})
+
+        # Check if robot is in task (Pudu-specific logic)
         cleanbot = robot_details.get('cleanbot', {})
         clean_data = cleanbot.get('clean')
         is_in_task = clean_data is not None and clean_data != {}
@@ -214,27 +213,59 @@ def get_robot_status(sn: str, robot_type: str = "pudu") -> dict:
                 'sn': sn,
                 'status': 'In Progress'
             }
+
+        return {
+            'is_in_task': is_in_task,
+            'task_info': task_info,
+            'position': position
+        }
+
     else:
-        # For Gas robots, check executingTask
-        # We'd need to call get_robot_status from the adapter
+        # For Gas robots, directly use get_robot_status which provides all needed info
         gas_status = adapter.get_robot_status(sn)
-        executing_task = gas_status.get('executingTask', {}) if gas_status else {}
-        is_in_task = bool(executing_task.get('name'))
+
+        if not gas_status:
+            return {
+                'is_in_task': False,
+                'task_info': None,
+                'position': None
+            }
+
+        # Extract position from localizationInfo
+        localization_info = gas_status.get('localizationInfo', {})
+        map_position = localization_info.get('mapPosition', {})
+        position = {
+            'x': map_position.get('x', 0),
+            'y': map_position.get('y', 0),
+            'z': map_position.get('angle', 0)
+        }
+
+        # Check if robot is in task
+        executing_task = gas_status.get('executingTask', {})
+        task_state = gas_status.get('taskState', '').lower()
+
+        # More comprehensive task detection for Gas robots
+        is_in_task = (
+            bool(executing_task.get('name')) or
+            task_state in ['running', 'working', 'executing'] # or gas_status.get('navStatus', '').lower() == 'navigating'
+        )
 
         task_info = None
         if is_in_task:
             task_info = {
                 'sn': sn,
                 'task_name': executing_task.get('name', ''),
+                'task_id': executing_task.get('id', ''),
+                'task_state': task_state,
+                'progress': executing_task.get('progress', 0),
                 'status': 'In Progress'
             }
 
-    return {
-        'is_in_task': is_in_task,
-        'task_info': task_info,
-        'position': position
-    }
-
+        return {
+            'is_in_task': is_in_task,
+            'task_info': task_info,
+            'position': position
+        }
 
 # ==================== Export Everything ====================
 

@@ -3,11 +3,13 @@
 将gas_api.py的类方法调用和Gas特定的数据处理逻辑整合到适配器中
 """
 
+import json
+import re
 import pandas as pd
 import datetime
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Union
 from ..core.api_interface import RobotAPIInterface
-from ..gas_api import GaussianRobotAPI, create_gaussian_api_client
+from ..raw.gas_api import create_gaussian_api_client
 
 
 API_NAME = "gas"
@@ -19,25 +21,24 @@ SHOP_ID_MAPPING = {
     # Add more client_id -> shop_id mappings here as needed
 }
 
+GS_robot_battery_capacity = 1.2288
 
 class GasAdapter(RobotAPIInterface):
     """GS robot API adapter"""
 
     # Gas-specific mappings (may differ from Pudu)
     STATUS_MAPPING = {
-        0: "Not Started",
-        1: "In Progress",
-        2: "Task Suspended",
-        3: "Task Interrupted",
-        4: "Task Ended",
-        5: "Task Abnormal",
-        6: "Task Cancelled"
+        -1: "Unknown",
+        0: "Task Ended",
+        1: "Manual",
+        2: "Task Abnormal",
+        3: "Task Failed"
     }
 
-    MODE_MAPPING = {
-        1: "Scrubbing",
-        2: "Sweeping"
-    }
+    # MODE_MAPPING = {
+    #     1: "Scrubbing",
+    #     2: "Sweeping"
+    # }
 
     # Gas API uses completionPercentage (0.0 to 1.0) instead of status codes
     # We map completion to status
@@ -73,60 +74,125 @@ class GasAdapter(RobotAPIInterface):
 
     # ==================== Basic API Methods ====================
 
-    def get_robot_details(self, sn: str) -> Dict[str, Any]:
+    def get_robot_details(self, sn: Union[str, List[str]]) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
         """获取机器人详细信息 - 匹配pudu格式"""
         try:
-            gas_status = self.client.get_robot_status(sn)
+            # Handle batch request for list of serial numbers
+            if isinstance(sn, list):
+                batch_status = self.client.batch_get_robot_status(sn)
+                list_robots = self.get_list_robots()['list']
 
-            if not gas_status or 'error' in gas_status:
-                print(f"Error getting gas robot status: {gas_status}")
-                return {}
+                results = []
+                for status in batch_status.get('robotStatuses', []):
+                    serial_number = status.get('serialNumber')
+                    if not serial_number:
+                        continue
 
-            # Extract battery info
-            battery_info = gas_status.get('battery', {})
-            battery_percentage = int(battery_info.get('powerPercentage', 0))
+                    robot_info = next((robot for robot in list_robots if robot.get('sn') == serial_number), None)
 
-            # Extract localization info
-            localization_info = gas_status.get('localizationInfo', {})
-            map_info = localization_info.get('map', {})
-            map_position = localization_info.get('mapPosition', {})
+                    # Extract battery info
+                    battery_info = status.get('battery', {})
+                    battery_percentage = int(battery_info.get('powerPercentage', 0))
 
-            # Transform to pudu format
-            return {
-                'mac': '',
-                'nickname': gas_status.get('displayName', sn),
-                'online': gas_status.get('online', False),
-                'battery': battery_percentage,
-                'map': {
-                    'name': map_info.get('name', ''),
-                    'lv': 1,
-                    'floor': ''
-                },
-                'cleanbot': {
-                    'rising': 0,
-                    'sewage': 0,
-                    'task': 0,
-                    'clean': None,
-                    'last_mode': 1,
-                    'detail': '',
-                    'last_task': ''
-                },
-                'shop': {
-                    'id': self.shop_id,
-                    'name': self.shop_name
-                },
-                'position': {
-                    'x': map_position.get('x', 0),
-                    'y': map_position.get('y', 0),
-                    'z': map_position.get('angle', 0)
-                },
-                'sn': sn
-            }
+                    # Extract localization info
+                    localization_info = status.get('localizationInfo', {})
+                    map_info = localization_info.get('map', {})
+                    map_position = localization_info.get('mapPosition', {})
+
+                    # emergencyStop
+                    emergency_stop_enabled = status.get('emergencyStop', {}).get('enabled', False)
+
+                    # get clean water and dirty water percentage
+                    clean_water_percentage = status.get('device', {}).get('cleanWaterTank', {}).get('level', 0)
+                    dirty_water_percentage = status.get('device', {}).get('recoveryWaterTank', {}).get('level', 0)
+
+                    # Transform to pudu format
+                    robot_details = {
+                        'mac': '',
+                        'modelTypeCode': robot_info.get('modelTypeCode', '') if robot_info else '',
+                        'modelFamilyCode': robot_info.get('modelFamilyCode', '') if robot_info else '',
+                        'softwareVersion': robot_info.get('softwareVersion', '') if robot_info else '',
+                        'hardwareVersion': robot_info.get('hardwareVersion', '') if robot_info else '',
+                        'nickname': robot_info.get('name', serial_number) if robot_info else serial_number,
+                        'taskState': status.get('taskState', ''), # OTHER, IDLE, WORKING, PAUSED, etc.
+                        'online': status.get('online', False),
+                        'battery': battery_percentage,
+                        'battery_info': battery_info,
+                        'map': {
+                            'name': map_info.get('name', '')
+                        },
+                        'position': {
+                            'x': map_position.get('x', 0),
+                            'y': map_position.get('y', 0),
+                            'z': map_position.get('angle', 0)
+                        },
+                        'executingTask': status.get('executingTask', {}),
+                        'emergencyStopEnabled': emergency_stop_enabled,
+                        'cleanWaterPercentage': clean_water_percentage,
+                        'dirtyWaterPercentage': dirty_water_percentage,
+                        'sn': serial_number
+                    }
+                    results.append(robot_details)
+
+                return results
+
+            # Handle single robot request (original logic)
+            else:
+                gas_status = self.client.get_robot_status(sn)
+                list_robots = self.get_list_robots()['list']
+                robot_info = next((robot for robot in list_robots if robot.get('sn') == sn), None)
+
+                if not gas_status or 'error' in gas_status:
+                    print(f"Error getting gas robot status: {gas_status}")
+                    return {}
+
+                # Extract battery info
+                battery_info = gas_status.get('battery', {})
+                battery_percentage = int(battery_info.get('powerPercentage', 0))
+
+                # Extract localization info
+                localization_info = gas_status.get('localizationInfo', {})
+                map_info = localization_info.get('map', {})
+                map_position = localization_info.get('mapPosition', {})
+
+                # emergencyStop
+                emergency_stop_enabled = gas_status.get('emergencyStop', {}).get('enabled', False)
+
+                # get clean water and dirty water percentage
+                clean_water_percentage = gas_status.get('device', {}).get('cleanWaterTank', {}).get('level', 0)
+                dirty_water_percentage = gas_status.get('device', {}).get('recoveryWaterTank', {}).get('level', 0)
+
+                # Transform to pudu format
+                return {
+                    'mac': '',
+                    'modelTypeCode': robot_info.get('modelTypeCode', ''),
+                    'modelFamilyCode': robot_info.get('modelFamilyCode', ''),
+                    'softwareVersion': robot_info.get('softwareVersion', ''),
+                    'hardwareVersion': robot_info.get('hardwareVersion', ''),
+                    'nickname': robot_info.get('name', sn),
+                    'taskState': gas_status.get('taskState', ''), # OTHER, IDLE, WORKING, PAUSED, etc.
+                    'online': gas_status.get('online', False),
+                    'battery': battery_percentage,
+                    'battery_info': battery_info,
+                    'map': {
+                        'name': map_info.get('name', '')
+                    },
+                    'position': {
+                        'x': map_position.get('x', 0),
+                        'y': map_position.get('y', 0),
+                        'z': map_position.get('angle', 0)
+                    },
+                    'executingTask': gas_status.get('executingTask', {}),
+                    'emergencyStopEnabled': emergency_stop_enabled,
+                    'cleanWaterPercentage': clean_water_percentage,
+                    'dirtyWaterPercentage': dirty_water_percentage,
+                    'sn': sn
+                }
         except Exception as e:
             print(f"Error getting robot details for {sn}: {e}")
             import traceback
             traceback.print_exc()
-            return {}
+            return {} if isinstance(sn, str) else []
 
     def get_robot_status(self, sn: str) -> Dict[str, Any]:
         """获取机器人状态 - 直接返回gas格式"""
@@ -151,7 +217,7 @@ class GasAdapter(RobotAPIInterface):
             'list': stores
         }
 
-    def get_list_robots(self, shop_id: Optional[str] = None, limit: Optional[int] = None, offset: Optional[int] = None) -> Dict[str, Any]:
+    def get_list_robots(self, location_id: Optional[str] = None, limit: Optional[int] = None, offset: Optional[int] = None) -> Dict[str, Any]:
         """获取机器人列表"""
         try:
             page = (offset // (limit or 10)) + 1 if offset else 1
@@ -163,7 +229,7 @@ class GasAdapter(RobotAPIInterface):
                 print(f"Error listing robots: {response}")
                 return {'total': 0, 'list': []}
 
-            # Gas API returns {'robots': [...], 'total': '2'} NOT {'data': {'list': [...]}}
+            # GS API returns {'robots': [...], 'total': '2'} NOT {'data': {'list': [...]}}
             robots_data = response.get('robots', [])
             total = response.get('total', '0')
 
@@ -176,10 +242,13 @@ class GasAdapter(RobotAPIInterface):
             robots = []
             for robot in robots_data:
                 robots.append({
-                    'mac': '',
-                    'shop_id': self.shop_id,
-                    'shop_name': self.shop_name,
-                    'sn': robot.get('serialNumber', '')
+                    'sn': robot.get('serialNumber', ''),
+                    'name': robot.get('displayName', ''),
+                    'modelFamilyCode': robot.get('modelFamilyCode', ''),
+                    'modelTypeCode': robot.get('modelTypeCode', ''),
+                    'online': robot.get('online', False),
+                    'softwareVersion': robot.get('softwareVersion', ''),
+                    'hardwareVersion': robot.get('hardwareVersion', '')
                 })
 
             return {
@@ -192,13 +261,12 @@ class GasAdapter(RobotAPIInterface):
             traceback.print_exc()
             return {'total': 0, 'list': []}
 
-    # ==================== Enhanced Methods with Data Processing ====================
-
     def get_schedule_table(self, start_time: str, end_time: str, location_id: Optional[str] = None,
                           robot_sn: Optional[str] = None, timezone_offset: int = 0) -> pd.DataFrame:
         """
         Get the schedule table for Gas robots
-        包含完整的Gas数据处理逻辑
+
+        STATUS: verified
         """
         # Initialize empty DataFrame with same columns as Pudu
         schedule_df = pd.DataFrame(columns=[
@@ -209,12 +277,87 @@ class GasAdapter(RobotAPIInterface):
             'Wash Speed', 'Wash Suction', 'Wash Water'
         ])
 
-        # Filter by location_id if specified
-        if location_id is not None and location_id != self.shop_id:
-            return schedule_df
+        # Chinese to English cleaning mode mapping
+        CLEANING_MODE_TRANSLATION = {
+            # Common cleaning modes
+            '清洗': 'Cleaning',
+            '清洁': 'Cleaning',
+            '清扫': 'Sweeping',
+            '扫洗': 'Sweep and Wash',
+            '尘推': 'Dust Push',
+            '吸尘': 'Vacuuming',
+            '拖地': 'Mopping',
+            '抛光': 'Polishing',
+
+            # Strength/Intensity modes
+            '强劲清洗': 'Strong Cleaning',
+            '强力清洗': 'Powerful Cleaning',
+            '标准清洗': 'Standard Cleaning',
+            '轻柔清洗': 'Gentle Cleaning',
+            '静音清洗': 'Quiet Cleaning',
+
+            # Special modes
+            '长续航清洗': 'Long Endurance Cleaning',
+            '节能清洗': 'Energy Saving Cleaning',
+            '快速清洗': 'Quick Cleaning',
+            '深度清洗': 'Deep Cleaning',
+            '日常清洗': 'Daily Cleaning',
+
+            # Custom modes
+            '自定义清洗': 'Custom Cleaning',
+            '定制清洗': 'Customized Cleaning',
+
+            # Area-specific modes
+            '边缘清洗': 'Edge Cleaning',
+            '定点清洗': 'Spot Cleaning',
+            '区域清洗': 'Zone Cleaning',
+
+            # Brush/Rolling modes
+            '滚刷': 'Rolling Brush',
+            '边刷': 'Side Brush',
+
+            # Combined modes
+            '扫洗一体': 'Integrated Sweep and Wash',
+            '吸拖一体': 'Integrated Vacuum and Mop',
+
+            # Cleaning type
+            '地毯清洁': 'Carpet Cleaning',
+            '木地板清洁': 'Wood Floor Cleaning',
+            '瓷砖清洁': 'Tile Cleaning',
+            '大理石清洁': 'Marble Cleaning'
+        }
+
+        def translate_cleaning_mode(chinese_mode: str) -> str:
+            """Translate Chinese cleaning mode to English and clean the text"""
+            if not chinese_mode or not isinstance(chinese_mode, str):
+                return ''
+
+            # Remove underscores, dashes, and other symbols
+            cleaned_mode = chinese_mode.replace('_', ' ').replace('-', ' ').replace('__', ' ')
+
+            # Remove any remaining non-alphanumeric characters except spaces
+            cleaned_mode = re.sub(r'[^\w\s]', '', cleaned_mode)
+
+            # Remove extra spaces
+            cleaned_mode = ' '.join(cleaned_mode.split())
+
+            # Try exact match first
+            if cleaned_mode in CLEANING_MODE_TRANSLATION:
+                return CLEANING_MODE_TRANSLATION[cleaned_mode]
+
+            # Try partial matches for combined modes
+            for chinese, english in CLEANING_MODE_TRANSLATION.items():
+                if chinese in cleaned_mode:
+                    # Replace the Chinese part with English
+                    result = cleaned_mode.replace(chinese, english)
+                    # Clean up any double spaces that might have been created
+                    return ' '.join(result.split())
+
+            # If no translation found, return the cleaned Chinese text
+            return cleaned_mode
 
         # Get robots
-        robots_response = self.get_list_robots(shop_id=self.shop_id)
+        robots_response = self.get_list_robots(location_id=location_id)
         robots = robots_response.get('list', [])
 
         # Filter by robot_sn if specified
@@ -253,7 +396,7 @@ class GasAdapter(RobotAPIInterface):
                 # Process each report
                 for report in reports:
                     try:
-                        # Parse timestamps
+                        # Parse timestamps - note these are robot local time not UTC
                         start_timestamp = self._parse_timestamp(report.get('startTime', ''))
                         end_timestamp = self._parse_timestamp(report.get('endTime', ''))
                         start_dt = pd.to_datetime(start_timestamp, unit='s') if start_timestamp else None
@@ -265,13 +408,8 @@ class GasAdapter(RobotAPIInterface):
                         completion_percentage = report.get('completionPercentage', 0)
                         progress = int(completion_percentage * 100) if completion_percentage else 0
 
-                        # Determine status based on completion
-                        if completion_percentage >= 1.0:
-                            status = "Task Ended"
-                        elif completion_percentage > 0:
-                            status = "In Progress"
-                        else:
-                            status = "Not Started"
+                        # Get task status and map to string
+                        status = self.STATUS_MAPPING.get(report.get('taskEndStatus', -1), 'Unknown')
 
                         # Calculate duration and efficiency
                         duration = report.get('durationSeconds', 0)
@@ -286,24 +424,57 @@ class GasAdapter(RobotAPIInterface):
                         battery_usage = max(0, start_battery - end_battery)
 
                         # Gas doesn't provide detailed consumption in kWh, estimate from battery percentage
-                        # Assuming similar battery capacity as Pudu (1.2288 kWh)
-                        consumption = round((battery_usage / 100) * 1.2288, 5)
+                        consumption = round((battery_usage / 100) * GS_robot_battery_capacity, 5)
 
                         # Water consumption
                         water_consumption = int(report.get('waterConsumptionLiter', 0) * 1000)  # Convert L to mL
 
-                        # Get map name from report (if available)
-                        map_name = report.get('map', '')
+                        # Get and translate cleaning mode
+                        raw_mode = report.get('cleaningMode', '')
+                        mode = translate_cleaning_mode(raw_mode)
+
+                        # Process subtasks to get map names
+                        subtasks = report.get('subTasks', [])
+                        map_names = []
+
+                        if subtasks:
+                            # Extract map names from subtasks
+                            map_names = [subtask.get('mapName', '') for subtask in subtasks if subtask.get('mapName')]
+
+                        # Create map name string
+                        if len(map_names) == 1:
+                            map_name = map_names[0]
+                        elif len(map_names) > 1:
+                            map_name = ', '.join(map_names)
+                        else:
+                            map_name = ''
+
+                        # Create extra_fields with all non-standard fields
+                        extra_field_names = {
+                            'id', 'robot', 'operator', 'areaNameList', 'efficiencySquareMeterPerHour',
+                            'plannedPolishingAreaSquareMeter', 'actualPolishingAreaSquareMeter',
+                            'startBatteryPercentage', 'endBatteryPercentage',
+                            'consumablesResidualPercentage', 'subTasks'
+                        }
+
+                        # Include subtasks in extra_fields for detailed area mapping
+                        extra_fields = {}
+                        for key, value in report.items():
+                            if key in extra_field_names:
+                                extra_fields[key] = value
+
+                        # Convert to JSON string for database storage
+                        extra_fields_json = json.dumps(extra_fields, ensure_ascii=False, default=str)
 
                         # Create entry
                         new_entry = pd.DataFrame({
-                            'Location ID': [self.shop_id],
+                            'Location ID': [''],
                             'Task Name': [report.get('displayName', '')],
-                            'Task ID': [report.get('id', '')],
+                            'Task ID': [report.get('taskId', '')],
                             'Robot SN': [sn],
                             'Map Name': [map_name],
                             'Is Report': [1],
-                            'Map URL': [''],  # Gas API doesn't provide map URL directly
+                            'Map URL': [report.get('taskReportPngUri', '')],  # Use taskReportPngUri if available
                             'Actual Area': [round(actual_area, 2)],
                             'Plan Area': [round(plan_area, 2)],
                             'Start Time': [start_dt],
@@ -316,14 +487,15 @@ class GasAdapter(RobotAPIInterface):
                             'Water Consumption': [water_consumption],
                             'Progress': [progress],
                             'Status': [status],
-                            'Mode': ['Scrubbing'],  # Default
-                            'Sub Mode': ['Custom'],  # Gas doesn't provide sub mode
-                            'Type': ['Custom'],
-                            'Vacuum Speed': ['Standard'],
-                            'Vacuum Suction': ['Standard'],
-                            'Wash Speed': ['Standard'],
-                            'Wash Suction': ['Standard'],
-                            'Wash Water': ['Standard']
+                            'Mode': [mode],
+                            'Sub Mode': [''],  # Gas doesn't provide sub mode
+                            'Type': [''],
+                            'Vacuum Speed': [''],
+                            'Vacuum Suction': [''],
+                            'Wash Speed': [''],
+                            'Wash Suction': [''],
+                            'Wash Water': ['']
+                            # 'Extra Fields': [extra_fields_json]
                         })
 
                         schedule_df = pd.concat([schedule_df, new_entry], ignore_index=True)
@@ -374,31 +546,35 @@ class GasAdapter(RobotAPIInterface):
         robot_df = pd.DataFrame(columns=['Location ID', 'Robot SN', 'Robot Name', 'Robot Type',
                                         'Water Level', 'Sewage Level', 'Battery Level',
                                         'x', 'y', 'z', 'Status'])
-
-        # Filter by location_id if specified
-        if location_id is not None and location_id != self.shop_id:
-            return robot_df
-
         # Get all robots
-        robots_response = self.get_list_robots(shop_id=self.shop_id)
+        robots_response = self.get_list_robots(location_id=location_id)
         robots = robots_response.get('list', [])
 
         # Filter by robot_sn if specified
         if robot_sn is not None:
             robots = [r for r in robots if r.get('sn') == robot_sn]
 
-        # Process each robot
-        for robot in robots:
-            sn = robot.get('sn')
-            if not sn:
-                continue
+        # Extract all serial numbers for batch processing
+        serial_numbers = [robot.get('sn') for robot in robots if robot.get('sn')]
 
-            try:
-                # Get robot details
-                robot_details = self.get_robot_details(sn)
+        if not serial_numbers:
+            return robot_df
 
-                if not robot_details:
+        try:
+            # Get robot details in batch
+            robot_details_list = self.get_robot_details(serial_numbers)
+
+            # Create a mapping from SN to robot info for easy lookup
+            robot_info_map = {robot.get('sn'): robot for robot in robots}
+
+            # Process all robots from batch response
+            for robot_details in robot_details_list:
+                sn = robot_details.get('sn')
+                if not sn:
                     continue
+
+                # Get robot info from original list
+                robot_info = robot_info_map.get(sn, {})
 
                 # Get status
                 is_online = robot_details.get('online', False)
@@ -408,21 +584,24 @@ class GasAdapter(RobotAPIInterface):
                 battery_percentage = robot_details.get('battery', None)
 
                 # Gas doesn't provide water and sewage levels
-                water_percentage = None
-                sewage_percentage = None
+                water_percentage = robot_details.get('cleanWaterPercentage', None)
+                sewage_percentage = robot_details.get('dirtyWaterPercentage', None)
 
-                # Get robot name
-                robot_name = robot_details.get('nickname', sn)
+                # Get robot name - prefer nickname from details, fall back to name from info
+                robot_name = robot_details.get('nickname', robot_info.get('name', sn))
 
                 # Get position
                 position = robot_details.get('position', {})
 
+                # Get robot type - prefer modelTypeCode from details, fall back to info
+                robot_type = robot_details.get('modelTypeCode', robot_info.get('modelTypeCode', ''))
+
                 # Create row
                 robot_row = pd.DataFrame({
-                    'Location ID': [self.shop_id],
+                    'Location ID': [location_id or ''],
                     'Robot SN': [sn],
                     'Robot Name': [robot_name],
-                    'Robot Type': ['GS-S'],  # Gas robot type
+                    'Robot Type': [robot_type],
                     'Water Level': [water_percentage],
                     'Sewage Level': [sewage_percentage],
                     'Battery Level': [battery_percentage],
@@ -434,14 +613,65 @@ class GasAdapter(RobotAPIInterface):
 
                 robot_df = pd.concat([robot_df, robot_row], ignore_index=True)
 
-            except Exception as e:
-                print(f"Error processing robot {sn}: {e}")
-                continue
+        except Exception as e:
+            for robot in robots:
+                sn = robot.get('sn')
+                if not sn:
+                    continue
+
+                try:
+                    # Get robot details individually
+                    robot_details = self.get_robot_details(sn)
+
+                    if not robot_details:
+                        continue
+
+                    # Get status
+                    is_online = robot_details.get('online', False)
+                    status = 'Online' if is_online else 'Offline'
+
+                    # Get battery percentage
+                    battery_percentage = robot_details.get('battery', None)
+
+                    # Gas doesn't provide water and sewage levels
+                    water_percentage = robot_details.get('cleanWaterPercentage', None)
+                    sewage_percentage = robot_details.get('dirtyWaterPercentage', None)
+
+                    # Get robot name
+                    robot_name = robot_details.get('nickname', sn)
+
+                    # Get position
+                    position = robot_details.get('position', {})
+
+                    # Get robot type
+                    robot_type = robot_details.get('modelTypeCode', '')
+
+                    # Create row
+                    robot_row = pd.DataFrame({
+                        'Location ID': [location_id or ''],
+                        'Robot SN': [sn],
+                        'Robot Name': [robot_name],
+                        'Robot Type': [robot_type],
+                        'Water Level': [water_percentage],
+                        'Sewage Level': [sewage_percentage],
+                        'Battery Level': [battery_percentage],
+                        'x': [position.get('x', None)],
+                        'y': [position.get('y', None)],
+                        'z': [position.get('z', None)],
+                        'Status': [status]
+                    })
+
+                    robot_df = pd.concat([robot_df, robot_row], ignore_index=True)
+
+                except Exception as e2:
+                    print(f"Error processing robot {sn} in fallback: {e2}")
+                    continue
 
         return robot_df
 
     def get_ongoing_tasks_table(self, location_id: Optional[str] = None, robot_sn: Optional[str] = None) -> pd.DataFrame:
         """
+        TODO: pending completion
         Get ongoing tasks for Gas robots
         """
         ongoing_tasks_df = pd.DataFrame(columns=[
@@ -452,12 +682,28 @@ class GasAdapter(RobotAPIInterface):
             'wash_speed', 'wash_suction', 'wash_water'
         ])
 
-        # Filter by location_id if specified
-        if location_id is not None and location_id != self.shop_id:
-            return ongoing_tasks_df
+        def estimate_duration(progress: float, time_remaining: int) -> int:
+            """Estimate duration with better edge case handling"""
+            progress_decimal = progress / 100.0
+
+            # Handle edge cases
+            if progress_decimal <= 0:
+                return 0  # Task just started
+            elif progress_decimal >= 1:
+                return time_remaining  # Task should be complete
+            elif time_remaining <= 0:
+                return 0  # Invalid time remaining
+
+            try:
+                # Main estimation formula
+                total_estimated = time_remaining / (1 - progress_decimal)
+                duration_so_far = int(total_estimated * progress_decimal)
+                return max(0, duration_so_far)
+            except ZeroDivisionError:
+                return 0
 
         # Get robots
-        robots_response = self.get_list_robots(shop_id=self.shop_id)
+        robots_response = self.get_list_robots(location_id=location_id)
         robots = robots_response.get('list', [])
 
         # Filter by robot_sn if specified
@@ -482,6 +728,13 @@ class GasAdapter(RobotAPIInterface):
                 if executing_task and executing_task.get('name'):
                     # Robot has an ongoing task
                     task_name = executing_task.get('name', '')
+                    progress = executing_task.get('progress', 0)
+                    timeRemaining = executing_task.get('timeRemaining', 0)
+                    # estimate the duration which means the start to now using progress and timeRemaining
+                    duration = estimate_duration(
+                        progress=executing_task.get('progress', 0),
+                        time_remaining=executing_task.get('timeRemaining', 0)
+                    )
 
                     # Estimate progress and other metrics from current status
                     # Gas API doesn't provide detailed ongoing task metrics
@@ -494,17 +747,17 @@ class GasAdapter(RobotAPIInterface):
                         'map_name': [gas_status.get('localizationInfo', {}).get('map', {}).get('name', '')],
                         'is_report': [0],  # Mark as ongoing task
                         'map_url': [''],
-                        'actual_area': [0],
-                        'plan_area': [0],
-                        'start_time': [pd.Timestamp.now()],  # Approximation
-                        'end_time': [pd.Timestamp.now()],
-                        'duration': [0],
-                        'efficiency': [0],
-                        'remaining_time': [0],
-                        'battery_usage': [0],
-                        'consumption': [0],
-                        'water_consumption': [0],
-                        'progress': [0],
+                        'actual_area': [None],
+                        'plan_area': [None],
+                        'start_time': [pd.Timestamp.now() - datetime.timedelta(seconds=duration)],  # Approximation
+                        'end_time': [pd.Timestamp.now() + datetime.timedelta(seconds=timeRemaining)],
+                        'duration': [duration],
+                        'efficiency': [None],
+                        'remaining_time': [timeRemaining],
+                        'battery_usage': [None],
+                        'consumption': [None],
+                        'water_consumption': [None],
+                        'progress': [progress],
                         'status': ['In Progress'],
                         'mode': ['Scrubbing'],
                         'sub_mode': ['Custom'],
@@ -526,6 +779,7 @@ class GasAdapter(RobotAPIInterface):
 
     def get_robot_work_location_and_mapping_data(self) -> tuple:
         """
+        TODO: try to get floor number from map name
         Get robot work location data and map floor mapping data in a single pass
         包含完整的Gas数据处理逻辑
 
@@ -537,7 +791,7 @@ class GasAdapter(RobotAPIInterface):
         current_time = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
 
         # Get all robots
-        robots_response = self.get_list_robots(shop_id=self.shop_id)
+        robots_response = self.get_list_robots()
         robots = robots_response.get('list', [])
 
         for robot in robots:
@@ -547,7 +801,7 @@ class GasAdapter(RobotAPIInterface):
 
             try:
                 # Get robot status
-                gas_status = self.client.get_robot_status(sn)
+                gas_status = self.get_robot_status(sn)
 
                 if not gas_status or 'error' in gas_status:
                     # Append idle status if can't get status
@@ -563,7 +817,7 @@ class GasAdapter(RobotAPIInterface):
                     continue
 
                 # Check if robot is executing a task
-                executing_task = gas_status.get('executingTask')
+                executing_task = gas_status.get('executingTask') # could not none-existing
                 is_in_task = executing_task and executing_task.get('name')
 
                 if is_in_task:
@@ -571,10 +825,25 @@ class GasAdapter(RobotAPIInterface):
                     localization_info = gas_status.get('localizationInfo', {})
                     map_info = localization_info.get('map', {})
                     map_position = localization_info.get('mapPosition', {})
-
+                    map_id = map_info.get('id')
                     map_name = map_info.get('name')
+
                     # Gas API doesn't provide floor number directly, use map name as approximation
-                    floor_number = map_info.get('id', '')  # or could parse from name
+                    site_info = self.client.get_site_info(sn)
+                    buildings = site_info.get('buildings', [])
+                    floor_number = None
+                    for building in buildings:
+                        floors = building.get('floors', [])
+                        for floor in floors:
+                            maps = floor.get('maps', [])
+                            for map in maps:
+                                if map.get('id') == map_id:
+                                    floor_number = floor.get('index')
+                                    break
+                                else:
+                                    floor_number = -1
+                                    break
+
                     x = map_position.get('x')
                     y = map_position.get('y')
                     z = map_position.get('angle')  # Gas uses angle instead of z

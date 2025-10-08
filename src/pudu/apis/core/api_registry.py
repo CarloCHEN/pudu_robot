@@ -5,7 +5,6 @@ API注册中心 - 自动发现和注册API适配器
 import importlib
 import logging
 import os
-import sys
 from typing import Dict, Optional
 from .api_interface import RobotAPIInterface
 
