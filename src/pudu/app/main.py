@@ -84,30 +84,36 @@ class App:
 
     def _fetch_all_api_data_parallel(self, start_time: str, end_time: str) -> Dict[str, any]:
         """
-        Fetch all API data in parallel to reduce total API call time.
-        This is the main optimization - instead of calling APIs sequentially,
-        we call them all at once using ThreadPoolExecutor.
+        Fetch all API data in parallel for both robot types to reduce total API call time.
         """
-        logger.info("🔄 Fetching all API data in parallel...")
+        logger.info("🔄 Fetching all API data in parallel for both robot types...")
         api_start_time = datetime.now()
 
-        # Define all API calls with their parameters
+        # Define all API calls with their parameters for BOTH robot types
         api_calls = {
-            'robot_status': (get_robot_status_table, ()),
-            'ongoing_tasks': (get_ongoing_tasks_table, ()),
-            'schedule': (get_schedule_table, (start_time, end_time, None, None, 0)),
-            'charging': (get_charging_table, (start_time, end_time, None, None, 0)),
-            'events': (get_events_table, (start_time, end_time, None, None, None, None, 0))
+            # Pudu robots
+            'robot_status_pudu': (get_robot_status_table, (), {'robot_type': 'pudu'}),
+            'ongoing_tasks_pudu': (get_ongoing_tasks_table, (), {'robot_type': 'pudu'}),
+            'schedule_pudu': (get_schedule_table, (start_time, end_time, None, None, 0), {'robot_type': 'pudu'}),
+            'charging_pudu': (get_charging_table, (start_time, end_time, None, None, 0), {'robot_type': 'pudu'}),
+            'events_pudu': (get_events_table, (start_time, end_time, None, None, None, None, 0), {'robot_type': 'pudu'}),
+
+            # Gas robots
+            'robot_status_gas': (get_robot_status_table, (), {'robot_type': 'gas'}),
+            'ongoing_tasks_gas': (get_ongoing_tasks_table, (), {'robot_type': 'gas'}),
+            'schedule_gas': (get_schedule_table, (start_time, end_time, None, None, 0), {'robot_type': 'gas'}),
+            'charging_gas': (get_charging_table, (start_time, end_time, None, None, 0), {'robot_type': 'gas'}),
+            'events_gas': (get_events_table, (start_time, end_time, None, None, None, None, 0), {'robot_type': 'gas'}),
         }
 
         api_data = {}
 
         # Use ThreadPoolExecutor to make all API calls simultaneously
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5, thread_name_prefix="api_worker") as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10, thread_name_prefix="api_worker") as executor:
             # Submit all API calls
             future_to_name = {}
-            for api_name, (api_func, args) in api_calls.items():
-                future = executor.submit(api_func, *args)
+            for api_name, (api_func, args, kwargs) in api_calls.items():
+                future = executor.submit(api_func, *args, **kwargs)
                 future_to_name[future] = api_name
                 logger.debug(f"📡 Submitted API call for {api_name}")
 
@@ -122,10 +128,24 @@ class App:
                     logger.error(f"❌ API call failed for {api_name}: {e}")
                     api_data[api_name] = pd.DataFrame()  # Empty DataFrame as fallback
 
+        # Combine results from both robot types
+        combined_data = {
+            'robot_status': pd.concat([api_data.get('robot_status_pudu', pd.DataFrame()),
+                                    api_data.get('robot_status_gas', pd.DataFrame())], ignore_index=True),
+            'ongoing_tasks': pd.concat([api_data.get('ongoing_tasks_pudu', pd.DataFrame()),
+                                        api_data.get('ongoing_tasks_gas', pd.DataFrame())], ignore_index=True),
+            'schedule': pd.concat([api_data.get('schedule_pudu', pd.DataFrame()),
+                                api_data.get('schedule_gas', pd.DataFrame())], ignore_index=True),
+            'charging': pd.concat([api_data.get('charging_pudu', pd.DataFrame()),
+                                api_data.get('charging_gas', pd.DataFrame())], ignore_index=True),
+            'events': pd.concat([api_data.get('events_pudu', pd.DataFrame()),
+                                api_data.get('events_gas', pd.DataFrame())], ignore_index=True),
+        }
+
         api_total_time = (datetime.now() - api_start_time).total_seconds()
         logger.info(f"🚀 All API calls completed in {api_total_time:.2f} seconds")
 
-        return api_data
+        return combined_data
 
     def _get_robots_for_data(self, data_df, robot_sn_column='robot_sn'):
         """Extract robot SNs from data DataFrame"""

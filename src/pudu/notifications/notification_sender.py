@@ -73,17 +73,41 @@ def should_skip_notification(data_type: str, change_info: Dict) -> bool:
         return False  # Don't skip new charging records
 
     elif data_type == 'robot_status':
-        # Skip battery updates unless battery is low (< 20%)
-        if change_type == 'update' and 'battery_level' in changed_fields:
-            try:
-                new_battery = new_values.get('battery_level', 100)
-                if isinstance(new_battery, (int, float)):
-                    return new_battery >= 20  # Skip if battery is >= 20%
-            except:
-                pass
-        elif change_type == 'new_record':
-            return False # do not skip new robot status records
-        return True  # Skip all other status updates
+        # TIME-SERIES DATA: Every record is 'new_record' since id is auto-increment
+        # We need to check the actual status/battery values to decide on notifications
+        if change_type == 'new_record':
+            # Check for critical conditions that warrant notifications
+            status = new_values.get('status', 'Unknown').lower()
+            battery_level = new_values.get('battery_level')
+
+            # NOTIFY if robot goes offline
+            if status == 'offline':
+                return False  # Don't skip - send notification
+
+            # NOTIFY if battery is critically low (< 20%)
+            if battery_level is not None:
+                try:
+                    battery_level = float(battery_level)
+                    if battery_level < 20:
+                        return False  # Don't skip - send notification
+                except (ValueError, TypeError):
+                    pass
+
+            # SKIP all other routine status records
+            return True
+
+        # This block will likely never execute for time-series data, but keep for safety
+        elif change_type == 'update':
+            if 'battery_level' in changed_fields:
+                try:
+                    new_battery = new_values.get('battery_level', 100)
+                    if isinstance(new_battery, (int, float)):
+                        return new_battery >= 20  # Skip if battery is >= 20%
+                except:
+                    pass
+            return True  # Skip all other updates
+
+        return True  # Skip by default
 
     elif data_type == 'location':
         # Skip all location notifications for now

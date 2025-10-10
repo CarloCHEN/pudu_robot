@@ -355,26 +355,142 @@ python main.py
 
 ```bash
 # Test Pudu endpoint
-curl -X POST http://18.212.150.119:8000/api/pudu/webhook \
+curl -X POST http://54.226.145.117:8000/api/pudu/webhook \
   -H "Content-Type: application/json" \
   -H "CallbackCode: vFpG5Ga9o8NqdymFLicLfJVfqj6JU50qQYCs" \
   -d '{
     "callback_type": "robotStatus",
-    "data": {"sn": "PUDU-001", "run_status": "ONLINE", "timestamp": 1640995800}
+    "data": {"sn": "811135422060228", "run_status": "ONLINE", "timestamp": 1640995800}
+  }'
+
+curl -X POST http://54.226.145.117:8000/api/pudu/webhook \
+  -H "Content-Type: application/json" \
+  -H "CallbackCode: vFpG5Ga9o8NqdymFLicLfJVfqj6JU50qQYCs" \
+  -d '{
+    "callback_type": "robotErrorWarning",
+    "data": {
+      "sn": "811135422060228",
+      "error_id": "ERR_001",
+      "event_id": "ERR_001",
+      "error_level": "warning",
+      "error_type": "battery_low",
+      "error_detail": "Battery level below 20%",
+      "task_time": 1759980527
+    }
+  }'
+
+curl -X POST http://3.237.78.106:8000/api/pudu/webhook \
+  -H "Content-Type: application/json" \
+  -H "CallbackCode: vFpG5Ga9o8NqdymFLicLfJVfqj6JU50qQYCs" \
+  -d '{
+    "callback_type": "notifyRobotPose",
+    "data": {
+     "x":1.234,
+     "y":2.345,
+     "yaw":32.34,
+      "sn":"811135422060228",
+      "mac":"AA:AA:AA:AA:AA:AA",
+      "timestamp": 1764325632
+    }
+  }'
+
+curl -X POST http://3.237.78.106:8000/api/pudu/webhook \
+  -H "Content-Type: application/json" \
+  -H "CallbackCode: vFpG5Ga9o8NqdymFLicLfJVfqj6JU50qQYCs" \
+  -d '{
+    "callback_type": "notifyRobotPower",
+    "data": {
+      "sn": "PUDU-001",
+      "power": 85,
+      "charge_state": "charging",
+      "timestamp": 1640995800
+    }
   }'
 
 # Test Gas endpoint
-curl -X POST http://localhost:8000/api/gas/webhook \
+curl http://3.81.6.210:8000/api/gas/webhook/health
+
+curl --location "http://3.81.6.210:8000/api/gas/webhook" \
+--header 'accept: */*' \
+--header 'Content-Type: application/json' \
+--data '{
+  "messageTypeId": 2,
+  "productId": "GS442-6130-82R-6000",
+  "messageId": "GS442-6130-82R-6000:2:684c183c-4ad9-467b-ac7c-55835255AAAA",
+  "traceId": "3d54fe90c9a34c20b600e3b7fa9af254",
+  "messageTimestamp": 1715769600000,
+  "appId": "1vQ6MfUxqyoGMRQ9nK8C4pSkg1Qsa3Vpq",
+  "payload": {
+    "serialNumber": "GS442-6130-82R-6000",
+    "modelTypeCode": "Scrubber S1",
+    "taskReport": {
+      "id": "684c183c-4ad9-467b-ac7c-55835255AAAA",
+      "taskId": "233123123-d9c7-4d74-a047-d6ca461faaaa",
+      "planId": "233123123-d9c7-4d74-a047-d6ca461faaaa",
+      "taskInstanceId": "893cbadf-3bb1-45be-b7ef-d590d54fAAAA",
+      "displayName": "ceshi2",
+      "startTime": 1714124784000,
+      "endTime": 1714124890000,
+      "robot": "S2153",
+      "robotSerialNumber": "GS442-6130-82R-6000",
+      "operator": "admin",
+      "completionPercentage": 0.333,
+      "durationSeconds": 120,
+      "plannedCleaningAreaSquareMeter": 67.425,
+      "actualCleaningAreaSquareMeter": 10.548,
+      "efficiencySquareMeterPerHour": 407.965,
+      "plannedPolishingAreaSquareMeter": null,
+      "actualPolishingAreaSquareMeter": null,
+      "waterConsumptionLiter": 0.0,
+      "startBatteryPercentage": 38.0,
+      "endBatteryPercentage": 37.0,
+      "consumablesResidualPercentage": {
+        "brush": 100.0,
+        "filter": 100.0,
+        "suctionBlade": 100.0
+      },
+      "cleaningMode": "清扫",
+      "taskEndStatus": 1,
+      "subTasks": [
+        {
+          "mapId": "370192bd-fe7f-40d0-8d0a-4360415bb8cf",
+          "mapName": "ceshi2",
+          "actualCleaningAreaSquareMeter": 10.548,
+          "taskId": "233123123-d9c7-4d74-a047-d6ca461faaaa"
+        }
+      ],
+      "taskReportPngUri": "https://bot.release.gs-robot.com/robot-task/task/report/png/v2/en/684c183c-4ad9-467b-ac7c-55835255aaaa",
+      "areaNameList": "2_area1、area2、area3、area4,3_area1、area2、area3"
+    }
+  }
+}'
+
+
+curl -X POST http://98.82.126.144:8000/api/gas/webhook \
   -H "Content-Type: application/json" \
   -d '{
-    "appId": "test_code",
-    "messageTypeId": 1,
+    "appId": "1vQ6MfUxqyoGMRQ9nK8C4pSkg1Qsa3Vpq",
     "payload": {
-      "serialNumber": "GAS-001",
-      "content": {"incidentId": "123", "incidentLevel": "H2"}
+      "serialNumber": "GS442-6130-82R-6000",
+      "modelTypeCode": "Scrubber 50H",
+      "content": {
+        "incidentId": "74bbc189-3313-4665-8204-9fbe45dfxxxx",
+        "incidentCode": "1011",
+        "incidentName": "Clean water full",
+        "incidentLevel": "H2",
+        "incidentStatus": 1,
+        "startTime": "2025-05-15T02:09:28Z",
+        "endTime": "",
+        "taskId": "..."
+      }
     },
+    "messageTypeId": 1,
+    "productId": "GS442-6130-82R-6000",
+    "messageId": "GS442-6130-82R-6000:1:74bbc189-3313-4665-8204-9fbe45dfxxxx",
+    "traceId": "34c2e8f816414f318b7419b6a9c91d8f",
     "messageTimestamp": 1715740800000
-  }'
+}'
+
 ```
 
 ## Deployment to AWS ECS

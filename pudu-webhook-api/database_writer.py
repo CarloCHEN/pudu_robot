@@ -11,6 +11,7 @@ from services.transform_service import TransformService
 
 logger = logging.getLogger(__name__)
 
+GS_robot_battery_capacity = 1.2288
 
 class DatabaseWriter:
     """Enhanced database writer with change detection and coordinate transformation"""
@@ -172,6 +173,7 @@ class DatabaseWriter:
             "event_detail": event_data.get("event_detail", ""),
             "task_time": datetime.fromtimestamp(event_data.get("task_time", int(time.time()))).strftime('%Y-%m-%d %H:%M:%S'),
             "upload_time": datetime.fromtimestamp(event_data.get("upload_time", int(time.time()))).strftime('%Y-%m-%d %H:%M:%S'),
+            "extra_fields": event_data.get("extra_fields"),  # JSON string
         }
 
         # Remove None values
@@ -182,13 +184,43 @@ class DatabaseWriter:
         import time
         from datetime import datetime
 
+        def estimate_remaining_time(progress, duration_elapsed):
+            """
+            Estimate remaining time using elapsed duration and progress
+
+            Args:
+                progress (float): Progress as decimal (0.0 to 1.0)
+                duration_elapsed (float): Time already spent in minutes
+
+            Returns:
+                float: Estimated remaining time in minutes
+            """
+            if progress is None or duration_elapsed is None:
+                return None
+
+            if progress <= 0:
+                return None  # Can't estimate if no progress
+            elif progress >= 1:
+                return 0  # Task completed
+
+            # Calculate: time_remaining = (time_elapsed / progress) * (1 - progress)
+            total_estimated_time = duration_elapsed / progress
+            remaining_time = total_estimated_time * (1 - progress)
+
+            return round(remaining_time, 2)
+
+        remaining_time = estimate_remaining_time(task_data.get("progress"), task_data.get("duration"))
+
+        consumption = round((task_data.get("battery_usage") / 100) * GS_robot_battery_capacity, 5)
+
         db_data = {
             "robot_sn": robot_sn,
             "task_id": task_data.get("task_id", ""),
             "task_name": task_data.get("task_name", ""),
+            "map_name": task_data.get("map_name", ""),
             "start_time": datetime.fromtimestamp(task_data.get("start_time", int(time.time()))).strftime('%Y-%m-%d %H:%M:%S') if task_data.get("start_time") else None,
             "end_time": datetime.fromtimestamp(task_data.get("end_time", int(time.time()))).strftime('%Y-%m-%d %H:%M:%S') if task_data.get("end_time") else None,
-            "progress": task_data.get("progress"),
+            "progress": task_data.get("progress") * 100,
             "duration": task_data.get("duration"),
             "actual_area": task_data.get("actual_area"),
             "plan_area": task_data.get("plan_area"),
@@ -197,9 +229,12 @@ class DatabaseWriter:
             "mode": task_data.get("mode", ""),
             "status": task_data.get("status"),
             "map_url": task_data.get("map_url", ""),
+            "remaining_time": remaining_time,
             "battery_usage": task_data.get("battery_usage"),
-            "extra_data": task_data.get("extra_data"),  # JSON string
+            "consumption": consumption,
+            "extra_fields": task_data.get("extra_fields"),  # JSON string
         }
+
 
         # Remove None values
         return {k: v for k, v in db_data.items() if v is not None}
@@ -326,7 +361,6 @@ class DatabaseWriter:
         database_names = []
         table_names = []
         all_changes = {}
-        return database_names, table_names, all_changes
 
         for table_config in table_configs:
             try:

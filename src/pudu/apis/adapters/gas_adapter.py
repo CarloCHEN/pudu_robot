@@ -274,7 +274,7 @@ class GasAdapter(RobotAPIInterface):
             'Actual Area', 'Plan Area', 'Start Time', 'End Time', 'Duration',
             'Efficiency', 'Remaining Time', 'Consumption', 'Battery Usage', 'Water Consumption', 'Progress', 'Status',
             'Mode', 'Sub Mode', 'Type', 'Vacuum Speed', 'Vacuum Suction',
-            'Wash Speed', 'Wash Suction', 'Wash Water'
+            'Wash Speed', 'Wash Suction', 'Wash Water', 'Extra Fields'
         ])
 
         # Chinese to English cleaning mode mapping
@@ -494,8 +494,8 @@ class GasAdapter(RobotAPIInterface):
                             'Vacuum Suction': [''],
                             'Wash Speed': [''],
                             'Wash Suction': [''],
-                            'Wash Water': ['']
-                            # 'Extra Fields': [extra_fields_json]
+                            'Wash Water': [''],
+                            'Extra Fields': [extra_fields_json]
                         })
 
                         schedule_df = pd.concat([schedule_df, new_entry], ignore_index=True)
@@ -543,9 +543,7 @@ class GasAdapter(RobotAPIInterface):
         """
         Get a simplified table for Gas robots with basic information
         """
-        robot_df = pd.DataFrame(columns=['Location ID', 'Robot SN', 'Robot Name', 'Robot Type',
-                                        'Water Level', 'Sewage Level', 'Battery Level',
-                                        'x', 'y', 'z', 'Status'])
+        robot_df = pd.DataFrame(columns=['Robot SN', 'Water Level', 'Sewage Level', 'Battery Level', 'Status', 'Timestamp UTC'])
         # Get all robots
         robots_response = self.get_list_robots(location_id=location_id)
         robots = robots_response.get('list', [])
@@ -598,17 +596,12 @@ class GasAdapter(RobotAPIInterface):
 
                 # Create row
                 robot_row = pd.DataFrame({
-                    'Location ID': [location_id or ''],
                     'Robot SN': [sn],
-                    'Robot Name': [robot_name],
-                    'Robot Type': [robot_type],
                     'Water Level': [water_percentage],
                     'Sewage Level': [sewage_percentage],
                     'Battery Level': [battery_percentage],
-                    'x': [position.get('x', None)],
-                    'y': [position.get('y', None)],
-                    'z': [position.get('z', None)],
-                    'Status': [status]
+                    'Status': [status],
+                    'Timestamp UTC': [pd.Timestamp.now()]  # Add current timestamp
                 })
 
                 robot_df = pd.concat([robot_df, robot_row], ignore_index=True)
@@ -648,17 +641,12 @@ class GasAdapter(RobotAPIInterface):
 
                     # Create row
                     robot_row = pd.DataFrame({
-                        'Location ID': [location_id or ''],
                         'Robot SN': [sn],
-                        'Robot Name': [robot_name],
-                        'Robot Type': [robot_type],
                         'Water Level': [water_percentage],
                         'Sewage Level': [sewage_percentage],
                         'Battery Level': [battery_percentage],
-                        'x': [position.get('x', None)],
-                        'y': [position.get('y', None)],
-                        'z': [position.get('z', None)],
-                        'Status': [status]
+                        'Status': [status],
+                        'Timestamp UTC': [pd.Timestamp.now()]  # Add current timestamp
                     })
 
                     robot_df = pd.concat([robot_df, robot_row], ignore_index=True)
@@ -679,7 +667,7 @@ class GasAdapter(RobotAPIInterface):
             'actual_area', 'plan_area', 'start_time', 'end_time', 'duration',
             'efficiency', 'remaining_time', 'battery_usage', 'consumption', 'water_consumption', 'progress', 'status',
             'mode', 'sub_mode', 'type', 'vacuum_speed', 'vacuum_suction',
-            'wash_speed', 'wash_suction', 'wash_water'
+            'wash_speed', 'wash_suction', 'wash_water', 'extra_fields'
         ])
 
         def estimate_duration(progress: float, time_remaining: int) -> int:
@@ -766,7 +754,8 @@ class GasAdapter(RobotAPIInterface):
                         'vacuum_suction': ['Standard'],
                         'wash_speed': ['Standard'],
                         'wash_suction': ['Standard'],
-                        'wash_water': ['Standard']
+                        'wash_water': ['Standard'],
+                        'extra_fields': []
                     })
 
                     ongoing_tasks_df = pd.concat([ongoing_tasks_df, ongoing_task_row], ignore_index=True)

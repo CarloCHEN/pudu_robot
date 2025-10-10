@@ -513,9 +513,8 @@ class PuduAdapter(RobotAPIInterface):
         Get a simplified table for robots with basic information
         包含完整的Pudu数据处理逻辑
         """
-        robot_df = pd.DataFrame(columns=['Location ID', 'Robot SN', 'Robot Name', 'Robot Type',
-                                        'Water Level', 'Sewage Level', 'Battery Level',
-                                        'x', 'y', 'z', 'Status'])
+        robot_df = pd.DataFrame(columns=['Robot SN', 'Water Level', 'Sewage Level', 'Battery Level',
+                                        'Status', 'Timestamp UTC'])
         all_shops = get_list_stores()['list']
 
         for shop in all_shops:
@@ -557,17 +556,12 @@ class PuduAdapter(RobotAPIInterface):
 
                 # Create a row for this robot
                 robot_row = pd.DataFrame({
-                    'Location ID': [shop_id],
                     'Robot SN': [sn],
-                    'Robot Name': [robot_name],
-                    'Robot Type': ['CC1'],
                     'Water Level': [water_percentage],
                     'Sewage Level': [sewage_percentage],
                     'Battery Level': [battery_percentage],
-                    'x': [robot_details.get('position', {}).get('x', None)],
-                    'y': [robot_details.get('position', {}).get('y', None)],
-                    'z': [robot_details.get('position', {}).get('z', None)],
-                    'Status': [status]
+                    'Status': [status],
+                    'Timestamp UTC': [pd.Timestamp.now()]  # Add current timestamp
                 })
 
                 # Add to the main dataframe

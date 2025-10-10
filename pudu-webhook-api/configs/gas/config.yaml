@@ -97,7 +97,7 @@ field_mappings:
       water_consumption:
         type: multiply_by_1000  # L to mL (multiply by 1000)
       mode:
-        type: lowercase
+        type: translate_cleaning_mode
       status:
         # Map Gas task status codes to common text strings
         mapping:
@@ -112,8 +112,17 @@ field_mappings:
       battery_usage:
         operation: subtract
         fields:
-          - payload.taskReport.endBatteryPercentage
           - payload.taskReport.startBatteryPercentage
+          - payload.taskReport.endBatteryPercentage
+
+    field_processors:
+      map_name:
+        processor: extract_map_names
+        source: payload.taskReport.subTasks
+        config:
+          map_name_field: mapName
+          delimiter: ", "
+          max_items: null
 
     # Extra brand-specific fields to store as JSON
     extra_fields:

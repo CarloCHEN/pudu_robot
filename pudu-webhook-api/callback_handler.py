@@ -109,11 +109,6 @@ class CallbackHandler:
                 logger.warning("Cannot write to database: unknown callback type")
                 return [], [], {}
 
-            # Skip report events for now (placeholder)
-            if abstract_type == "report_event":
-                logger.info("Report event - skipping database write (placeholder)")
-                return [], [], {}
-
             # Extract callback data
             callback_data = self._extract_callback_data(raw_data)
 
@@ -126,6 +121,8 @@ class CallbackHandler:
 
             # Drop brand-specific fields
             cleaned_data = self.field_mapper.drop_fields(abstract_type, mapped_data)
+
+            logger.info(f"Cleaned data: {cleaned_data}")
 
             # Extract robot_sn for database routing
             robot_sn = cleaned_data.get("robot_sn", "")
@@ -155,6 +152,7 @@ class CallbackHandler:
                     "event_detail": cleaned_data.get("event_detail", ""),
                     "task_time": cleaned_data.get("task_time", int(time.time())),
                     "upload_time": int(time.time()),
+                    "extra_fields": cleaned_data.get("extra_fields"),  # JSON string
                 }
                 return self.database_writer.write_robot_event(robot_sn, error_data)
 
@@ -163,6 +161,7 @@ class CallbackHandler:
                     "robot_sn": cleaned_data.get("robot_sn", robot_sn),
                     "task_id": cleaned_data.get("task_id", ""),
                     "task_name": cleaned_data.get("task_name", ""),
+                    "map_name": cleaned_data.get("map_name", ""),
                     "start_time": cleaned_data.get("start_time"),
                     "end_time": cleaned_data.get("end_time"),
                     "progress": cleaned_data.get("progress"),
@@ -175,7 +174,7 @@ class CallbackHandler:
                     "status": cleaned_data.get("status"),
                     "map_url": cleaned_data.get("map_url", ""),
                     "battery_usage": cleaned_data.get("battery_usage"),
-                    "extra_data": cleaned_data.get("extra_data"),  # JSON string
+                    "extra_fields": cleaned_data.get("extra_fields"),  # JSON string
                 }
                 return self.database_writer.write_robot_task(robot_sn, task_data)
             return [], [], {}

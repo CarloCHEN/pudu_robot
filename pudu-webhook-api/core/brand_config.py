@@ -1,8 +1,8 @@
 # core/brand_config.py
 import json
-import os
 import yaml
 import logging
+import re
 from typing import Any, Dict, List, Optional
 from pathlib import Path
 
@@ -96,6 +96,85 @@ class FieldMapper:
     def __init__(self, brand_config: BrandConfig):
         self.config = brand_config
 
+        # Chinese to English cleaning mode mapping
+        self.CLEANING_MODE_TRANSLATION = {
+            # Common cleaning modes
+            '清洗': 'Cleaning',
+            '清洁': 'Cleaning',
+            '清扫': 'Sweeping',
+            '扫洗': 'Sweep and Wash',
+            '尘推': 'Dust Push',
+            '吸尘': 'Vacuuming',
+            '拖地': 'Mopping',
+            '抛光': 'Polishing',
+
+            # Strength/Intensity modes
+            '强劲清洗': 'Strong Cleaning',
+            '强力清洗': 'Powerful Cleaning',
+            '标准清洗': 'Standard Cleaning',
+            '轻柔清洗': 'Gentle Cleaning',
+            '静音清洗': 'Quiet Cleaning',
+
+            # Special modes
+            '长续航清洗': 'Long Endurance Cleaning',
+            '节能清洗': 'Energy Saving Cleaning',
+            '快速清洗': 'Quick Cleaning',
+            '深度清洗': 'Deep Cleaning',
+            '日常清洗': 'Daily Cleaning',
+
+            # Custom modes
+            '自定义清洗': 'Custom Cleaning',
+            '定制清洗': 'Customized Cleaning',
+
+            # Area-specific modes
+            '边缘清洗': 'Edge Cleaning',
+            '定点清洗': 'Spot Cleaning',
+            '区域清洗': 'Zone Cleaning',
+
+            # Brush/Rolling modes
+            '滚刷': 'Rolling Brush',
+            '边刷': 'Side Brush',
+
+            # Combined modes
+            '扫洗一体': 'Integrated Sweep and Wash',
+            '吸拖一体': 'Integrated Vacuum and Mop',
+
+            # Cleaning type
+            '地毯清洁': 'Carpet Cleaning',
+            '木地板清洁': 'Wood Floor Cleaning',
+            '瓷砖清洁': 'Tile Cleaning',
+            '大理石清洁': 'Marble Cleaning'
+        }
+
+    def _translate_cleaning_mode(self, chinese_mode: str) -> str:
+        """Translate Chinese cleaning mode to English and clean the text"""
+        if not chinese_mode or not isinstance(chinese_mode, str):
+            return ''
+
+        # Remove underscores, dashes, and other symbols
+        cleaned_mode = chinese_mode.replace('_', ' ').replace('-', ' ').replace('__', ' ')
+
+        # Remove any remaining non-alphanumeric characters except spaces
+        cleaned_mode = re.sub(r'[^\w\s]', '', cleaned_mode)
+
+        # Remove extra spaces
+        cleaned_mode = ' '.join(cleaned_mode.split())
+
+        # Try exact match first
+        if cleaned_mode in self.CLEANING_MODE_TRANSLATION:
+            return self.CLEANING_MODE_TRANSLATION[cleaned_mode]
+
+        # Try partial matches for combined modes
+        for chinese, english in self.CLEANING_MODE_TRANSLATION.items():
+            if chinese in cleaned_mode:
+                # Replace the Chinese part with English
+                result = cleaned_mode.replace(chinese, english)
+                # Clean up any double spaces that might have been created
+                return ' '.join(result.split())
+
+        # If no translation found, return the cleaned Chinese text
+        return cleaned_mode
+
     def _get_nested_value(self, data: Dict[str, Any], path: str) -> Any:
         """
         Get value from nested dictionary using dot notation
@@ -146,6 +225,7 @@ class FieldMapper:
         Conversions are applied in order:
         1. Type conversion (lowercase, int, etc.)
         2. Value mapping (H2 -> error, etc.)
+        3. Special conversions (cleaning mode translation)
         """
         if value is None:
             return None
@@ -181,6 +261,9 @@ class FieldMapper:
                 value = float(value) / 1000
             except (ValueError, TypeError):
                 return None
+        elif value_type == 'translate_cleaning_mode':
+            # Special conversion for cleaning mode translation
+            value = self._translate_cleaning_mode(str(value))
 
         # Step 2: Apply value mapping (after type conversion)
         mapping = conversion_rules.get('mapping')
@@ -288,6 +371,7 @@ class FieldMapper:
         source_to_db = field_mapping.get('source_to_db', {})
         conversions = field_mapping.get('conversions', {})
         calculations = field_mapping.get('calculations', {})
+        field_processors = field_mapping.get('field_processors', {})
         extra_fields = field_mapping.get('extra_fields', [])
 
         mapped_data = {}
@@ -296,11 +380,9 @@ class FieldMapper:
         for source_path, db_field in source_to_db.items():
             # Get value from source (supports nested paths)
             value = self._get_nested_value(source_data, source_path)
-
             # Apply conversions if defined
             if db_field in conversions:
                 value = self._convert_value(value, conversions[db_field])
-
             # Set in mapped data
             if value is not None:
                 mapped_data[db_field] = value
@@ -311,11 +393,82 @@ class FieldMapper:
             if calculated_value is not None:
                 mapped_data[db_field] = calculated_value
 
-        # 3. Collect extra brand-specific fields as JSON
+        # 3. Process complex field transformations
+        for db_field, processor_config in field_processors.items():
+            processed_value = self._process_field(source_data, processor_config)
+            if processed_value is not None:
+                mapped_data[db_field] = processed_value
+
+        # 4. Collect extra brand-specific fields as JSON
         if extra_fields:
             extra_data = self._collect_extra_fields(source_data, extra_fields)
             if extra_data:
-                mapped_data['extra_data'] = json.dumps(extra_data)  # Store as JSON string
+                mapped_data['extra_fields'] = json.dumps(extra_data)  # Store as JSON string
 
         logger.debug(f"Mapped {len(mapped_data)} fields for {abstract_type}")
         return mapped_data
+
+    def _process_field(self, source_data: Dict[str, Any], processor_config: Dict[str, Any]) -> Any:
+        """
+        Process fields using configured processors for complex transformations
+        """
+        processor_type = processor_config.get('processor')
+        source_path = processor_config.get('source')
+        config = processor_config.get('config', {})
+
+        # Get source value
+        source_value = self._get_nested_value(source_data, source_path)
+
+        if processor_type == 'extract_map_names':
+            return self._extract_map_names(source_value, config) # source_value is subtasks
+        elif processor_type == 'join_strings':
+            return self._join_strings(source_value, config)
+        elif processor_type == 'extract_unique_values':
+            return self._extract_unique_values(source_value, config)
+        return None
+
+    def _extract_map_names(self, dataList: List[Dict], config: Dict[str, Any]) -> str:
+        """
+        Generic map name extraction that can be configured
+        """
+        if not dataList:
+            return ''
+
+        map_name_field = config.get('map_name_field', 'mapName')
+        delimiter = config.get('delimiter', ', ')
+        max_items = config.get('max_items')
+
+        map_names = [
+            data.get(map_name_field, '')
+            for data in dataList
+            if data.get(map_name_field)
+        ]
+
+        if max_items and len(map_names) > max_items:
+            map_names = map_names[:max_items]
+            map_names.append('...')
+
+        if len(map_names) == 1:
+            return map_names[0]
+        elif len(map_names) > 1:
+            return delimiter.join(map_names)
+        else:
+            return ''
+
+    def _join_strings(self, items: List, config: Dict[str, Any]) -> str:
+        """Join list of strings with configurable delimiter"""
+        delimiter = config.get('delimiter', ', ')
+        return delimiter.join(str(item) for item in items if item)
+
+    def _extract_unique_values(self, items: List[Dict], config: Dict[str, Any]) -> List:
+        """Extract unique values from a specific field in dictionaries"""
+        field_name = config.get('field_name')
+        if not field_name or not items:
+            return []
+
+        unique_values = set()
+        for item in items:
+            if field_name in item:
+                unique_values.add(item[field_name])
+
+        return list(unique_values)

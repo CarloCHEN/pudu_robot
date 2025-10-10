@@ -13,7 +13,7 @@ notification_needed:
 # for us-east-1, we only support foxx_irvine_office
 # for us-east-2, we only support university_of_florida
 transform_supported_databases:
-  - "university_of_florida"
+  - "foxx_irvine_office"
 
 # Table configurations
 # Use "main" for main database
