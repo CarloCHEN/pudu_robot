@@ -11,6 +11,7 @@ class VerificationService:
     """
     Handles verification of incoming webhook requests based on brand configuration
     Supports both header-based and body-based verification
+    Gracefully handles missing/empty callback codes
     """
 
     def __init__(self, brand_config: BrandConfig):
@@ -28,10 +29,17 @@ class VerificationService:
         env_key = f"{brand_config.brand.upper()}_CALLBACK_CODE"
         self.expected_value = os.getenv(env_key, "")
 
+        # Log configuration status
         if not self.expected_value:
-            logger.warning(f"No verification value found in environment variable: {env_key}")
-
-        logger.info(f"Verification service initialized for {brand_config.brand}: method={self.method}, key={self.key}")
+            logger.warning(
+                f"⚠️  No verification value found for {brand_config.brand.upper()} "
+                f"(environment variable: {env_key}). Verification will be skipped for this brand."
+            )
+        else:
+            logger.info(
+                f"✅ Verification service initialized for {brand_config.brand}: "
+                f"method={self.method}, key={self.key}, configured=True"
+            )
 
     def verify(self, request_data: Dict[str, Any], request_headers: Dict[str, str]) -> tuple[bool, str]:
         """
@@ -46,11 +54,16 @@ class VerificationService:
                 - is_valid: True if verification passed, False otherwise
                 - error_message: Empty string if valid, error description if invalid
         """
-        if not self.expected_value:
-            error_msg = f"Server configuration error: {self.config.brand.upper()}_CALLBACK_CODE not set"
-            logger.error(error_msg)
-            return False, error_msg
+        # Handle case where callback code is not configured (empty or missing)
+        if not self.expected_value or self.expected_value.strip() == "":
+            logger.warning(
+                f"⚠️  Callback code not configured for {self.config.brand.upper()}. "
+                f"Skipping verification (allowing request through)."
+            )
+            # Allow the request through but log it
+            return True, ""
 
+        # Perform verification based on method
         if self.method == 'header':
             return self._verify_header(request_headers)
         elif self.method == 'body':
@@ -88,10 +101,13 @@ class VerificationService:
 
         if received_value != self.expected_value:
             error_msg = f"Invalid {self.key}"
-            logger.error(f"Header verification failed: received={received_value[:10]}..., expected={self.expected_value[:10]}...")
+            logger.error(
+                f"Header verification failed: received={received_value[:10]}..., "
+                f"expected={self.expected_value[:10]}..."
+            )
             return False, error_msg
 
-        logger.debug(f"Header verification passed for {self.key}")
+        logger.debug(f"✅ Header verification passed for {self.key}")
         return True, ""
 
     def _verify_body(self, data: Dict[str, Any]) -> tuple[bool, str]:
@@ -114,13 +130,25 @@ class VerificationService:
 
         if str(received_value) != str(self.expected_value):
             error_msg = f"Invalid {self.key}"
-            logger.error(f"Body verification failed: received={str(received_value)[:10]}..., expected={str(self.expected_value)[:10]}...")
+            logger.error(
+                f"Body verification failed: received={str(received_value)[:10]}..., "
+                f"expected={str(self.expected_value)[:10]}..."
+            )
             return False, error_msg
 
-        logger.debug(f"Body verification passed for {self.key}")
+        logger.debug(f"✅ Body verification passed for {self.key}")
         return True, ""
 
-    def get_verification_info(self) -> Dict[str, str]:
+    def is_verification_configured(self) -> bool:
+        """
+        Check if verification is properly configured
+
+        Returns:
+            bool: True if callback code is configured, False otherwise
+        """
+        return bool(self.expected_value and self.expected_value.strip())
+
+    def get_verification_info(self) -> Dict[str, Any]:
         """
         Get verification configuration info (for debugging/health checks)
 
@@ -131,5 +159,6 @@ class VerificationService:
             "brand": self.config.brand,
             "method": self.method,
             "key": self.key,
-            "configured": bool(self.expected_value)
+            "configured": self.is_verification_configured(),
+            "status": "active" if self.is_verification_configured() else "bypassed (no callback code)"
         }

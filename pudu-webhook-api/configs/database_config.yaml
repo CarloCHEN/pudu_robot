@@ -53,6 +53,6 @@ tables:
   robot_task:
     - database: "project"
       table_name: "mnt_robots_task"
-      primary_keys: ["task_id"]
+      primary_keys: ["robot_sn", "task_name", "start_time"]
       fields: null
       description: "Robot task report table in project database"

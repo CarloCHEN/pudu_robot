@@ -2,59 +2,40 @@
 -include .env
 
 .EXPORT_ALL_VARIABLES:
-# Get brand from .env or default to pudu
-BRAND ?= pudu
-APP_NAME=foxx_monitor_$(BRAND)_webhook_api
 
 TAG=latest
-TF_VAR_app_name=${APP_NAME}
-REGISTRY_NAME=${APP_NAME}
-TF_VAR_image=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${REGISTRY_NAME}:${TAG}
-TF_VAR_region=${AWS_REGION}
+REGISTRY_NAME=robot-webhook
 
 print-vars:
 	@if [ ! -f ".env" ]; then \
-		echo "❌ .env file missing. Run 'make setup-<region>-<brand>' first"; \
+		echo "❌ .env file missing. Run 'make setup-<region>' first"; \
 		exit 1; \
 	fi
 	@echo "🔍 Current Configuration:"
 	@export $(grep -v '^#' .env | xargs) && \
-	echo "BRAND=$$BRAND" && \
-	echo "APP_NAME=${APP_NAME}" && \
-	echo "TAG=${TAG}" && \
 	echo "AWS_REGION=$$AWS_REGION" && \
 	echo "AWS_ACCOUNT_ID=$$AWS_ACCOUNT_ID" && \
-	echo "REGISTRY_NAME=${APP_NAME}" && \
-	echo "TF_VAR_image=$$AWS_ACCOUNT_ID.dkr.ecr.$$AWS_REGION.amazonaws.com/${APP_NAME}:${TAG}"
+	echo "REGISTRY_NAME=${REGISTRY_NAME}" && \
+	echo "TAG=${TAG}" && \
+	echo "NOTIFICATION_API_HOST=$$NOTIFICATION_API_HOST" && \
+	echo "PUDU_CALLBACK_CODE=$$PUDU_CALLBACK_CODE" && \
+	echo "GAS_CALLBACK_CODE=$$GAS_CALLBACK_CODE"
 
-# Setup commands for different regions and brands
-setup-us-east-1-pudu: clean-config
-	@echo "🚀 Setting up Pudu Webhook API for us-east-1..."
-	./setup-environment.sh us-east-1 pudu
+# Setup commands for different regions
+setup-us-east-1: clean-config
+	@echo "🚀 Setting up Webhook API for us-east-1..."
+	./setup-environment.sh us-east-1
 
-setup-us-east-1-gas: clean-config
-	@echo "🚀 Setting up Gas Webhook API for us-east-1..."
-	./setup-environment.sh us-east-1 gas
-
-setup-us-east-2-pudu: clean-config
-	@echo "🚀 Setting up Pudu Webhook API for us-east-2..."
-	./setup-environment.sh us-east-2 pudu
-
-setup-us-east-2-gas: clean-config
-	@echo "🚀 Setting up Gas Webhook API for us-east-2..."
-	./setup-environment.sh us-east-2 gas
-
-# Legacy commands (default to pudu for backward compatibility)
-setup-us-east-1: setup-us-east-1-pudu
-setup-us-east-2: setup-us-east-2-pudu
+setup-us-east-2: clean-config
+	@echo "🚀 Setting up Webhook API for us-east-2..."
+	./setup-environment.sh us-east-2
 
 verify-config:
 	@echo "🔍 Verifying current configuration..."
 	@if [ -f ".env" ]; then \
 		echo "✅ .env exists"; \
-		echo "Brand: $(shell grep '^BRAND=' .env | cut -d'=' -f2)"; \
 		echo "AWS Region: $(shell grep '^AWS_REGION=' .env | cut -d'=' -f2)"; \
-		echo "Notification Host: $(shell grep NOTIFICATION_API_HOST .env)"; \
+		echo "Notification Host: $(shell grep NOTIFICATION_API_HOST .env | cut -d'=' -f2)"; \
 	else \
 		echo "❌ .env missing - run setup first"; \
 	fi
@@ -65,36 +46,32 @@ verify-config:
 	fi
 	@if [ -f "rds/credentials.yaml" ]; then \
 		echo "✅ credentials.yaml exists"; \
-		echo "RDS Host: $(shell grep 'host:' rds/credentials.yaml)"; \
+		echo "RDS Host: $(shell grep 'host:' rds/credentials.yaml | cut -d':' -f2-)"; \
 	else \
 		echo "❌ credentials.yaml missing - run setup first"; \
 	fi
+	@if [ -d "terraform" ] && [ -f "terraform/main.tf" ]; then \
+		echo "✅ Terraform configuration exists"; \
+	else \
+		echo "❌ Terraform configuration missing"; \
+	fi
 
-deploy-container:
+# Main deployment command
+deploy: verify-config
 	@if [ ! -f ".env" ]; then \
-		echo "❌ .env file missing. Run 'make setup-<region>-<brand>' first"; \
+		echo "❌ .env file missing. Run 'make setup-<region>' first"; \
 		exit 1; \
 	fi
-	@echo "🔍 Loading environment variables..."
 	@export $(grep -v '^#' .env | xargs) && \
-	BRAND_VAR=$$(grep '^BRAND=' .env | cut -d'=' -f2) && \
-	echo "🚀 Deploying $$BRAND_VAR Webhook API to $$AWS_REGION..." && \
-	if [ ! -f ".env" ] || [ ! -f "notifications/.env" ] || [ ! -f "rds/credentials.yaml" ]; then \
-		echo "❌ Configuration files missing. Run setup first"; \
-		exit 1; \
-	fi && \
+	echo "🚀 Deploying Webhook API to $$AWS_REGION..." && \
 	sh deploy.sh
 
-# Deploy commands for specific region-brand combinations
-deploy-us-east-1-pudu: setup-us-east-1-pudu deploy-container
-deploy-us-east-1-gas: setup-us-east-1-gas deploy-container
-deploy-us-east-2-pudu: setup-us-east-2-pudu deploy-container
-deploy-us-east-2-gas: setup-us-east-2-gas deploy-container
+# Convenience commands for specific regions
+deploy-us-east-1: setup-us-east-1 deploy
 
-# Legacy commands (default to pudu)
-deploy-us-east-1: deploy-us-east-1-pudu
-deploy-us-east-2: deploy-us-east-2-pudu
+deploy-us-east-2: setup-us-east-2 deploy
 
+# Local testing without Terraform
 test-local:
 	@if [ ! -f ".env" ]; then \
 		echo "❌ .env missing. Run setup first"; \
@@ -110,10 +87,7 @@ build-local:
 		echo "❌ .env file missing. Run setup first"; \
 		exit 1; \
 	fi
-	@export $(grep -v '^#' .env | xargs) && \
-	BRAND_VAR=$$(grep '^BRAND=' .env | cut -d'=' -f2 || echo "pudu") && \
-	echo "Building for brand: $$BRAND_VAR" && \
-	docker build --platform=linux/amd64 --build-arg BRAND=$$BRAND_VAR -t ${APP_NAME}:${TAG} -f Dockerfile ..
+	@docker build --platform=linux/amd64 -t ${REGISTRY_NAME}:${TAG} -f Dockerfile ..
 
 run-local: build-local
 	@echo "🚀 Running Webhook API container locally..."
@@ -121,22 +95,57 @@ run-local: build-local
 		echo "❌ .env missing. Run setup first"; \
 		exit 1; \
 	fi
-	@docker run -p 8000:8000 --env-file .env ${APP_NAME}:${TAG}
+	@docker run -p 8000:8000 --env-file .env ${REGISTRY_NAME}:${TAG}
 
 test-api:
 	@echo "🧪 Testing Webhook API endpoints..."
-	@if [ ! -f ".env" ]; then \
-		echo "❌ .env missing. Cannot determine brand."; \
-		exit 1; \
-	fi
-	@BRAND_VAR=$$(grep '^BRAND=' .env | cut -d'=' -f2 || echo "pudu") && \
-	echo "Testing $$BRAND_VAR endpoints:" && \
-	echo "General health check:" && \
+	@echo "General health check:" && \
 	curl -s http://localhost:8000/api/webhook/health | python -m json.tool && \
 	echo "" && \
-	echo "$$BRAND_VAR-specific health check:" && \
-	curl -s http://localhost:8000/api/$$BRAND_VAR/webhook/health | python -m json.tool || \
+	echo "Pudu health check:" && \
+	curl -s http://localhost:8000/api/pudu/webhook/health | python -m json.tool && \
+	echo "" && \
+	echo "Gas health check:" && \
+	curl -s http://localhost:8000/api/gas/webhook/health | python -m json.tool || \
 	echo "❌ API not running. Start with 'make test-local' first."
+
+# Terraform-specific commands
+terraform-init:
+	@echo "🔧 Initializing Terraform..."
+	@cd terraform && terraform init
+
+terraform-plan:
+	@if [ ! -f ".env" ]; then \
+		echo "❌ .env missing. Run setup first"; \
+		exit 1; \
+	fi
+	@export $(grep -v '^#' .env | xargs) && \
+	cd terraform && terraform plan -var-file="$$AWS_REGION.tfvars"
+
+terraform-apply:
+	@if [ ! -f ".env" ]; then \
+		echo "❌ .env missing. Run setup first"; \
+		exit 1; \
+	fi
+	@export $(grep -v '^#' .env | xargs) && \
+	cd terraform && terraform apply -var-file="$$AWS_REGION.tfvars"
+
+terraform-destroy:
+	@if [ ! -f ".env" ]; then \
+		echo "❌ .env missing. Run setup first"; \
+		exit 1; \
+	fi
+	@echo "⚠️  WARNING: This will destroy all infrastructure!" && \
+	read -p "Are you sure? (yes/no): " confirm && \
+	if [ "$$confirm" = "yes" ]; then \
+		export $(grep -v '^#' .env | xargs) && \
+		cd terraform && terraform destroy -var-file="$$AWS_REGION.tfvars"; \
+	else \
+		echo "Cancelled."; \
+	fi
+
+terraform-output:
+	@cd terraform && terraform output
 
 clean-config:
 	@echo "🧹 Cleaning generated configuration files..."
@@ -147,50 +156,72 @@ clean-config:
 
 clean-docker:
 	@echo "🧹 Cleaning Docker images..."
-	@docker rmi ${APP_NAME}:${TAG} 2>/dev/null || true
+	@docker rmi ${REGISTRY_NAME}:${TAG} 2>/dev/null || true
 	@docker system prune -f
+
+clean-terraform:
+	@echo "🧹 Cleaning Terraform files..."
+	@cd terraform && rm -rf .terraform .terraform.lock.hcl terraform.tfstate terraform.tfstate.backup tfplan
+	@echo "✅ Terraform cleaned"
 
 install-deps:
 	@echo "📦 Installing Python dependencies..."
 	@pip install -r requirements.txt
 
+# Show deployment info
+show-deployment:
+	@if [ -f "deployment-output.json" ]; then \
+		echo "🌐 Current Deployment Information:"; \
+		cat deployment-output.json | python -m json.tool; \
+	else \
+		echo "❌ No deployment information found. Deploy first."; \
+	fi
+
 help:
 	@echo "🚀 Multi-Brand Robot Webhook API - Deployment"
 	@echo "=============================================="
 	@echo ""
-	@echo "🛠️  Setup Commands (Region + Brand):"
-	@echo "  setup-us-east-1-pudu    Setup Pudu for us-east-1"
-	@echo "  setup-us-east-1-gas     Setup Gas for us-east-1"
-	@echo "  setup-us-east-2-pudu    Setup Pudu for us-east-2"
-	@echo "  setup-us-east-2-gas     Setup Gas for us-east-2"
+	@echo "🛠️  Setup Commands:"
+	@echo "  setup-us-east-1         Setup for us-east-1"
+	@echo "  setup-us-east-2         Setup for us-east-2"
 	@echo ""
 	@echo "🚀 Deployment Commands:"
-	@echo "  deploy-us-east-1-pudu   Deploy Pudu to us-east-1"
-	@echo "  deploy-us-east-1-gas    Deploy Gas to us-east-1"
-	@echo "  deploy-us-east-2-pudu   Deploy Pudu to us-east-2"
-	@echo "  deploy-us-east-2-gas    Deploy Gas to us-east-2"
-	@echo "  deploy-container        Deploy with current config"
+	@echo "  deploy                  Deploy with current config"
+	@echo "  deploy-us-east-1        Setup + deploy to us-east-1"
+	@echo "  deploy-us-east-2        Setup + deploy to us-east-2"
 	@echo ""
 	@echo "🏗️  Local Development:"
 	@echo "  build-local             Build Docker image locally"
 	@echo "  test-local              Run API with Python locally"
 	@echo "  run-local               Run API in Docker locally"
+	@echo "  test-api                Test API endpoints locally"
 	@echo "  install-deps            Install Python dependencies"
+	@echo ""
+	@echo "☁️  Terraform Commands:"
+	@echo "  terraform-init          Initialize Terraform"
+	@echo "  terraform-plan          Preview infrastructure changes"
+	@echo "  terraform-apply         Apply infrastructure changes"
+	@echo "  terraform-destroy       Destroy all infrastructure"
+	@echo "  terraform-output        Show deployment outputs"
 	@echo ""
 	@echo "🔍 Utility Commands:"
 	@echo "  print-vars              Show current configuration"
 	@echo "  verify-config           Verify configuration files"
-	@echo "  test-api                Test API endpoints"
+	@echo "  show-deployment         Show current deployment info"
 	@echo "  clean-config            Remove generated configs"
 	@echo "  clean-docker            Remove Docker images"
+	@echo "  clean-terraform         Clean Terraform state/cache"
 	@echo ""
 	@echo "📝 Example Usage:"
-	@echo "  make deploy-us-east-2-gas    # Deploy Gas to us-east-2"
-	@echo "  make deploy-us-east-1-pudu   # Deploy Pudu to us-east-1"
-	@echo "  make test-local              # Test locally"
+	@echo "  make deploy-us-east-2   # Full deployment to us-east-2"
+	@echo "  make deploy-us-east-1   # Full deployment to us-east-1"
+	@echo "  make test-local         # Test locally"
 	@echo ""
-	@echo "📋 API Endpoints:"
-	@echo "  POST /api/pudu/webhook - Pudu callbacks"
-	@echo "  POST /api/gas/webhook  - Gas callbacks"
+	@echo "📋 Unified API Endpoints (handles both brands):"
+	@echo "  POST /api/pudu/webhook  - Pudu callbacks"
+	@echo "  POST /api/gas/webhook   - Gas callbacks"
 	@echo "  GET  /api/webhook/health - General health"
-	@echo "  GET  /api/<brand>/webhook/health - Brand health"
+	@echo ""
+	@echo "🔄 To update environment variables:"
+	@echo "  1. Edit terraform/<region>.tfvars"
+	@echo "  2. Run: make deploy"

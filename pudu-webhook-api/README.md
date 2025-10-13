@@ -355,7 +355,7 @@ python main.py
 
 ```bash
 # Test Pudu endpoint
-curl -X POST http://54.226.145.117:8000/api/pudu/webhook \
+curl -X POST http://robot-webhook-alb-us-east-1-1428034945.us-east-1.elb.amazonaws.com/api/webhook \
   -H "Content-Type: application/json" \
   -H "CallbackCode: vFpG5Ga9o8NqdymFLicLfJVfqj6JU50qQYCs" \
   -d '{
@@ -363,7 +363,7 @@ curl -X POST http://54.226.145.117:8000/api/pudu/webhook \
     "data": {"sn": "811135422060228", "run_status": "ONLINE", "timestamp": 1640995800}
   }'
 
-curl -X POST http://54.226.145.117:8000/api/pudu/webhook \
+curl -X POST http://robot-webhook-alb-us-east-1-1428034945.us-east-1.elb.amazonaws.com/api/webhook \
   -H "Content-Type: application/json" \
   -H "CallbackCode: vFpG5Ga9o8NqdymFLicLfJVfqj6JU50qQYCs" \
   -d '{
@@ -408,9 +408,9 @@ curl -X POST http://3.237.78.106:8000/api/pudu/webhook \
   }'
 
 # Test Gas endpoint
-curl http://3.81.6.210:8000/api/gas/webhook/health
+curl https://webhook-east1.com/api/webhook/health
 
-curl --location "http://3.81.6.210:8000/api/gas/webhook" \
+curl --location "https://webhook-east1.com/api/webhook" \
 --header 'accept: */*' \
 --header 'Content-Type: application/json' \
 --data '{
@@ -419,7 +419,7 @@ curl --location "http://3.81.6.210:8000/api/gas/webhook" \
   "messageId": "GS442-6130-82R-6000:2:684c183c-4ad9-467b-ac7c-55835255AAAA",
   "traceId": "3d54fe90c9a34c20b600e3b7fa9af254",
   "messageTimestamp": 1715769600000,
-  "appId": "1vQ6MfUxqyoGMRQ9nK8C4pSkg1Qsa3Vpq",
+  "appId": "378c0111-5d5d-4bdc-9cc5-e3d7bd3494d3",
   "payload": {
     "serialNumber": "GS442-6130-82R-6000",
     "modelTypeCode": "Scrubber S1",
@@ -435,15 +435,15 @@ curl --location "http://3.81.6.210:8000/api/gas/webhook" \
       "robotSerialNumber": "GS442-6130-82R-6000",
       "operator": "admin",
       "completionPercentage": 0.333,
-      "durationSeconds": 120,
+      "durationSeconds": 12,
       "plannedCleaningAreaSquareMeter": 67.425,
       "actualCleaningAreaSquareMeter": 10.548,
       "efficiencySquareMeterPerHour": 407.965,
       "plannedPolishingAreaSquareMeter": null,
       "actualPolishingAreaSquareMeter": null,
       "waterConsumptionLiter": 0.0,
-      "startBatteryPercentage": 38.0,
-      "endBatteryPercentage": 37.0,
+      "startBatteryPercentage": 100,
+      "endBatteryPercentage": 0,
       "consumablesResidualPercentage": {
         "brush": 100.0,
         "filter": 100.0,
@@ -466,10 +466,10 @@ curl --location "http://3.81.6.210:8000/api/gas/webhook" \
 }'
 
 
-curl -X POST http://98.82.126.144:8000/api/gas/webhook \
+curl -X POST http://robot-webhook-alb-us-east-1-1428034945.us-east-1.elb.amazonaws.com/api/webhook \
   -H "Content-Type: application/json" \
   -d '{
-    "appId": "1vQ6MfUxqyoGMRQ9nK8C4pSkg1Qsa3Vpq",
+    "appId": "378c0111-5d5d-4bdc-9cc5-e3d7bd3494d3",
     "payload": {
       "serialNumber": "GS442-6130-82R-6000",
       "modelTypeCode": "Scrubber 50H",

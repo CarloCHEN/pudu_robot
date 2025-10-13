@@ -65,6 +65,7 @@ field_mappings:
     source_to_db:
       # Basic mappings
       payload.serialNumber: robot_sn
+      payload.modelTypeCode: robot_type
       payload.taskReport.taskInstanceId: task_id
       payload.taskReport.displayName: task_name
       payload.taskReport.startTime: start_time

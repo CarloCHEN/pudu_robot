@@ -159,6 +159,7 @@ class CallbackHandler:
             elif abstract_type == "report_event":
                 task_data = {
                     "robot_sn": cleaned_data.get("robot_sn", robot_sn),
+                    "robot_type": cleaned_data.get("robot_type", ""),
                     "task_id": cleaned_data.get("task_id", ""),
                     "task_name": cleaned_data.get("task_name", ""),
                     "map_name": cleaned_data.get("map_name", ""),

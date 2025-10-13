@@ -23,9 +23,6 @@ logging.basicConfig(
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
 
-# Get brand from environment variable (default: pudu for backward compatibility)
-BRAND = os.getenv("BRAND", "pudu")
-
 # Initialize notification service
 try:
     notification_service = NotificationService()
@@ -52,18 +49,73 @@ if not database_config_path:
     database_config_path = 'configs/database_config.yaml'  # Use default path
 
 
-def create_webhook_endpoint(brand: str):
+def detect_brand_from_data(data: dict) -> str:
     """
-    Factory function to create brand-specific webhook endpoint handler
+    Auto-detect brand from incoming callback data structure
 
     Args:
-        brand: Brand name (e.g., 'pudu', 'gas')
+        data: Request JSON body
 
     Returns:
-        Flask route handler function
+        Brand name ('pudu' or 'gas')
     """
-    def webhook_handler():
-        """Webhook endpoint with brand-aware processing"""
+    # Gas robots have these distinctive fields
+    if 'messageTypeId' in data and 'appId' in data:
+        logger.info("🤖 Detected Gas robot callback (messageTypeId + appId)")
+        return 'gas'
+
+    # Pudu robots have callback_type field
+    if 'callback_type' in data:
+        logger.info("🤖 Detected Pudu robot callback (callback_type)")
+        return 'pudu'
+
+    # Additional Gas detection - check for payload structure
+    if 'payload' in data and isinstance(data.get('payload'), dict):
+        payload = data['payload']
+        if 'serialNumber' in payload or 'taskReport' in payload:
+            logger.info("🤖 Detected Gas robot callback (payload structure)")
+            return 'gas'
+
+    # Fallback: Check for Pudu-specific fields
+    if 'sn' in data or 'robot_id' in data:
+        logger.info("🤖 Detected Pudu robot callback (sn field)")
+        return 'pudu'
+
+    # Default to pudu for backward compatibility
+    logger.warning("⚠️ Could not definitively detect brand, defaulting to Pudu")
+    return 'pudu'
+
+
+def unified_webhook_handler():
+    """
+    Unified webhook endpoint that auto-detects brand and processes accordingly
+    """
+    try:
+        # Log incoming request
+        logger.info(f"Received webhook callback from {request.remote_addr}")
+
+        # Validate request is JSON
+        if not request.is_json:
+            logger.error("Request is not JSON")
+            return jsonify(
+                CallbackResponse(status=CallbackStatus.ERROR, message="Request must be JSON").to_dict()
+            ), 400
+
+        # Parse JSON body
+        try:
+            data = request.get_json()
+        except BadRequest:
+            logger.error("Malformed JSON received")
+            return jsonify(
+                CallbackResponse(status=CallbackStatus.ERROR, message="Malformed JSON").to_dict()
+            ), 400
+
+        logger.info(f"Callback data: {json.dumps(data, indent=2)}")
+
+        # Auto-detect brand from data structure
+        brand = detect_brand_from_data(data)
+        logger.info(f"🎯 Processing as {brand.upper()} callback")
+
         # Initialize brand-specific callback handler
         callback_handler = CallbackHandler(database_config_path, brand=brand)
 
@@ -75,147 +127,134 @@ def create_webhook_endpoint(brand: str):
             logger.error(f"Failed to initialize database configuration: {e}")
             db_config = None
 
+        # Lowercase all headers for consistent access
+        lower_headers = {k.lower(): v for k, v in request.headers.items()}
+        logger.debug(f"Request headers (lowercased): {lower_headers}")
+
+        # Verify request using brand-specific verification
+        is_valid, error_message = callback_handler.verify_request(data, lower_headers)
+
+        if not is_valid:
+            logger.error(f"{brand.upper()} verification failed: {error_message}")
+            callback_handler.close()
+            if db_config:
+                db_config.close()
+            return jsonify(
+                CallbackResponse(status=CallbackStatus.ERROR, message=error_message).to_dict()
+            ), 401
+
+        logger.info(f"{brand.upper()} verification passed ✅")
+
+        # Process the callback
+        response = callback_handler.process_callback(data)
+
+        # Write to database with change detection and dynamic routing
         try:
-            # Log incoming request
-            logger.info(f"Received {brand} callback from {request.remote_addr}")
-
-            # Validate request is JSON
-            if not request.is_json:
-                logger.error("Request is not JSON")
-                return jsonify(
-                    CallbackResponse(status=CallbackStatus.ERROR, message="Request must be JSON").to_dict()
-                ), 400
-
-            # Parse JSON body
-            try:
-                data = request.get_json()
-            except BadRequest:
-                logger.error("Malformed JSON received")
-                return jsonify(
-                    CallbackResponse(status=CallbackStatus.ERROR, message="Malformed JSON").to_dict()
-                ), 400
-
-            logger.info(f"{brand.upper()} callback data: {json.dumps(data, indent=2)}")
-
-            # Lowercase all headers for consistent access
-            lower_headers = {k.lower(): v for k, v in request.headers.items()}
-            logger.debug(f"Request headers (lowercased): {lower_headers}")
-
-            # Verify request using brand-specific verification
-            is_valid, error_message = callback_handler.verify_request(data, lower_headers)
-
-            if not is_valid:
-                logger.error(f"{brand.upper()} verification failed: {error_message}")
-                return jsonify(
-                    CallbackResponse(status=CallbackStatus.ERROR, message=error_message).to_dict()
-                ), 401
-
-            logger.info(f"{brand.upper()} verification passed")
-
-            # Process the callback
-            response = callback_handler.process_callback(data)
-
-            # Write to database with change detection and dynamic routing
-            try:
-                database_names, table_names, changes_detected = (
-                    callback_handler.write_to_database_with_change_detection(data)
-                )
-                logger.info(f"Database write completed. Changes detected in {len(changes_detected)} tables.")
-            except Exception as e:
-                logger.error(f"Failed to write callback to database: {e}", exc_info=True)
-                database_names, table_names, changes_detected = [], [], {}
-
-            # Send notifications for detected changes
-            if notification_service and changes_detected and db_config:
-                # Get abstract callback type for notification context
-                abstract_type = callback_handler.brand_config.map_callback_type(data)
-                callback_type = abstract_type or "unknown"
-
-                notification_databases = db_config.get_notification_databases()
-
-                total_successful_notifications = 0
-                total_failed_notifications = 0
-
-                for (database_name, table_name), changes in changes_detected.items():
-                    try:
-                        # Check if this database needs notifications
-                        if database_name in notification_databases:
-                            logger.info(
-                                f"Sending notifications for {len(changes)} changes in {database_name}.{table_name}"
-                            )
-
-                            successful, failed = send_change_based_notifications(
-                                notification_service=notification_service,
-                                database_name=database_name,
-                                table_name=table_name,
-                                changes_dict=changes,
-                                callback_type=callback_type
-                            )
-
-                            total_successful_notifications += successful
-                            total_failed_notifications += failed
-                        else:
-                            logger.info(f"Skipping notifications for {database_name} (not in notification list)")
-
-                    except Exception as e:
-                        logger.error(f"Failed to send notifications for {database_name}.{table_name}: {e}")
-                        total_failed_notifications += len(changes)
-
-                logger.info(
-                    f"📧 Total notifications: {total_successful_notifications} successful, "
-                    f"{total_failed_notifications} failed"
-                )
-
-            callback_handler.close()
-            if db_config:
-                db_config.close()
-
-            # Return result
-            return jsonify(response.to_dict()), 200 if response.status == CallbackStatus.SUCCESS else 400
-
+            database_names, table_names, changes_detected = (
+                callback_handler.write_to_database_with_change_detection(data)
+            )
+            logger.info(f"Database write completed. Changes detected in {len(changes_detected)} tables.")
         except Exception as e:
-            callback_handler.close()
-            if db_config:
-                db_config.close()
-            logger.error(f"Error processing {brand} callback: {str(e)}", exc_info=True)
-            return (
-                jsonify(
-                    CallbackResponse(
-                        status=CallbackStatus.ERROR,
-                        message=f"Internal server error: {str(e)}"
-                    ).to_dict()
-                ),
-                500,
+            logger.error(f"Failed to write callback to database: {e}", exc_info=True)
+            database_names, table_names, changes_detected = [], [], {}
+
+        # Send notifications for detected changes
+        if notification_service and changes_detected and db_config:
+            # Get abstract callback type for notification context
+            abstract_type = callback_handler.brand_config.map_callback_type(data)
+            callback_type = abstract_type or "unknown"
+
+            notification_databases = db_config.get_notification_databases()
+
+            total_successful_notifications = 0
+            total_failed_notifications = 0
+
+            for (database_name, table_name), changes in changes_detected.items():
+                try:
+                    # Check if this database needs notifications
+                    if database_name in notification_databases:
+                        logger.info(
+                            f"Sending notifications for {len(changes)} changes in {database_name}.{table_name}"
+                        )
+
+                        successful, failed = send_change_based_notifications(
+                            notification_service=notification_service,
+                            database_name=database_name,
+                            table_name=table_name,
+                            changes_dict=changes,
+                            callback_type=callback_type
+                        )
+
+                        total_successful_notifications += successful
+                        total_failed_notifications += failed
+                    else:
+                        logger.info(f"Skipping notifications for {database_name} (not in notification list)")
+
+                except Exception as e:
+                    logger.error(f"Failed to send notifications for {database_name}.{table_name}: {e}")
+                    total_failed_notifications += len(changes)
+
+            logger.info(
+                f"📧 Total notifications: {total_successful_notifications} successful, "
+                f"{total_failed_notifications} failed"
             )
 
-    return webhook_handler
+        callback_handler.close()
+        if db_config:
+            db_config.close()
+
+        # Return result
+        return jsonify(response.to_dict()), 200 if response.status == CallbackStatus.SUCCESS else 400
+
+    except Exception as e:
+        logger.error(f"Error processing callback: {str(e)}", exc_info=True)
+        return (
+            jsonify(
+                CallbackResponse(
+                    status=CallbackStatus.ERROR,
+                    message=f"Internal server error: {str(e)}"
+                ).to_dict()
+            ),
+            500,
+        )
 
 
-# Register brand-specific webhook endpoints
+# Unified webhook endpoint - auto-detects brand
+@app.route("/api/webhook", methods=["POST"])
+def webhook():
+    """Unified webhook endpoint - auto-detects brand from data structure"""
+    return unified_webhook_handler()
+
+
+# Brand-specific endpoints (for backward compatibility)
 @app.route("/api/pudu/webhook", methods=["POST"])
 def pudu_webhook():
-    """Pudu robot webhook endpoint"""
-    return create_webhook_endpoint("pudu")()
+    """Pudu robot webhook endpoint (backward compatibility)"""
+    logger.info("📍 Called via Pudu-specific endpoint")
+    return unified_webhook_handler()
 
 
 @app.route("/api/gas/webhook", methods=["POST"])
 def gas_webhook():
-    """Gas robot webhook endpoint"""
-    return create_webhook_endpoint("gas")()
+    """Gas robot webhook endpoint (backward compatibility)"""
+    logger.info("📍 Called via Gas-specific endpoint")
+    return unified_webhook_handler()
 
 
 @app.route("/api/webhook/health", methods=["GET"])
 def health_check():
-    """Enhanced health check endpoint with brand information"""
+    """Enhanced health check endpoint with multi-brand information"""
 
-    # Get handler info for configured brand
-    try:
-        handler = CallbackHandler(database_config_path, brand=BRAND)
-        handler_info = handler.get_handler_info()
-        handler.close()
-    except Exception as e:
-        logger.error(f"Failed to get handler info: {e}")
-        handler_info = {"error": str(e)}
+    # Get handler info for both brands
+    handler_info = {}
+    for brand in ['pudu', 'gas']:
+        try:
+            handler = CallbackHandler(database_config_path, brand=brand)
+            handler_info[brand] = handler.get_handler_info()
+            handler.close()
+        except Exception as e:
+            logger.error(f"Failed to get {brand} handler info: {e}")
+            handler_info[brand] = {"error": str(e)}
 
     # Get database config info
     try:
@@ -234,21 +273,27 @@ def health_check():
             "status": "healthy",
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "service": "robot-webhook-api",
-            "configured_brand": BRAND,
+            "version": "2.0-unified",
             "features": {
+                "auto_brand_detection": "enabled",
                 "multi_brand_support": "enabled",
                 "dynamic_database_routing": "enabled",
                 "change_detection": "enabled",
                 "notification_service": "enabled" if notification_service else "disabled",
             },
-            "brand_config": handler_info,
+            "supported_brands": {
+                "pudu": handler_info.get('pudu', {}),
+                "gas": handler_info.get('gas', {})
+            },
             "database_config": db_info,
             "supported_endpoints": [
-                "/api/pudu/webhook",
-                "/api/gas/webhook"
+                "/api/webhook (auto-detects brand)",
+                "/api/pudu/webhook (legacy)",
+                "/api/gas/webhook (legacy)"
             ]
         }
     )
+
 
 @app.route("/api/<brand>/webhook/health", methods=["GET"])
 def brand_health_check(brand: str):
@@ -272,7 +317,10 @@ def brand_health_check(brand: str):
             "status": "healthy",
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "brand": brand,
-            "endpoint": f"/api/{brand}/webhook",
+            "endpoints": [
+                f"/api/{brand}/webhook (legacy)",
+                "/api/webhook (auto-detect)"
+            ],
             "configuration": handler_info
         })
     except Exception as e:
@@ -286,13 +334,14 @@ def brand_health_check(brand: str):
 
 if __name__ == "__main__":
     logger.info("Starting Multi-Brand Robot Callback API Server...")
-    logger.info(f"🤖 Configured brand: {BRAND}")
+    logger.info(f"🤖 Auto-detection: ✅ Enabled (Pudu & Gas)")
     logger.info(f"🔄 Dynamic database routing: ✅ Enabled")
     logger.info(f"📧 Notification service: {'✅ Enabled' if notification_service else '❌ Disabled'}")
     logger.info(f"🔍 Change detection: ✅ Enabled")
     logger.info(f"🌐 Supported endpoints:")
-    logger.info(f"   - POST /api/pudu/webhook")
-    logger.info(f"   - POST /api/gas/webhook")
+    logger.info(f"   - POST /api/webhook (auto-detects brand) ⭐ PRIMARY")
+    logger.info(f"   - POST /api/pudu/webhook (legacy)")
+    logger.info(f"   - POST /api/gas/webhook (legacy)")
     logger.info(f"   - GET  /api/webhook/health")
     logger.info(f"   - GET  /api/<brand>/webhook/health")
 

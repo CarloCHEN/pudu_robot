@@ -11,7 +11,7 @@ from services.transform_service import TransformService
 
 logger = logging.getLogger(__name__)
 
-GS_robot_battery_capacity = 1.2288
+GS_robot_battery_capacity = {'S': 0.96, '40': 1.44}
 
 class DatabaseWriter:
     """Enhanced database writer with change detection and coordinate transformation"""
@@ -210,8 +210,16 @@ class DatabaseWriter:
             return round(remaining_time, 2)
 
         remaining_time = estimate_remaining_time(task_data.get("progress"), task_data.get("duration"))
+        robot_type = str(task_data.get("robot_type", "")).upper()
+        # check if robot_type contains 'S' or '40'
+        if 'S' in robot_type and '40' not in robot_type:
+            robot_battery_capacity = GS_robot_battery_capacity['S']
+        elif '40' in robot_type:
+            robot_battery_capacity = GS_robot_battery_capacity['40']
+        else:
+            robot_battery_capacity = 0
 
-        consumption = round((task_data.get("battery_usage") / 100) * GS_robot_battery_capacity, 5)
+        consumption = round((task_data.get("battery_usage") / 100) * robot_battery_capacity, 5)
 
         db_data = {
             "robot_sn": robot_sn,

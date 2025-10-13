@@ -21,7 +21,7 @@ SHOP_ID_MAPPING = {
     # Add more client_id -> shop_id mappings here as needed
 }
 
-GS_robot_battery_capacity = 1.2288
+GS_robot_battery_capacity = {'S': 0.96, '40': 1.44}
 
 class GasAdapter(RobotAPIInterface):
     """GS robot API adapter"""
@@ -367,6 +367,8 @@ class GasAdapter(RobotAPIInterface):
         # Process each robot
         for robot in robots:
             sn = robot.get('sn')
+            robot_type = robot.get('modelTypeCode', '')
+
             if not sn:
                 continue
 
@@ -424,7 +426,16 @@ class GasAdapter(RobotAPIInterface):
                         battery_usage = max(0, start_battery - end_battery)
 
                         # Gas doesn't provide detailed consumption in kWh, estimate from battery percentage
-                        consumption = round((battery_usage / 100) * GS_robot_battery_capacity, 5)
+                        # check if robot_type contains 'S' or '40'
+                        if 'S' in robot_type and '40' not in robot_type:
+                            robot_battery_capacity = GS_robot_battery_capacity['S']
+                        elif '40' in robot_type:
+                            robot_battery_capacity = GS_robot_battery_capacity['40']
+                        else:
+                            robot_battery_capacity = 0
+
+                        consumption = round((battery_usage / 100) * robot_battery_capacity, 5)
+                        
 
                         # Water consumption
                         water_consumption = int(report.get('waterConsumptionLiter', 0) * 1000)  # Convert L to mL
