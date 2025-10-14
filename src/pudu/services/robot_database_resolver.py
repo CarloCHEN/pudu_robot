@@ -71,6 +71,52 @@ class RobotDatabaseResolver:
             return False
 
     @retry_db_operation(max_retries=3, base_delay=2)
+    def get_active_robot_types(self) -> set:
+        """
+        Get set of active robot types in current region's database
+
+        Returns:
+            Set of robot types (e.g., {'PUDU CC1', 'GAUSIUM'})
+        """
+        if not self.main_db:
+            logger.info("Initializing database connection...")
+            self._initialize_connection()
+
+        self._ensure_connection()
+
+        if not self.main_db:
+            logger.error("No database connection available")
+            return set()
+
+        try:
+            query = """
+                SELECT DISTINCT robot_type
+                FROM mnt_robots_management
+                WHERE robot_type IS NOT NULL
+            """
+
+            results = self.main_db.query_data(query)
+
+            robot_types = set()
+            for result in results:
+                if isinstance(result, tuple):
+                    robot_type = result[0]
+                elif isinstance(result, dict):
+                    robot_type = result.get('robot_type')
+                else:
+                    continue
+
+                if robot_type:
+                    robot_types.add(robot_type)
+
+            logger.info(f"Active robot types in database: {robot_types}")
+            return robot_types
+
+        except Exception as e:
+            logger.error(f"Error getting active robot types: {e}")
+            return set()
+
+    @retry_db_operation(max_retries=3, base_delay=2)
     def get_robot_database_mapping(self, robot_sns: List[str] = None) -> Dict[str, str]:
         """
         Get mapping of robot_sn to database name

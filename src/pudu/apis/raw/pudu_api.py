@@ -553,27 +553,84 @@ def get_battery_health_list(start_time, end_time, shop_id=None, sn=None, offset=
     @param timezone_offset: The timezone offset
 
     @return: The battery health list dictionary with cycle, soc, and soh data
+
+    {
+        "code": int,  # 200
+        "message": str,  # "ok"
+        "data": {
+            "total": int,  # 12
+            "page": int,  # 0
+            "limit": int,  # 1
+            "list": [
+                {
+                    "id": str,  # "a70ee902-6f7a-4a32-8765-917f58ca1a11"
+                    "sn": str,  # "PDY202503051721"
+                    "mac": str,  # "14:80:CC:89:26:6D"
+                    "product_code": str,  # "81"
+                    "upload_time": str,  # "2025-07-01 00:00:03"
+                    "task_time": str,  # "2025-06-30 23:59:51"
+                    "soft_version": str,  # "SD1.0.10.2025062917@master"
+                    "hard_version": str,  # "0.4.27"
+                    "os_version": str,  # "32"
+                    "battery_sn": str,  # "F7S4PNH2412280039"
+                    "battery_model": int,  # 41
+                    "cycle": int,  # 50
+                    "design_capacity": int,  # 10000
+                    "pack_voltage": int,  # 24851
+                    "soc": int,  # 28
+                    "soh": int,  # 100
+                    "battery_model_name": str,  # "赣锋 7串4并"
+                    "shop_id": str,  # "450300000"
+                    "shop_name": str,  # "闪电匣机型系列测试门店（国内）"
+                    "full_capacity": int,  # 10160
+                    "work_status": int,  # 2
+                    "current": int,  # -838
+                    "cell_temperature": list,  # []
+                    "cell_voltage": list  # []
+                }
+            ],
+            "offset": int  # 0
+        }
+    }
     """
-    # convert str to seconds
-    start_time = int(pd.to_datetime(start_time).timestamp())
-    end_time = int(pd.to_datetime(end_time).timestamp())
-    url = f"https://csu-open-platform.pudutech.com/pudu-entry/data-board/v1/log/battery/query_list?start_time={start_time}&end_time={end_time}"
-    if shop_id:
-        url += f"&shop_id={shop_id}"
-    if sn:
-        url += f"&sn={sn}"
-    if offset:
-        url += f"&offset={offset}"
-    if limit:
-        url += f"&limit={limit}"
-    if timezone_offset:
-        url += f"&timezone_offset={timezone_offset}"
-    response = run_url(url)
-    response = json.loads(response)
-    if any(status in response["message"].lower() for status in ["success", "ok"]):
-        return response["data"]
-    else:
-        return response
+    try:
+        # convert str to seconds
+        start_time_ts = int(pd.to_datetime(start_time).timestamp())
+        end_time_ts = int(pd.to_datetime(end_time).timestamp())
+
+        url = f"https://csu-open-platform.pudutech.com/pudu-entry/data-board/v1/log/battery/query_list?start_time={start_time_ts}&end_time={end_time_ts}"
+
+        if shop_id:
+            url += f"&shop_id={shop_id}"
+        if sn:
+            url += f"&sn={sn}"
+        if offset:
+            url += f"&offset={offset}"
+        if limit:
+            url += f"&limit={limit}"
+        if timezone_offset:
+            url += f"&timezone_offset={timezone_offset}"
+
+        response = run_url(url)
+
+        # 解析JSON响应
+        response_data = json.loads(response)
+
+        # 检查响应状态 - 根据实际的响应消息
+        message = response_data.get("message", "").upper()
+        if message in ["SUCCESS", "OK"]:
+            return response_data.get("data", {})
+        else:
+            # 返回整个响应以便查看错误信息
+            print(f"API returned non-success status: {message}")
+            return response_data
+
+    except json.JSONDecodeError as e:
+        print(f"JSON decode error: {e}")
+        return {"error": "Invalid JSON response", "raw_response": response}
+    except Exception as e:
+        print(f"Request failed: {e}")
+        return {"error": f"Request failed: {str(e)}"}
 
 def get_task_list(shop_id=None, sn=None):
     """ Accepts a shop ID and serial number and returns a list of tasks

@@ -298,10 +298,14 @@ class RobotLocationResolver:
                     # Query robots by location_id (which matches building_id)
                     building_list = "', '".join(building_ids)
                     query = f"""
-                        SELECT robot_sn, robot_name, location_id
-                        FROM {table.table_name}
+                        SELECT DISTINCT robot_sn, robot_name, location_id
+                        FROM mnt_robots_management
                         WHERE location_id IN ('{building_list}')
                         AND robot_sn IS NOT NULL
+                        AND robot_sn IN (
+                            SELECT DISTINCT robot_sn
+                            FROM {table.table_name}
+                        )
                     """
 
                     result_df = table.execute_query(query)

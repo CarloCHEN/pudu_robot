@@ -11,15 +11,7 @@ from typing import Dict, List, Optional, Any, Union
 from ..core.api_interface import RobotAPIInterface
 from ..raw.gas_api import create_gaussian_api_client
 
-
 API_NAME = "gas"
-
-
-# Shop ID mapping - maps client credentials to location IDs
-SHOP_ID_MAPPING = {
-    "muryFD4sL4XsVanqsHwX": "GS_SHOP_001",  # Default shop ID for this client
-    # Add more client_id -> shop_id mappings here as needed
-}
 
 GS_robot_battery_capacity = {'S': 0.96, '40': 1.44}
 
@@ -68,14 +60,34 @@ class GasAdapter(RobotAPIInterface):
         except Exception as e:
             print(f"Warning: Failed to get OAuth token: {e}")
 
-        # Get shop_id from config or use mapping based on client_id
-        self.shop_id = self.config.get('shop_id') or SHOP_ID_MAPPING.get(client_id, 'GS_SHOP_001')
-        self.shop_name = self.config.get('shop_name', f'Shop_{self.shop_id}')
-
     # ==================== Basic API Methods ====================
 
     def get_robot_details(self, sn: Union[str, List[str]]) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
         """获取机器人详细信息 - 匹配pudu格式"""
+
+        def translate_soh_status(soh_status):
+            soh_mapping = {
+                '健康': 'Healthy',
+                '良好': 'Good',
+                '一般': 'Fair',
+                '差': 'Poor',
+                '未知': 'Unknown'
+            }
+
+            if not soh_status:
+                return 'Unknown'
+
+            soh_status = str(soh_status).strip()
+
+            if soh_status in ['Healthy', 'Good', 'Fair', 'Poor', 'Unknown']:
+                return soh_status
+
+            if soh_status in soh_mapping:
+                return soh_mapping[soh_status]
+
+            return 'Unknown'
+
+
         try:
             # Handle batch request for list of serial numbers
             if isinstance(sn, list):
@@ -93,6 +105,8 @@ class GasAdapter(RobotAPIInterface):
                     # Extract battery info
                     battery_info = status.get('battery', {})
                     battery_percentage = int(battery_info.get('powerPercentage', 0))
+                    soh = translate_soh_status(battery_info.get('soh', None))
+                    cycles = battery_info.get('cycleTimes', None)
 
                     # Extract localization info
                     localization_info = status.get('localizationInfo', {})
@@ -118,6 +132,8 @@ class GasAdapter(RobotAPIInterface):
                         'online': status.get('online', False),
                         'battery': battery_percentage,
                         'battery_info': battery_info,
+                        'soh': soh,
+                        'cycles': cycles,
                         'map': {
                             'name': map_info.get('name', '')
                         },
@@ -149,7 +165,8 @@ class GasAdapter(RobotAPIInterface):
                 # Extract battery info
                 battery_info = gas_status.get('battery', {})
                 battery_percentage = int(battery_info.get('powerPercentage', 0))
-
+                soh = translate_soh_status(battery_info.get('soh', None))
+                cycles = battery_info.get('cycleTimes', None)
                 # Extract localization info
                 localization_info = gas_status.get('localizationInfo', {})
                 map_info = localization_info.get('map', {})
@@ -174,6 +191,8 @@ class GasAdapter(RobotAPIInterface):
                     'online': gas_status.get('online', False),
                     'battery': battery_percentage,
                     'battery_info': battery_info,
+                    'soh': soh,
+                    'cycles': cycles,
                     'map': {
                         'name': map_info.get('name', '')
                     },
@@ -203,8 +222,8 @@ class GasAdapter(RobotAPIInterface):
         stores = [{
             'company_id': '',
             'company_name': '',
-            'shop_id': self.shop_id,
-            'shop_name': self.shop_name
+            'shop_id': '',
+            'shop_name': ''
         }]
 
         if offset:
@@ -383,7 +402,6 @@ class GasAdapter(RobotAPIInterface):
                 )
 
                 if not response or 'error' in response:
-                    print(f"No task reports for robot {sn}: {response}")
                     continue
 
                 # Gas API might return {'data': {'robotTaskReports': [...]}} or directly {'robotTaskReports': [...]}
@@ -392,8 +410,6 @@ class GasAdapter(RobotAPIInterface):
                     reports = response.get('data', {}).get('robotTaskReports', [])
                 else:
                     reports = response.get('robotTaskReports', [])
-
-                print(f"Found {len(reports)} reports for robot {sn}")
 
                 # Process each report
                 for report in reports:
@@ -435,7 +451,7 @@ class GasAdapter(RobotAPIInterface):
                             robot_battery_capacity = 0
 
                         consumption = round((battery_usage / 100) * robot_battery_capacity, 5)
-                        
+
 
                         # Water consumption
                         water_consumption = int(report.get('waterConsumptionLiter', 0) * 1000)  # Convert L to mL
@@ -512,13 +528,11 @@ class GasAdapter(RobotAPIInterface):
                         schedule_df = pd.concat([schedule_df, new_entry], ignore_index=True)
 
                     except Exception as e:
-                        print(f"Error processing report for robot {sn}: {e}")
                         import traceback
                         traceback.print_exc()
                         continue
 
             except Exception as e:
-                print(f"Error getting task reports for robot {sn}: {e}")
                 import traceback
                 traceback.print_exc()
                 continue
@@ -534,7 +548,7 @@ class GasAdapter(RobotAPIInterface):
         return pd.DataFrame(columns=[
             'Robot Name', 'Robot SN',
             'Start Time', 'End Time', 'Duration',
-            'Initial Power', 'Final Power', 'Power Gain', 'Status'
+            'Initial Power', 'Final Power', 'Power Gain', 'Battery SOH', 'Battery Cycles', 'Status'
         ])
 
     def get_events_table(self, start_time: str, end_time: str, location_id: Optional[str] = None,
@@ -554,7 +568,8 @@ class GasAdapter(RobotAPIInterface):
         """
         Get a simplified table for Gas robots with basic information
         """
-        robot_df = pd.DataFrame(columns=['Robot SN', 'Water Level', 'Sewage Level', 'Battery Level', 'Status', 'Timestamp UTC'])
+        robot_df = pd.DataFrame(columns=['Robot SN', 'Water Level', 'Sewage Level', 'Battery Level', 'Battery SOH', 'Battery Cycles',
+                                         'Status', 'Timestamp UTC'])
         # Get all robots
         robots_response = self.get_list_robots(location_id=location_id)
         robots = robots_response.get('list', [])
@@ -591,7 +606,8 @@ class GasAdapter(RobotAPIInterface):
 
                 # Get battery percentage
                 battery_percentage = robot_details.get('battery', None)
-
+                soh = robot_details.get('soh', None)
+                cycles = robot_details.get('cycles', None)
                 # Gas doesn't provide water and sewage levels
                 water_percentage = robot_details.get('cleanWaterPercentage', None)
                 sewage_percentage = robot_details.get('dirtyWaterPercentage', None)
@@ -611,6 +627,8 @@ class GasAdapter(RobotAPIInterface):
                     'Water Level': [water_percentage],
                     'Sewage Level': [sewage_percentage],
                     'Battery Level': [battery_percentage],
+                    'Battery SOH': [soh],
+                    'Battery Cycles': [cycles],
                     'Status': [status],
                     'Timestamp UTC': [pd.Timestamp.now()]  # Add current timestamp
                 })
@@ -636,6 +654,8 @@ class GasAdapter(RobotAPIInterface):
 
                     # Get battery percentage
                     battery_percentage = robot_details.get('battery', None)
+                    soh = robot_details.get('soh', None)
+                    cycles = robot_details.get('cycles', None)
 
                     # Gas doesn't provide water and sewage levels
                     water_percentage = robot_details.get('cleanWaterPercentage', None)
@@ -656,6 +676,8 @@ class GasAdapter(RobotAPIInterface):
                         'Water Level': [water_percentage],
                         'Sewage Level': [sewage_percentage],
                         'Battery Level': [battery_percentage],
+                        'Battery SOH': [soh],
+                        'Battery Cycles': [cycles],
                         'Status': [status],
                         'Timestamp UTC': [pd.Timestamp.now()]  # Add current timestamp
                     })
@@ -663,7 +685,6 @@ class GasAdapter(RobotAPIInterface):
                     robot_df = pd.concat([robot_df, robot_row], ignore_index=True)
 
                 except Exception as e2:
-                    print(f"Error processing robot {sn} in fallback: {e2}")
                     continue
 
         return robot_df
@@ -739,7 +760,7 @@ class GasAdapter(RobotAPIInterface):
                     # Gas API doesn't provide detailed ongoing task metrics
 
                     ongoing_task_row = pd.DataFrame({
-                        'location_id': [self.shop_id],
+                        'location_id': [''],
                         'task_name': [task_name],
                         'task_id': [''],  # Not available for ongoing tasks
                         'robot_sn': [sn],

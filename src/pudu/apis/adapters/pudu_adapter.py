@@ -6,6 +6,8 @@
 import pandas as pd
 import ast
 from typing import Dict, List, Optional, Any
+import datetime
+from datetime import timedelta, timezone
 from ..core.api_interface import RobotAPIInterface
 from ..raw.pudu_api import *
 
@@ -336,7 +338,7 @@ class PuduAdapter(RobotAPIInterface):
         charging_df = pd.DataFrame(columns=[
             'Location ID', 'Robot Name', 'Robot SN', 'Location',
             'Start Time', 'End Time', 'Duration',
-            'Initial Power', 'Final Power', 'Power Gain'
+            'Initial Power', 'Final Power', 'Power Gain', 'Battery SOH', 'Battery Cycles', 'Status'
         ])
 
         # Get list of stores and filter by location_id if provided
@@ -356,7 +358,7 @@ class PuduAdapter(RobotAPIInterface):
 
             # Process each charging record
             for record in results:
-                # Skip if record is outside the specified time range
+                # Skip if record is outside the specified time范围
                 if record['task_time'] > end_time or record['task_time'] < start_time:
                     continue
 
@@ -374,14 +376,19 @@ class PuduAdapter(RobotAPIInterface):
                 final_power = record['max_power_percent']
                 power_gain = final_power - initial_power
 
-                # Format duration as hours and minutes
-                hours = int(duration_seconds / 3600)
-                minutes = int((duration_seconds % 3600) / 60)
-                formatted_duration = f"{hours}h {minutes:02d}min"
-
                 # Get robot name
                 robot_details = get_robot_details(record['sn'])
                 robot_name = robot_details.get('nickname', f"{shop_name}_{record['product_code']}")
+
+                # Use the same start_time and end_time as the charging record query
+                battery_data = get_battery_health_list(start_time, end_time, sn=record['sn'])
+
+                soh = None
+                cycles = None
+                if battery_data and "list" in battery_data and battery_data["list"]:
+                    latest_record = max(battery_data["list"], key=lambda x: x.get("upload_time", ""))
+                    soh = latest_record.get('soh', None)
+                    cycles = latest_record.get('cycle', None)
 
                 # Create a new entry for this charging record
                 new_entry = pd.DataFrame({
@@ -391,10 +398,12 @@ class PuduAdapter(RobotAPIInterface):
                     'Location': [shop_name],
                     'Start Time': [task_start_time],
                     'End Time': [task_end_time],
-                    'Duration': [formatted_duration],
+                    'Duration': [duration_seconds],
                     'Initial Power': [f"{initial_power}%"],
                     'Final Power': [f"{final_power}%"],
                     'Power Gain': [f"+{power_gain}%"],
+                    'Battery SOH': [f"{soh}%" if soh is not None else None],
+                    'Battery Cycles': [cycles],
                     'Status': ['Done']
                 })
 
@@ -511,9 +520,8 @@ class PuduAdapter(RobotAPIInterface):
     def get_robot_status_table(self, location_id: Optional[str] = None, robot_sn: Optional[str] = None) -> pd.DataFrame:
         """
         Get a simplified table for robots with basic information
-        包含完整的Pudu数据处理逻辑
         """
-        robot_df = pd.DataFrame(columns=['Robot SN', 'Water Level', 'Sewage Level', 'Battery Level',
+        robot_df = pd.DataFrame(columns=['Robot SN', 'Water Level', 'Sewage Level', 'Battery Level', 'Battery SOH', 'Battery Cycles',
                                         'Status', 'Timestamp UTC'])
         all_shops = get_list_stores()['list']
 
@@ -554,14 +562,29 @@ class PuduAdapter(RobotAPIInterface):
                 # Get robot name (nickname)
                 robot_name = robot_details.get('nickname', f"{shop_name}_{sn}")
 
+                # Get battery health
+                end_time = datetime.datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+                start_time = (datetime.datetime.now(timezone.utc) - timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
+
+                battery_data = get_battery_health_list(start_time, end_time, sn=sn)
+
+                soh = None
+                cycles = None
+                if battery_data and "list" in battery_data and battery_data["list"]:
+                    latest_record = max(battery_data["list"], key=lambda x: x.get("upload_time", ""))
+                    soh = latest_record.get('soh', None)
+                    cycles = latest_record.get('cycle', None)
+
                 # Create a row for this robot
                 robot_row = pd.DataFrame({
                     'Robot SN': [sn],
                     'Water Level': [water_percentage],
                     'Sewage Level': [sewage_percentage],
                     'Battery Level': [battery_percentage],
+                    'Battery SOH': [f"{soh}%" if soh is not None else None],
+                    'Battery Cycles': [cycles],
                     'Status': [status],
-                    'Timestamp UTC': [pd.Timestamp.now()]  # Add current timestamp
+                    'Timestamp UTC': [pd.Timestamp.now(tz='UTC')]
                 })
 
                 # Add to the main dataframe

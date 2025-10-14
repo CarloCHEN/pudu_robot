@@ -3,6 +3,7 @@ import traceback
 import pandas as pd
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
+import concurrent.futures
 from pudu.rds.rdsTable import RDSTable
 from pudu.apis.foxx_api import get_robot_work_location_and_mapping_data
 
@@ -43,34 +44,96 @@ class WorkLocationService:
     def update_robot_work_locations_and_mappings(self) -> bool:
         """
         Update both robot work location data and map floor mappings with dynamic database resolution
+        Supports multiple robot types and combines results from all types
 
         Returns:
             bool: True if all updates successful, False otherwise
 
         Process:
-            1. Gets robot work location and mapping data from API
-            2. Transforms coordinates for robots in supported databases
-            3. Updates mnt_robots_work_location tables in appropriate project databases (APPEND mode)
-            4. Runs archival process to maintain performance
-            5. Updates mnt_robot_map_floor_mapping tables with resolved floor_ids
+            1. Detect active robot types in current region
+            2. Get robot work location and mapping data from all active robot type APIs
+            3. Combine results from all robot types
+            4. Transforms coordinates for robots in supported databases
+            5. Updates mnt_robots_work_location tables in appropriate project databases (APPEND mode)
+            6. Runs archival process to maintain performance
+            7. Updates mnt_robot_map_floor_mapping tables with resolved floor_ids
         """
         try:
-            logger.info("🗺️ Updating robot work locations and map floor mappings (dynamic)...")
+            logger.info("🗺️ Updating robot work locations and map floor mappings (dynamic multi-type)...")
 
-            # Get both datasets in a single API call
-            work_location_data, mapping_data = get_robot_work_location_and_mapping_data()
+            # Get active robot types from database
+            active_robot_types = self.config.resolver.get_active_robot_types()
+
+            # Determine which robot types to call based on substring matching
+            api_robot_types = []
+            has_pudu = False
+            has_gas = False
+
+            for robot_type in active_robot_types:
+                robot_type_lower = robot_type.lower()
+
+                # Check for Pudu robots
+                if 'pudu' in robot_type_lower and not has_pudu:
+                    api_robot_types.append('pudu')
+                    has_pudu = True
+                    logger.info(f"Detected Pudu robot type: {robot_type}")
+
+                # Check for Gas/Gausium robots
+                if any(keyword in robot_type_lower for keyword in ['gausium', 'gas', 'gs']) and not has_gas:
+                    api_robot_types.append('gas')
+                    has_gas = True
+                    logger.info(f"Detected Gas/Gausium robot type: {robot_type}")
+
+            if not api_robot_types:
+                logger.warning("No active robot types found in database - defaulting to both types")
+                api_robot_types = ['pudu', 'gas']
+
+            logger.info(f"🔄 Fetching work location data for robot types: {api_robot_types}")
+
+            # Fetch data from all robot types in parallel
+            all_work_location_data = []
+            all_mapping_data = []
+
+            # Use ThreadPoolExecutor to get data from all robot types simultaneously
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(api_robot_types), thread_name_prefix="work_location_worker") as executor:
+                # Submit API calls for all robot types
+                future_to_type = {}
+                for robot_type in api_robot_types:
+                    future = executor.submit(get_robot_work_location_and_mapping_data, robot_type=robot_type)
+                    future_to_type[future] = robot_type
+                    logger.debug(f"📡 Submitted work location API call for {robot_type}")
+
+                # Collect results as they complete
+                for future in concurrent.futures.as_completed(future_to_type, timeout=30):
+                    robot_type = future_to_type[future]
+                    try:
+                        work_location_data, mapping_data = future.result()
+                        all_work_location_data.append(work_location_data)
+                        all_mapping_data.append(mapping_data)
+                        logger.info(f"✅ Completed work location API call for {robot_type}: {len(work_location_data)} work locations, {len(mapping_data)} mappings")
+                    except Exception as e:
+                        logger.error(f"❌ Work location API call failed for {robot_type}: {e}")
+                        # Add empty DataFrames as fallback
+                        all_work_location_data.append(pd.DataFrame())
+                        all_mapping_data.append(pd.DataFrame())
+
+            # Combine results from all robot types
+            combined_work_location_data = pd.concat(all_work_location_data, ignore_index=True) if all_work_location_data else pd.DataFrame()
+            combined_mapping_data = pd.concat(all_mapping_data, ignore_index=True) if all_mapping_data else pd.DataFrame()
+
+            logger.info(f"📊 Combined results: {len(combined_work_location_data)} total work locations, {len(combined_mapping_data)} total mappings")
 
             success = True
 
-            # MODIFIED: Update work locations (with coordinate transformation and archival)
-            if not work_location_data.empty:
-                success &= self._update_work_locations_with_archival(work_location_data)
+            # Update work locations (with coordinate transformation and archival)
+            if not combined_work_location_data.empty:
+                success &= self._update_work_locations_with_archival(combined_work_location_data)
             else:
                 logger.info("No work location data to update")
 
             # Update map floor mappings
-            if not mapping_data.empty:
-                success &= self._update_map_floor_mappings(mapping_data, work_location_data)
+            if not combined_mapping_data.empty:
+                success &= self._update_map_floor_mappings(combined_mapping_data, combined_work_location_data)
             else:
                 logger.info("No map floor mapping data to update")
 
@@ -243,7 +306,7 @@ class WorkLocationService:
                         # No existing record - insert as usual (first time seeing this robot)
                         robot_data = robot_row.to_dict()
                         table.insert_data(robot_data)
-                        logger.debug(f"Inserted first record for idle robot {robot_sn}")
+                        logger.info(f"Inserted first record for idle robot {robot_sn}")
 
                 except Exception as e:
                     logger.warning(f"Error updating idle robot {robot_sn}: {e}")

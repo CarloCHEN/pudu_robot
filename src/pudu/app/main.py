@@ -84,27 +84,51 @@ class App:
 
     def _fetch_all_api_data_parallel(self, start_time: str, end_time: str) -> Dict[str, any]:
         """
-        Fetch all API data in parallel for both robot types to reduce total API call time.
+        Fetch all API data in parallel for robot types that exist in current region's database.
         """
-        logger.info("🔄 Fetching all API data in parallel for both robot types...")
+        logger.info("🔄 Detecting active robot types in current region...")
+
+        # Get active robot types from database
+        active_robot_types = self.config.resolver.get_active_robot_types()
+
+        # Determine which APIs to call based on substring matching
+        api_robot_types = []
+        has_pudu = False
+        has_gas = False
+
+        for robot_type in active_robot_types:
+            robot_type_lower = robot_type.lower()
+
+            # Check for Pudu robots
+            if 'pudu' in robot_type_lower and not has_pudu:
+                api_robot_types.append('pudu')
+                has_pudu = True
+                logger.info(f"Detected Pudu robot type: {robot_type}")
+
+            # Check for Gas/Gausium robots
+            if any(keyword in robot_type_lower for keyword in ['gausium', 'gas', 'gs']) and not has_gas:
+                api_robot_types.append('gas')
+                has_gas = True
+                logger.info(f"Detected Gas/Gausium robot type: {robot_type}")
+
+        if not api_robot_types:
+            logger.warning("No active robot types found in database - defaulting to both types")
+            api_robot_types = ['pudu', 'gas']
+
+        logger.info(f"🔄 Fetching API data for robot types: {api_robot_types}")
         api_start_time = datetime.now()
 
-        # Define all API calls with their parameters for BOTH robot types
-        api_calls = {
-            # Pudu robots
-            'robot_status_pudu': (get_robot_status_table, (), {'robot_type': 'pudu'}),
-            'ongoing_tasks_pudu': (get_ongoing_tasks_table, (), {'robot_type': 'pudu'}),
-            'schedule_pudu': (get_schedule_table, (start_time, end_time, None, None, 0), {'robot_type': 'pudu'}),
-            'charging_pudu': (get_charging_table, (start_time, end_time, None, None, 0), {'robot_type': 'pudu'}),
-            'events_pudu': (get_events_table, (start_time, end_time, None, None, None, None, 0), {'robot_type': 'pudu'}),
+        # Define API calls dynamically based on active robot types
+        api_calls = {}
 
-            # Gas robots
-            'robot_status_gas': (get_robot_status_table, (), {'robot_type': 'gas'}),
-            'ongoing_tasks_gas': (get_ongoing_tasks_table, (), {'robot_type': 'gas'}),
-            'schedule_gas': (get_schedule_table, (start_time, end_time, None, None, 0), {'robot_type': 'gas'}),
-            'charging_gas': (get_charging_table, (start_time, end_time, None, None, 0), {'robot_type': 'gas'}),
-            'events_gas': (get_events_table, (start_time, end_time, None, None, None, None, 0), {'robot_type': 'gas'}),
-        }
+        for robot_type in api_robot_types:
+            api_calls.update({
+                f'robot_status_{robot_type}': (get_robot_status_table, (), {'robot_type': robot_type}),
+                f'ongoing_tasks_{robot_type}': (get_ongoing_tasks_table, (), {'robot_type': robot_type}),
+                f'schedule_{robot_type}': (get_schedule_table, (start_time, end_time, None, None, 0), {'robot_type': robot_type}),
+                f'charging_{robot_type}': (get_charging_table, (start_time, end_time, None, None, 0), {'robot_type': robot_type}),
+                f'events_{robot_type}': (get_events_table, (start_time, end_time, None, None, None, None, 0), {'robot_type': robot_type}),
+            })
 
         api_data = {}
 
@@ -125,21 +149,18 @@ class App:
                     api_data[api_name] = result
                     logger.info(f"✅ Completed API call for {api_name}: {len(result) if hasattr(result, '__len__') else 'N/A'} records")
                 except Exception as e:
+                    import traceback
                     logger.error(f"❌ API call failed for {api_name}: {e}")
+                    logger.error(f"📋 Traceback: {traceback.format_exc()}")
                     api_data[api_name] = pd.DataFrame()  # Empty DataFrame as fallback
 
-        # Combine results from both robot types
+        # Combine results from all active robot types
         combined_data = {
-            'robot_status': pd.concat([api_data.get('robot_status_pudu', pd.DataFrame()),
-                                    api_data.get('robot_status_gas', pd.DataFrame())], ignore_index=True),
-            'ongoing_tasks': pd.concat([api_data.get('ongoing_tasks_pudu', pd.DataFrame()),
-                                        api_data.get('ongoing_tasks_gas', pd.DataFrame())], ignore_index=True),
-            'schedule': pd.concat([api_data.get('schedule_pudu', pd.DataFrame()),
-                                api_data.get('schedule_gas', pd.DataFrame())], ignore_index=True),
-            'charging': pd.concat([api_data.get('charging_pudu', pd.DataFrame()),
-                                api_data.get('charging_gas', pd.DataFrame())], ignore_index=True),
-            'events': pd.concat([api_data.get('events_pudu', pd.DataFrame()),
-                                api_data.get('events_gas', pd.DataFrame())], ignore_index=True),
+            'robot_status': pd.concat([api_data.get(f'robot_status_{rt}', pd.DataFrame()) for rt in api_robot_types], ignore_index=True),
+            'ongoing_tasks': pd.concat([api_data.get(f'ongoing_tasks_{rt}', pd.DataFrame()) for rt in api_robot_types], ignore_index=True),
+            'schedule': pd.concat([api_data.get(f'schedule_{rt}', pd.DataFrame()) for rt in api_robot_types], ignore_index=True),
+            'charging': pd.concat([api_data.get(f'charging_{rt}', pd.DataFrame()) for rt in api_robot_types], ignore_index=True),
+            'events': pd.concat([api_data.get(f'events_{rt}', pd.DataFrame()) for rt in api_robot_types], ignore_index=True),
         }
 
         api_total_time = (datetime.now() - api_start_time).total_seconds()

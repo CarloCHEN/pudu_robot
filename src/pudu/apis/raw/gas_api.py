@@ -215,73 +215,113 @@ class GaussianRobotAPI:
         Returns:
             Data Structure:
             {
-                "serialNumber": str,
-                "name": str,
-                "position": {
-                    "latitude": float,
-                    "longitude": float,
-                    "angle": float
+                'serialNumber': str,  # 'GS442-6130-82R-6000'
+                'name': str,  # 'robots/GS442-6130-82R-6000'
+                'position': {
+                    'latitude': float,  # 0
+                    'longitude': float,  # 0
+                    'angle': float  # 0
                 },
-                "taskState": str,  # "OTHER", "IDLE", "WORKING", "PAUSED", etc.
-                "online": bool,
-                "speedKilometerPerHour": float,
-                "battery": {
-                    "charging": bool,
-                    "powerPercentage": int,
-                    "fullCapacity": int,
-                    "soc": int,
-                    "soh": str,
-                    "cycleTimes": int
-
+                'taskState': str,  # 'IDLE'
+                'online': bool,  # True
+                'speedKilometerPerHour': float,  # 0
+                'battery': {
+                    'charging': bool,  # True
+                    'powerPercentage': int,  # 100
+                    'totalVoltage': int,  # 0
+                    'current': int,  # 0
+                    'fullCapacity': int,  # 0
+                    'soc': int,  # 0
+                    'soh': str,  # ''
+                    'cycleTimes': int,  # 0
+                    'protectorStatus': list,  # []
+                    'temperature1': int,  # 0
+                    'temperature2': int,  # 0
+                    'temperature3': int,  # 0
+                    'temperature4': int,  # 0
+                    'temperature5': int,  # 0
+                    'temperature6': int,  # 0
+                    'temperature7': int,  # 0
+                    'cellVoltage1': int,  # 0
+                    'cellVoltage2': int,  # 0
+                    'cellVoltage3': int,  # 0
+                    'cellVoltage4': int,  # 0
+                    'cellVoltage5': int,  # 0
+                    'cellVoltage6': int,  # 0
+                    'cellVoltage7': int  # 0
                 },
-                "emergencyStop": {
-                    "enabled": bool
+                'emergencyStop': {
+                    'enabled': bool  # False
                 },
-                "localizationInfo": {
-                    "localizationState": str,  # "NORMAL", "LOST", etc.
-                    "map": {
-                        "id": str,
-                        "name": str
+                'localizationInfo': {
+                    'localizationState': str,  # 'NORMAL'
+                    'map': {
+                        'id': str,  # 'e7d2c2c0-7338-4e02-8c53-64e80ce4b529'
+                        'name': str  # '2floor'
                     },
-                    "mapPosition": {
-                        "x": float,
-                        "y": float,
-                        "angle": float
+                    'mapPosition': {
+                        'x': int,  # 200
+                        'y': int,  # 1783
+                        'angle': float  # 88.452
                     }
                 },
-                "executableTasks": list[{
-                    "id": str,
-                    "name": str,
-                    "map": {
-                        "id": str,
-                        "name": str
+                'navStatus': str,  # 'NAVI_RUNNING'
+                'currentElevatorStatus': str,  # 'ELEVATOR_CONTROLLER_IDLE'
+                'executableTasks': [
+                    {
+                        'id': str,  # '51427df0-1e39-44e5-a840-9c5addf8da55'
+                        'name': str,  # 'execute_task_1'
+                        'map': {
+                            'id': str,  # 'e7d2c2c0-7338-4e02-8c53-64e80ce4b529'
+                            'name': str  # '2floor'
+                        }
                     }
-                }],
-                "cleanModes": list[{
-                    "name": str
-                }],
-                "device": {
-                    "vacuum": {
-                        "enabled": bool
+                ],
+                'executingTask': {
+                    'id': str,  # ''
+                    'name': str,  # ''
+                    'progress': int,  # 0
+                    'timeRemaining': int,  # 0
+                    'cleaningMileage': int  # 0
+                },
+                'cleanModes': [
+                    {
+                        'name': str  # '__静音推尘'
+                    }
+                ],
+                'device': {
+                    'vacuum': {
+                        'enabled': bool  # False
                     },
-                    "cleanWaterTank": {
-                        "level": int  # percentage
+                    'rollingBrush': {
+                        'enabled': bool,  # False
+                        'ifPutDown': bool,  # False
+                        'lifeSpan': int,  # 20
+                        'usedLife': float  # 164.487603
                     },
-                    "recoveryWaterTank": {
-                        "level": int  # percentage
+                    'leftSideBrush': {
+                        'ifPutDown': bool  # False
                     },
-                    "rollingBrush": {
-                        "enabled": bool,
-                        "ifPutDown": bool
+                    'rightSideBrush': {
+                        'ifPutDown': bool  # False
                     },
-                    "spray": {
-                        "isRunning": bool,
-                        "waterLevel": int  # percentage
+                    'ordinaryDustPush': {
+                        'lifeSpan': int,  # 20
+                        'usedLife': int  # 0
+                    },
+                    'rollingDustPush': {
+                        'lifeSpan': int,  # 20
+                        'usedLife': int  # 0
                     }
                 },
-                "workModes": list[Any],  # empty array in example, structure unknown
-                "navStatus": str,  # "NAVI_IDLE", "NAVIGATING", etc.
-                "currentElevatorStatus": str  # "ELEVATOR_CONTROLLER_IDLE", etc.
+                'workModes': [
+                    {
+                        'id': str,  # 'f38e0b3516274e2ba35d54d68323a880'
+                        'name': str,  # '__静音推尘'
+                        'strength': str,  # 'custom'
+                        'type': str  # '1'
+                    }
+                ]
             }
         """
         endpoint = f"/v1alpha1/robots/{serial_number}/status"

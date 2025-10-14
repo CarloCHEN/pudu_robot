@@ -62,9 +62,17 @@ class DatabaseDataService:
                     query = f"""
                         SELECT robot_sn, robot_type, robot_name, location_id,
                                water_level, sewage_level, battery_level, status
-                        FROM {table.table_name}
-                        WHERE robot_sn IN ('{robot_list}')
-                    """
+                        FROM (
+                            SELECT DISTINCT
+                                mrm.robot_sn, mrm.robot_type, mrm.robot_name, mrm.location_id,
+                                t.water_level, t.sewage_level, t.battery_level, t.status,
+                                ROW_NUMBER() OVER (PARTITION BY mrm.robot_sn ORDER BY t.timestamp_utc DESC) as rn
+                            FROM {table.table_name} t
+                            INNER JOIN mnt_robots_management mrm ON t.robot_sn = mrm.robot_sn
+                            WHERE mrm.robot_sn IN ('{robot_list}')
+                        ) ranked
+                        WHERE rn = 1
+                        """
 
                     result_df = table.execute_query(query)
                     if not result_df.empty:

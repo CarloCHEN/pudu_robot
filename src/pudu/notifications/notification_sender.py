@@ -322,11 +322,11 @@ def generate_individual_notification_content(data_type: str, change_info: Dict, 
         if data_type == 'robot_status':
             # Primary keys: ["robot_sn"]
             if change_type == 'new_record':
-                status = new_values.get('status', 'Unknown')
+                status = new_values.get('status', 'Unknown').lower()
                 battery = new_values.get('battery_level', 'N/A')
                 robot_name = new_values.get('robot_name', f'SN: {robot_sn}')
-                title = f"Robot Online"
-                content = f"Robot {robot_name} is now added to the system and it is {status} with {battery}% battery."
+                title = f"Robot {status}"
+                content = f"Robot {robot_name} is now {status} with {battery}% battery."
             else:  # update
                 return generate_status_change_content(robot_sn, changed_fields, old_values, new_values)
 
