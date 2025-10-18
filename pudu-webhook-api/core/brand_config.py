@@ -269,7 +269,11 @@ class FieldMapper:
         mapping = conversion_rules.get('mapping')
         if mapping and isinstance(mapping, dict):
             # Support both string and integer keys
-            mapped_value = mapping.get(str(value)) or mapping.get(value)
+            mapped_value = (
+                mapping.get(value)
+                or mapping.get(value.lower())
+                or mapping.get(value.upper())
+            )
             if mapped_value is not None:
                 value = mapped_value
 

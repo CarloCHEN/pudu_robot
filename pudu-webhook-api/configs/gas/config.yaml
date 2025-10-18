@@ -31,7 +31,6 @@ field_mappings:
       messageTimestamp: task_time
     conversions:
       event_level:
-        type: lowercase
         mapping:
           # Map Gas incident levels to unified levels
           "H7": "fatal"

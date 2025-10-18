@@ -119,7 +119,7 @@ class DatabaseConfig:
         supported_robots, _ = self.filter_robots_for_transform_support(all_robots)
 
         return supported_robots
-    
+
     def get_notification_databases(self) -> List[str]:
         """Get list of databases that need notifications"""
         notification_needed = self.config.get('notification_needed', [])
@@ -137,4 +137,5 @@ class DatabaseConfig:
 
     def close(self):
         """Close resolver connection"""
-        self.resolver.close()
+        if self.resolver.main_db:
+            self.resolver.close()

@@ -50,7 +50,8 @@ def should_skip_notification(callback_type: str, change_info: Dict) -> bool:
 
     # Skip status updates that are just position changes
     if callback_type == 'status_event':
-        if change_type == 'new_record':
+        status = new_values.get('status', 'unknown').lower()
+        if 'offline' in status:
             return False
         # Skip minor updates
         return True
@@ -160,24 +161,8 @@ def generate_notification_content(callback_type: str, change_info: Dict) -> Tupl
 
     try:
         if callback_type == 'status_event':
-            if 'status' in changed_fields or change_type == 'update':
-                status = new_values.get('status', 'unknown')
-                if 'online' in status.lower():
-                    return "Robot Online", f"Robot {robot_name} is now online."
-                elif 'offline' in status.lower():
-                    return "Robot Offline", f"Robot {robot_name} has gone offline."
-                else:
-                    return "Robot Status Update", f"Robot {robot_name} status changed to {status}."
-            elif change_type == 'new_record':
-                status = new_values.get('status', 'unknown')
-                if 'online' in status.lower():
-                    return "New Robot", f"Robot {robot_name} is now added to the system and it is online."
-                elif 'offline' in status.lower():
-                    return "New Robot", f"Robot {robot_name} is now added to the system and it is offline."
-                else:
-                    return "New Robot", f"Robot {robot_name} is now added to the system."
-            else:
-                return "Robot Update", f"Robot {robot_name} information updated."
+            status = new_values.get('status', 'unknown').lower()
+            return "Robot Status Update", f"Robot {robot_name} is now {status}."
 
         elif callback_type == 'error_event':
             error_type = new_values.get('event_type', 'Unknown Error')
@@ -210,7 +195,7 @@ def generate_notification_content(callback_type: str, change_info: Dict) -> Tupl
                 else:
                     return "Battery Update", f"Robot {robot_name} battery at {power_level}%"
             else:
-                return "Power Update", f"Robot {robot_name} power status updated."
+                return "Battery Update", f"Robot {robot_name} power status updated."
 
         elif callback_type == 'report_event':
             # NEW: Handle task report notifications
