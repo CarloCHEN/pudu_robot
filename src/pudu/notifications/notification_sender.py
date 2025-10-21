@@ -80,15 +80,15 @@ def should_skip_notification(data_type: str, change_info: Dict) -> bool:
             status = new_values.get('status', 'Unknown').lower()
             battery_level = new_values.get('battery_level')
 
-            # NOTIFY if robot goes offline
-            if status == 'offline':
-                return False  # Don't skip - send notification
+            # # NOTIFY if robot goes offline
+            # if status == 'offline':
+            #     return False  # Don't skip - send notification
 
-            # NOTIFY if battery is critically low (< 20%)
+            # NOTIFY if battery is critically low (< 5%)
             if battery_level is not None:
                 try:
                     battery_level = float(battery_level)
-                    if battery_level < 20:
+                    if battery_level < 5:
                         return False  # Don't skip - send notification
                 except (ValueError, TypeError):
                     pass

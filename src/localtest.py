@@ -2,14 +2,8 @@
 import sys
 sys.dont_write_bytecode = True
 
-from pudu.apis.foxx_api import *
-from pudu.apis.pudu_api import *
-from pudu.app.main import App
-from pudu.rds import RDSTable
-from pudu.rds.utils import *
-from pudu.notifications.change_detector import *
 from pudu.reporting import *
-
+import os
 
 config_paths = [
         'database_config.yaml',
@@ -41,8 +35,8 @@ if __name__ == "__main__":
         },
         'outputFormat': 'pdf',
         'reportName': 'UF Report',
-        'customStartDate': '2025-09-01',
-        'customEndDate': '2025-09-22',
+        'customStartDate': '2025-08-01',
+        'customEndDate': '2025-09-01',
         'detailLevel': 'in-depth',
         'delivery': 'in-app',
         'schedule': 'immediate'
@@ -51,12 +45,12 @@ if __name__ == "__main__":
     config = ReportConfig(test_form_data, 'test-customer-123')
 
     # Generate comprehensive report
-    generator = ReportGenerator(config_path=config_path, output_dir="reports")
+    generator = ReportGenerator(config, config_path=config_path, output_dir="reports")
 
     try:
         # Test HTML generation
         print(f"=== Testing {test_form_data['outputFormat']} Generation ===")
-        html_result = generator.generate_and_save_report(config, save_file=True)
+        html_result = generator.generate_and_save_report(save_file=True)
         if html_result['success']:
             print(f"{test_form_data['outputFormat']} report saved to: {html_result.get('saved_file_path')}")
         else:

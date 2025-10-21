@@ -1,4 +1,4 @@
-from typing import Dict, Any
+from typing import Dict, Any, List
 from datetime import datetime
 import json
 import logging
@@ -502,6 +502,121 @@ class RobotPerformanceTemplate:
                             min-width: 85px;
                         }}
                     }}
+
+                    .health-score-container {{
+                        display: grid;
+                        grid-template-columns: 1fr 1fr;
+                        gap: 30px;
+                        margin: 20px 0;
+                        align-items: center;
+                    }}
+
+                    .health-pentagon {{
+                        position: relative;
+                        width: 300px;
+                        height: 300px;
+                        margin: 0 auto;
+                    }}
+
+                    .health-details {{
+                        display: flex;
+                        flex-direction: column;
+                        gap: 15px;
+                    }}
+
+                    .health-component {{
+                        display: flex;
+                        align-items: center;
+                        gap: 10px;
+                    }}
+
+                    .health-component-label {{
+                        min-width: 140px;
+                        font-weight: 600;
+                        color: #495057;
+                    }}
+
+                    .health-component-bar {{
+                        flex: 1;
+                        height: 20px;
+                        background: #e9ecef;
+                        border-radius: 10px;
+                        overflow: hidden;
+                        position: relative;
+                    }}
+
+                    .health-component-fill {{
+                        height: 100%;
+                        transition: width 0.3s ease;
+                        border-radius: 10px;
+                    }}
+
+                    .health-excellent {{ background: linear-gradient(90deg, #28a745, #20c997); }}
+                    .health-good {{ background: linear-gradient(90deg, #17a2b8, #3498db); }}
+                    .health-fair {{ background: linear-gradient(90deg, #ffc107, #f39c12); }}
+                    .health-poor {{ background: linear-gradient(90deg, #dc3545, #c0392b); }}
+
+                    .health-component-value {{
+                        min-width: 50px;
+                        text-align: right;
+                        font-weight: bold;
+                        color: #2c3e50;
+                    }}
+
+                    .utilization-breakdown {{
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                        gap: 15px;
+                        margin: 20px 0;
+                    }}
+
+                    .utilization-card {{
+                        background: #f8f9fa;
+                        border: 1px solid #e9ecef;
+                        border-radius: 8px;
+                        padding: 15px;
+                        text-align: center;
+                    }}
+
+                    .utilization-label {{
+                        font-size: 0.9em;
+                        color: #6c757d;
+                        margin-bottom: 8px;
+                    }}
+
+                    .utilization-value {{
+                        font-size: 1.5em;
+                        font-weight: bold;
+                        color: #2c3e50;
+                    }}
+
+                    .utilization-bar-container {{
+                        margin-top: 10px;
+                        height: 8px;
+                        background: #e9ecef;
+                        border-radius: 4px;
+                        overflow: hidden;
+                    }}
+
+                    .utilization-bar-fill {{
+                        height: 100%;
+                        transition: width 0.3s ease;
+                    }}
+
+                    .working-time {{ background: #28a745; }}
+                    .idle-time {{ background: #ffc107; }}
+                    .charging-time {{ background: #17a2b8; }}
+                    .downtime {{ background: #dc3545; }}
+
+                    @media (max-width: 768px) {{
+                        .health-score-container {{
+                            grid-template-columns: 1fr;
+                        }}
+
+                        .health-pentagon {{
+                            width: 250px;
+                            height: 250px;
+                        }}
                     }}
                 </style>
             </head>
@@ -511,14 +626,15 @@ class RobotPerformanceTemplate:
                     <p class="subtitle">{content.get('period', 'Latest Period')}</p>
                     {''.join(sections)}
                 </div>
-                {self._generate_javascript(chart_js_data)}
+                {self._generate_javascript(chart_js_data, content.get('robot_health_scores', {}), content.get('individual_robots', []))}
             </body>
             </html>"""
 
             return html_content
 
         except Exception as e:
-            logger.error(f"Error generating report: {e}")
+            import traceback
+            logger.error(f"Error generating report: {traceback.format_exc()}")
             return f"""<!DOCTYPE html>
             <html><head><title>Error</title></head>
             <body><h1>Report Generation Error</h1><p>{str(e)}</p></body></html>
@@ -560,37 +676,89 @@ class RobotPerformanceTemplate:
         # Get days with tasks ratio format
         days_ratio = fleet_data.get('days_ratio', fleet_data.get('days_with_tasks', 0))
 
-        # Generate robot performance table with NEW COLUMNS
+        # Generate robot performance table with NEW COLUMNS including health score
         robot_rows = ""
         if individual_robots:
+            robot_health_scores = content.get('robot_health_scores', {})
+
             for robot in individual_robots[:10]:
-                robot_rows += f"""
-                <tr>
-                    <td>{robot.get('robot_id', 'Unknown')}</td>
-                    <td>{robot.get('location', 'Unknown Location')}</td>
-                    <td>{robot.get('total_tasks', 0)}</td>
-                    <td>{robot.get('tasks_completed', 0)}</td>
-                    <td>{robot.get('total_area_cleaned', 0):,.0f} sq ft</td>
-                    <td>{robot.get('average_coverage', 0):.1f}%</td>
-                    <td>{robot.get('days_with_tasks', 0)}</td>
-                    <td>{robot.get('running_hours', 0)} hrs</td>
-                </tr>"""
+                # Extract all values first
+                robot_id = robot.get('robot_id', 'Unknown')
+                location = robot.get('location', 'Unknown Location')
+                total_tasks = robot.get('total_tasks', 0)
+                tasks_completed = robot.get('tasks_completed', 0)
+                total_area = robot.get('total_area_cleaned', 0)
+                avg_coverage = robot.get('average_coverage', 0)
+                days_tasks = robot.get('days_with_tasks', 0)
+                running_hrs = robot.get('running_hours', 0)
+                utilization = robot.get('utilization_score', robot.get('working_ratio', 0))
+
+                # Get health data if available
+                has_health_data = robot_health_scores and robot_id in robot_health_scores and len(robot_health_scores.get(robot_id, {})) > 0
+                if has_health_data:
+                    health_data = robot_health_scores.get(robot_id, {})
+                    health_score = health_data.get('overall_health_score', 0)
+                    health_rating = health_data.get('overall_health_rating', 'N/A')
+
+                    # Color code health rating
+                    if health_rating == 'Excellent':
+                        health_color = '#28a745'
+                    elif health_rating == 'Good':
+                        health_color = '#17a2b8'
+                    elif health_rating == 'Fair':
+                        health_color = '#ffc107'
+                    else:
+                        health_color = '#dc3545'
+                else:
+                    health_score = 0
+                    health_rating = 'N/A'
+                    health_color = '#6c757d'
+
+                # Build the row - using regular string concatenation to avoid f-string issues
+                robot_rows += "<tr>"
+                robot_rows += f"<td>{robot_id}</td>"
+                robot_rows += f"<td>{location}</td>"
+                robot_rows += f"<td>{total_tasks}</td>"
+                robot_rows += f"<td>{tasks_completed}</td>"
+                robot_rows += f"<td>{total_area:,.0f} sq ft</td>"
+                robot_rows += f"<td>{avg_coverage:.1f}%</td>"
+                robot_rows += f"<td>{days_tasks}</td>"
+                robot_rows += f"<td>{running_hrs:.1f} hrs</td>"
+                robot_rows += "<td>"
+                robot_rows += f'<span class="tooltip">{utilization:.1f}%'
+                robot_rows += '<span class="tooltiptext">Utilization = Working hours / Uptime hours × 100. Indicates how efficiently the robot\'s available time is being used for productive tasks.</span>'
+                robot_rows += '</span>'
+                robot_rows += "</td>"
+                robot_rows += "<td>"
+                if has_health_data and health_score > 0:
+                    robot_rows += f'<span class="tooltip" style="color: {health_color}; font-weight: bold;">'
+                    robot_rows += f'{health_score:.1f} ({health_rating})'
+                    robot_rows += '<span class="tooltiptext">Overall health score (0-100) based on availability (40%), task success (20%), efficiency (20%), mode performance (10%), and battery health (10%).</span>'
+                    robot_rows += '</span>'
+                else:
+                    robot_rows += '<span style="color: #6c757d;">N/A</span>'
+                robot_rows += "</td>"
+                robot_rows += "</tr>"
 
         if not robot_rows:
-            robot_rows = '<tr><td colspan="8">No robot data available</td></tr>'
+            robot_rows = '<tr><td colspan="10">No robot data available</td></tr>'
 
         roi_breakdown_rows = ""
         robot_roi_breakdown = cost_data.get('robot_roi_breakdown', {})
         if robot_roi_breakdown:
-            for robot_sn, roi_data in list(robot_roi_breakdown.items())[:10]:  # Top 10 robots
-                roi_breakdown_rows += f'''
-                <tr>
-                    <td>{robot_sn}</td>
-                    <td>{roi_data.get('months_elapsed', 0)}</td>
-                    <td>${roi_data.get('investment', 0):,.2f}</td>
-                    <td>${roi_data.get('savings', 0):,.2f}</td>
-                    <td>{roi_data.get('roi_percent', 0):.1f}%</td>
-                </tr>'''
+            for robot_sn, roi_data in robot_roi_breakdown.items():
+                months = roi_data.get('months_elapsed', 0)
+                investment = roi_data.get('investment', 0)
+                savings = roi_data.get('savings', 0)
+                roi_pct = roi_data.get('roi_percent', 0)
+
+                roi_breakdown_rows += "<tr>"
+                roi_breakdown_rows += f"<td>{robot_sn}</td>"
+                roi_breakdown_rows += f"<td>{months}</td>"
+                roi_breakdown_rows += f"<td>${investment:,.2f}</td>"
+                roi_breakdown_rows += f"<td>${savings:,.2f}</td>"
+                roi_breakdown_rows += f"<td>{roi_pct:.1f}%</td>"
+                roi_breakdown_rows += "</tr>"
 
         if not roi_breakdown_rows:
             roi_breakdown_rows = '<tr><td colspan="5">No ROI breakdown data available</td></tr>'
@@ -691,6 +859,8 @@ class RobotPerformanceTemplate:
                         <th>Average Coverage</th>
                         <th>Days with Tasks</th>
                         <th>Running Hours</th>
+                        <th>Utilization</th>
+                        <th>Health Score</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -719,8 +889,7 @@ class RobotPerformanceTemplate:
                 </tbody>
             </table>
             """
-
-        return base_html + robot_performance_html + roi_breakdown_html + "</section>"
+        return base_html + robot_performance_html + roi_breakdown_html  + "</section>"
 
     def _generate_task_section(self, content: Dict[str, Any], detail_level: str = 'in-depth') -> str:
         """Generate task performance section with location-based efficiency charts and task patterns"""
@@ -1245,6 +1414,179 @@ class RobotPerformanceTemplate:
             </div>
             """
 
+        # Add robot health scores and utilization charts for in-depth reports
+        robot_health_utilization = ""
+        if detail_level == 'in-depth':
+            robot_health_scores = content.get('robot_health_scores', {})
+            individual_robots = content.get('individual_robots', [])
+
+            # Only show health scores section if we have actual health score data for each robot
+            if robot_health_scores and isinstance(robot_health_scores, dict) and len(robot_health_scores) > 0 and len([robot for robot in robot_health_scores.values() if len(robot) > 0]) > 0:
+                robot_health_utilization = """
+                <h3>🤖 Robot Health & Utilization Analysis</h3>
+                <p>Comprehensive health and utilization metrics for each robot, including uptime/downtime analysis and component-level health scores.</p>
+                <div style="margin: 20px 0;">
+                """
+
+                # Combine health scores with individual robot data
+                for robot in individual_robots[:5]:  # Top 5 robots
+                    robot_id = robot.get('robot_id', 'Unknown')
+                    robot_name = robot.get('robot_name', robot_id)
+                    health_data = robot_health_scores.get(robot_id, {})
+
+                    if not health_data or len(health_data) == 0:
+                        continue
+
+                    component_scores = health_data.get('component_scores', {})
+                    overall_score = health_data.get('overall_health_score', 0)
+                    overall_rating = health_data.get('overall_health_rating', 'N/A')
+
+                    # Determine color
+                    if overall_rating == 'Excellent':
+                        rating_color = '#28a745'
+                    elif overall_rating == 'Good':
+                        rating_color = '#17a2b8'
+                    elif overall_rating == 'Fair':
+                        rating_color = '#ffc107'
+                    else:
+                        rating_color = '#dc3545'
+
+                    # Get utilization metrics
+                    uptime_hours = robot.get('uptime_hours', 0)
+                    uptime_hours_perc = robot.get('uptime_ratio', 0)
+                    downtime_hours = robot.get('downtime_hours', 0)
+                    downtime_hours_perc = 100 - uptime_hours_perc
+
+                    working_hours = robot.get('working_hours', 0)
+                    working_hours_perc = robot.get('working_ratio', 0)
+                    idle_hours = robot.get('idle_hours', 0)
+                    idle_hours_perc = robot.get('idle_ratio', 0)
+                    charging_hours = robot.get('charging_hours', 0)
+                    charging_hours_perc = robot.get('charging_ratio', 0)
+
+                    utilization_score = robot.get('utilization_score', 0)
+
+                    safe_robot_id = robot_id.replace('-', '_')
+
+                    # Check if all 5 components are present
+                    expected_components = ['Availability', 'Task Success', 'Efficiency', 'Mode Performance', 'Battery Health']
+                    has_all_components = all(comp in component_scores and component_scores[comp] is not None for comp in expected_components)
+
+                    robot_health_utilization += f"""
+                    <div style="background: #f8f9fa; border-radius: 8px; padding: 25px; margin: 20px 0; border-left: 4px solid {rating_color};">
+                        <h4 style="margin-top: 0; color: #2c3e50;">
+                            Robot {robot_id} ({robot_name}) -
+                            <span style="color: {rating_color};">Health Score: {overall_score:.1f} ({overall_rating})</span> |
+                            <span style="color: #3498db;">Utilization: {utilization_score:.1f}%</span>
+                        </h4>
+
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 20px;">
+                            <!-- Left side: Health radar and components -->
+                            <div>
+                                <h5 style="color: #2c3e50; margin-bottom: 15px;">Health Score Breakdown</h5>
+                    """
+
+                    if has_all_components:
+                        # Show pentagon radar chart when all 5 components are present - LARGER SIZE
+                        robot_health_utilization += f"""
+                                <div class="health-score-container" style="display: flex; justify-content: center; align-items: center; min-height: 400px;">
+                                    <div class="health-pentagon" style="width: 100%; max-width: 450px; height: 450px;">
+                                        <canvas id="healthRadar_{safe_robot_id}" width="450" height="450"></canvas>
+                                    </div>
+                                </div>
+                        """
+                    else:
+                        # Show text-based breakdown when components are missing
+                        robot_health_utilization += """
+                                <div class="health-details" style="margin-top: 0;">
+                        """
+
+                        # Add component bars
+                        if component_scores and isinstance(component_scores, dict):
+                            component_items = list(component_scores.items())
+
+                            tooltip_texts = {
+                                'Availability': 'Percentage of time robot is online and available (weight: 40%)',
+                                'Task Success': 'Percentage of successfully completed tasks (weight: 20%)',
+                                'Efficiency': 'Task efficiency score based on performance metrics (weight: 20%)',
+                                'Mode Performance': 'Performance in different cleaning modes (sweeping/scrubbing) (weight: 10%)',
+                                'Battery Health': 'Battery State of Health (SOH) percentage (weight: 10%)'
+                            }
+
+                            for component_name, component_score in component_items:
+                                if component_score is None:
+                                    continue
+
+                                if component_score >= 90:
+                                    comp_class = 'health-excellent'
+                                elif component_score >= 80:
+                                    comp_class = 'health-good'
+                                elif component_score >= 60:
+                                    comp_class = 'health-fair'
+                                else:
+                                    comp_class = 'health-poor'
+
+                                tooltip_text = tooltip_texts.get(component_name, '')
+
+                                robot_health_utilization += f"""
+                                    <div class="health-component">
+                                        <span class="health-component-label tooltip">{component_name}
+                                            <span class="tooltiptext">{tooltip_text}</span>
+                                        </span>
+                                        <div class="health-component-bar">
+                                            <div class="health-component-fill {comp_class}" style="width: {component_score}%"></div>
+                                        </div>
+                                        <span class="health-component-value">{component_score:.1f}</span>
+                                    </div>
+                                """
+
+                        robot_health_utilization += """
+                                </div>
+                        """
+
+                    robot_health_utilization += f"""
+                            </div>
+
+                            <!-- Right side: Utilization charts -->
+                            <div>
+                                <h5 style="color: #2c3e50; margin-bottom: 15px;">Time Distribution Analysis</h5>
+
+                                <!-- Uptime vs Downtime Chart -->
+                                <div style="background: white; border-radius: 8px; padding: 15px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); height: 150px;">
+                                    <h6 style="margin: 0 0 10px 0; color: #495057; font-size: 0.9em;">Uptime vs Downtime</h6>
+                                    <div style="height: 100px; position: relative;">
+                                        <canvas id="uptimeChart_{safe_robot_id}"></canvas>
+                                    </div>
+                                </div>
+
+                                <!-- Working vs Idle vs Charging Chart -->
+                                <div style="background: white; border-radius: 8px; padding: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); height: 170px;">
+                                    <h6 style="margin: 0 0 10px 0; color: #495057; font-size: 0.9em;">Working vs Idle vs Charging</h6>
+                                    <div style="height: 120px; position: relative;">
+                                        <canvas id="workingIdleChart_{safe_robot_id}"></canvas>
+                                    </div>
+                                </div>
+
+                                <!-- Time metrics summary -->
+                                <div style="margin-top: 15px; padding: 15px; background: #e9ecef; border-radius: 5px;">
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.9em;">
+                                        <div><strong>Uptime:</strong> {uptime_hours:.1f} hrs ({uptime_hours_perc:.1f}%)</div>
+                                        <div><strong>Downtime:</strong> {downtime_hours:.1f} hrs ({downtime_hours_perc:.1f}%)</div>
+                                        <div><strong>Working:</strong> {working_hours:.1f} hrs ({working_hours_perc:.1f}%)</div>
+                                        <div><strong>Idle:</strong> {idle_hours:.1f} hrs ({idle_hours_perc:.1f}%)</div>
+                                        <div><strong>Charging:</strong> {charging_hours:.1f} hrs ({charging_hours_perc:.1f}%)</div>
+                                        <div><strong>Utilization:</strong> {utilization_score:.1f}%</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    """
+
+                robot_health_utilization += """
+                </div>
+                """
+
         return f"""
         <section id="resource-utilization">
             <h2>⚡ Resource Utilization & Efficiency</h2>
@@ -1254,6 +1596,8 @@ class RobotPerformanceTemplate:
             {chart_html}
 
             {facility_breakdown}
+
+            {robot_health_utilization}
         </section>"""
 
     def _generate_financial_section(self, content: Dict[str, Any], detail_level: str = 'in-depth') -> str:
@@ -1672,7 +2016,12 @@ class RobotPerformanceTemplate:
         else:
             return obj
 
-    def _generate_javascript(self, chart_data: Dict[str, Any]) -> str:
+    def _generate_javascript(self, chart_data: Dict[str, Any], robot_health_scores: Dict[str, Any] = None, individual_robots: List[Dict[str, Any]] = None) -> str:
+        """Generate JavaScript for charts using real data with daily charts, weekly toggle, and location-specific charts"""
+        if robot_health_scores is None:
+            robot_health_scores = {}
+        if individual_robots is None:
+            individual_robots = []
         """Generate JavaScript for charts using real data with daily charts, weekly toggle, and location-specific charts"""
         # Get trend data for daily charts
         trend_data = chart_data.get('trend_data', {})
@@ -2125,6 +2474,77 @@ class RobotPerformanceTemplate:
             }});
         }}
 
+        // Create health score radar charts
+        function createHealthRadarCharts() {{
+            const healthScores = {json.dumps(robot_health_scores)};
+
+            Object.keys(healthScores).forEach(robotSn => {{
+                const health = healthScores[robotSn];
+                const safeId = robotSn.replace(/-/g, '_');
+                const ctx = document.getElementById(`healthRadar_${{safeId}}`);
+
+                if (ctx && health.component_scores) {{
+                    new Chart(ctx, {{
+                        type: 'radar',
+                        data: {{
+                            labels: Object.keys(health.component_scores),
+                            datasets: [{{
+                                label: 'Health Score',
+                                data: Object.values(health.component_scores),
+                                backgroundColor: 'rgba(52, 152, 219, 0.2)',
+                                borderColor: 'rgba(52, 152, 219, 1)',
+                                pointBackgroundColor: 'rgba(52, 152, 219, 1)',
+                                pointBorderColor: '#fff',
+                                pointHoverBackgroundColor: '#fff',
+                                pointHoverBorderColor: 'rgba(52, 152, 219, 1)',
+                                borderWidth: 2,
+                                pointRadius: 4,
+                                pointHoverRadius: 6
+                            }}]
+                        }},
+                        options: {{
+                            responsive: true,
+                            maintainAspectRatio: true,
+                            scales: {{
+                                r: {{
+                                    beginAtZero: true,
+                                    max: 100,
+                                    ticks: {{
+                                        stepSize: 20,
+                                        callback: function(value) {{
+                                            return value;
+                                        }}
+                                    }},
+                                    pointLabels: {{
+                                        font: {{
+                                            size: 11
+                                        }}
+                                    }}
+                                }}
+                            }},
+                            plugins: {{
+                                legend: {{
+                                    display: false
+                                }},
+                                tooltip: {{
+                                    backgroundColor: 'rgba(0,0,0,0.8)',
+                                    titleColor: 'white',
+                                    bodyColor: 'white',
+                                    callbacks: {{
+                                        label: function(context) {{
+                                            return context.label + ': ' + context.parsed.r.toFixed(1);
+                                        }}
+                                    }}
+                                }}
+                            }}
+                        }}
+                    }});
+                }} else {{
+                    console.warn(`Health radar canvas not found or no data: healthRadar_${{safeId}}`);
+                }}
+            }});
+        }}
+
         // Static charts with interactivity
         const taskStatusCtx = document.getElementById('taskStatusChart');
         if (taskStatusCtx) {{
@@ -2200,6 +2620,96 @@ class RobotPerformanceTemplate:
             }});
         }}
 
+        // Create uptime vs downtime charts
+        function createUptimeCharts() {{
+             const individualRobots = {json.dumps(individual_robots)};
+
+            individualRobots.forEach(robot => {{
+                const robotId = robot.robot_id;
+                const safeId = robotId.replace(/-/g, '_');
+
+                // Uptime vs Downtime chart
+                const uptimeCtx = document.getElementById(`uptimeChart_${{safeId}}`);
+                if (uptimeCtx) {{
+                    new Chart(uptimeCtx, {{
+                        type: 'bar',
+                        data: {{
+                            labels: ['Uptime', 'Downtime'],
+                            datasets: [{{
+                                label: 'Hours',
+                                data: [robot.uptime_hours || 0, robot.downtime_hours || 0],
+                                backgroundColor: ['#28a745', '#dc3545'],
+                                borderWidth: 1
+                            }}]
+                        }},
+                        options: {{
+                            indexAxis: 'y',
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {{
+                                legend: {{ display: false }},
+                                tooltip: {{
+                                    callbacks: {{
+                                        label: function(context) {{
+                                            return context.label + ': ' + context.parsed.x.toFixed(1) + ' hrs';
+                                        }}
+                                    }}
+                                }}
+                            }},
+                            scales: {{
+                                x: {{
+                                    beginAtZero: true,
+                                    title: {{ display: true, text: 'Hours' }}
+                                }}
+                            }}
+                        }}
+                    }});
+                }}
+
+                // Working vs Idle vs Charging chart
+                const workingIdleCtx = document.getElementById(`workingIdleChart_${{safeId}}`);
+                if (workingIdleCtx) {{
+                    new Chart(workingIdleCtx, {{
+                        type: 'bar',
+                        data: {{
+                            labels: ['Working', 'Idle', 'Charging'],
+                            datasets: [{{
+                                label: 'Hours',
+                                data: [
+                                    robot.working_hours || 0,
+                                    robot.idle_hours || 0,
+                                    robot.charging_hours || 0
+                                ],
+                                backgroundColor: ['#28a745', '#ffc107', '#17a2b8'],
+                                borderWidth: 1
+                            }}]
+                        }},
+                        options: {{
+                            indexAxis: 'y',
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {{
+                                legend: {{ display: false }},
+                                tooltip: {{
+                                    callbacks: {{
+                                        label: function(context) {{
+                                            return context.label + ': ' + context.parsed.x.toFixed(1) + ' hrs';
+                                        }}
+                                    }}
+                                }}
+                            }},
+                            scales: {{
+                                x: {{
+                                    beginAtZero: true,
+                                    title: {{ display: true, text: 'Hours' }}
+                                }}
+                            }}
+                        }}
+                    }});
+                }}
+            }});
+        }}
+
         // Initialize all charts when page loads
         document.addEventListener('DOMContentLoaded', function() {{
             console.log('Initializing all charts...');
@@ -2208,10 +2718,16 @@ class RobotPerformanceTemplate:
             // Global trend charts
             createChargingChart(originalData.dates, originalData.charging_sessions, originalData.charging_durations);
             createResourceChart(originalData.dates, originalData.energy_data, originalData.water_data);
-            createFinancialChart(originalData.dates, originalData.hours_saved, originalData.savings_data, originalData.roi_data); // UPDATED
+            createFinancialChart(originalData.dates, originalData.hours_saved, originalData.savings_data, originalData.roi_data);
 
             // Location-specific charts
             createLocationTaskEfficiencyCharts();
+
+            // Health score radar charts
+            createHealthRadarCharts();
+
+            // Uptime and utilization charts
+            createUptimeCharts();
 
             console.log('All charts initialized');
         }});

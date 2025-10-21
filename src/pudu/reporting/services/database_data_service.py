@@ -18,11 +18,11 @@ reuse_connection = False
 class DatabaseDataService:
     """Enhanced service for querying and processing historical data from databases"""
 
-    def __init__(self, config: DynamicDatabaseConfig):
+    def __init__(self, config: DynamicDatabaseConfig, start_date: str, end_date: str):
         """Initialize with database configuration and calculators"""
         self.config = config
         self.connection_config = "credentials.yaml"
-        self.metrics_calculator = PerformanceMetricsCalculator()
+        self.metrics_calculator = PerformanceMetricsCalculator(start_date, end_date)
 
         # Cache for robot-facility mappings - OPTIMIZATION
         self._robot_facility_cache = None
@@ -61,11 +61,11 @@ class DatabaseDataService:
                     robot_list = "', '".join(db_robots)
                     query = f"""
                         SELECT robot_sn, robot_type, robot_name, location_id,
-                               water_level, sewage_level, battery_level, status
+                               water_level, sewage_level, battery_level, battery_soh, status
                         FROM (
                             SELECT DISTINCT
                                 mrm.robot_sn, mrm.robot_type, mrm.robot_name, mrm.location_id,
-                                t.water_level, t.sewage_level, t.battery_level, t.status,
+                                t.water_level, t.sewage_level, t.battery_level, t.status, t.battery_soh,
                                 ROW_NUMBER() OVER (PARTITION BY mrm.robot_sn ORDER BY t.timestamp_utc DESC) as rn
                             FROM {table.table_name} t
                             INNER JOIN mnt_robots_management mrm ON t.robot_sn = mrm.robot_sn
@@ -217,7 +217,7 @@ class DatabaseDataService:
                 logger.info(f"Total charging records: {len(combined_df)}")
                 return combined_df
 
-            logger.warning("No charging data found")
+            logger.warning(f"No charging data found for {start_date} to {end_date}")
             return pd.DataFrame()
 
         except Exception as e:
@@ -283,6 +283,123 @@ class DatabaseDataService:
 
         except Exception as e:
             logger.error(f"Error in fetch_events_data: {e}")
+            return pd.DataFrame()
+
+    def fetch_operation_history_data(self, target_robots: List[str],
+                                 start_date: str, end_date: str) -> pd.DataFrame:
+        """
+        Fetch robot operation history data for uptime/downtime analysis
+        OPTIMIZED: Selective column fetching
+        """
+        logger.info(f"Fetching operation history for {len(target_robots)} robots")
+
+        try:
+            table_configs = self.config.get_table_configs_for_robots('robot_status', target_robots)
+
+            all_data = []
+            for table_config in table_configs:
+                try:
+                    db_robots = table_config.get('robot_sns', [])
+                    if not db_robots:
+                        continue
+
+                    table = RDSTable(
+                        connection_config=self.connection_config,
+                        database_name=table_config['database'],
+                        table_name=table_config['table_name'],
+                        fields=table_config.get('fields'),
+                        primary_keys=table_config['primary_keys'],
+                        reuse_connection=reuse_connection
+                    )
+
+                    robot_list = "', '".join(db_robots)
+                    query = f"""
+                        SELECT robot_sn, status, timestamp_utc, battery_soh
+                        FROM {table.table_name}
+                        WHERE robot_sn IN ('{robot_list}')
+                        AND timestamp_utc >= '{start_date}'
+                        AND timestamp_utc <= '{end_date}'
+                        ORDER BY robot_sn, timestamp_utc
+                    """
+                    result_df = table.execute_query(query)
+                    if not result_df.empty:
+                        all_data.append(result_df)
+                        logger.info(f"Retrieved {len(result_df)} operation history records")
+
+                    table.close()
+
+                except Exception as e:
+                    logger.error(f"Error fetching operation history: {e}")
+                    continue
+
+            if all_data:
+                combined_df = pd.concat(all_data, ignore_index=True)
+                logger.info(f"Total operation history records: {len(combined_df)}")
+                return combined_df
+
+            logger.warning("No operation history data found")
+            return pd.DataFrame()
+
+        except Exception as e:
+            logger.error(f"Error in fetch_operation_history_data: {e}")
+            return pd.DataFrame()
+
+    def fetch_all_time_operation_history(self, target_robots: List[str],
+                                     end_date: str) -> pd.DataFrame:
+        """
+        Fetch all-time operation history for health score calculation
+        OPTIMIZED: Only fetch essential columns
+        """
+        logger.info(f"Fetching all-time operation history for health score ({len(target_robots)} robots)")
+
+        try:
+            table_configs = self.config.get_table_configs_for_robots('robot_status', target_robots)
+
+            all_data = []
+            for table_config in table_configs:
+                try:
+                    db_robots = table_config.get('robot_sns', [])
+                    if not db_robots:
+                        continue
+
+                    table = RDSTable(
+                        connection_config=self.connection_config,
+                        database_name=table_config['database'],
+                        table_name=table_config['table_name'],
+                        fields=table_config.get('fields'),
+                        primary_keys=table_config['primary_keys'],
+                        reuse_connection=reuse_connection
+                    )
+
+                    robot_list = "', '".join(db_robots)
+                    query = f"""
+                        SELECT robot_sn, status, timestamp_utc, battery_soh
+                        FROM {table.table_name}
+                        WHERE robot_sn IN ('{robot_list}')
+                        AND timestamp_utc <= '{end_date}'
+                        ORDER BY robot_sn, timestamp_utc
+                    """
+                    result_df = table.execute_query(query)
+                    if not result_df.empty:
+                        all_data.append(result_df)
+                        logger.info(f"Retrieved {len(result_df)} all-time operation records")
+
+                    table.close()
+
+                except Exception as e:
+                    logger.error(f"Error fetching all-time operation history: {e}")
+                    continue
+
+            if all_data:
+                combined_df = pd.concat(all_data, ignore_index=True)
+                logger.info(f"Total all-time operation records: {len(combined_df)}")
+                return combined_df
+
+            logger.warning("No all-time operation history data found")
+            return pd.DataFrame()
+
+        except Exception as e:
+            logger.error(f"Error in fetch_all_time_operation_history: {e}")
             return pd.DataFrame()
 
     def fetch_location_data(self, target_robots: List[str]) -> pd.DataFrame:
@@ -404,7 +521,7 @@ class DatabaseDataService:
                     # CRITICAL OPTIMIZATION: Only fetch 4 columns instead of all
                     robot_list = "', '".join(db_robots)
                     query = f"""
-                        SELECT robot_sn, actual_area, consumption, water_consumption, start_time
+                        SELECT robot_sn, actual_area, consumption, water_consumption, start_time, status, efficiency
                         FROM {table.table_name}
                         WHERE robot_sn IN ('{robot_list}')
                         AND start_time <= '{end_date}'
@@ -474,6 +591,11 @@ class DatabaseDataService:
             else:
                 report_data['events'] = pd.DataFrame()
 
+            # Always fetch operation history for uptime/downtime analysis
+            report_data['operation_history'] = self.fetch_operation_history_data(
+                target_robots, start_date, end_date
+            )
+
             logger.info(f"Data fetching completed: {list(report_data.keys())}")
             return report_data
 
@@ -485,8 +607,8 @@ class DatabaseDataService:
     # COMPREHENSIVE METRICS CALCULATION - OPTIMIZED
     # ============================================================================
 
-    def calculate_comprehensive_metrics(self, report_data: Dict[str, pd.DataFrame],
-                                       start_date: str, end_date: str) -> Dict[str, Any]:
+    def calculate_comprehensive_metrics(self, data: Dict[str, pd.DataFrame],
+                                        start_date: str, end_date: str) -> Dict[str, Any]:
         """
         Calculate comprehensive metrics using calculator
         OPTIMIZED: Eliminated duplicate calculations, reuse results
@@ -495,11 +617,12 @@ class DatabaseDataService:
 
         try:
             # Extract DataFrames once - OPTIMIZATION
-            robot_data = report_data.get('robot_status', pd.DataFrame())
-            tasks_data = report_data.get('cleaning_tasks', pd.DataFrame())
-            charging_data = report_data.get('charging_tasks', pd.DataFrame())
-            events_data = report_data.get('events', pd.DataFrame())
-            robot_locations = report_data.get('robot_locations', pd.DataFrame())
+            robot_data = data.get('robot_status', pd.DataFrame())
+            tasks_data = data.get('cleaning_tasks', pd.DataFrame())
+            charging_data = data.get('charging_tasks', pd.DataFrame())
+            events_data = data.get('events', pd.DataFrame())
+            robot_locations = data.get('robot_locations', pd.DataFrame())
+            operation_history_data = data.get('operation_history', pd.DataFrame())
 
             metrics = {}
 
@@ -555,9 +678,10 @@ class DatabaseDataService:
                 metrics['facility_resource_metrics'] = {}
                 metrics['facility_breakdown_metrics'] = {}
 
-            # Individual robot metrics - OPTIMIZED
+            # Individual robot metrics
+            period_length = self.metrics_calculator._calculate_period_length(start_date, end_date)
             metrics['individual_robots'] = self.metrics_calculator.calculate_individual_robot_performance(
-                tasks_data, charging_data, robot_locations if not robot_locations.empty else robot_data
+                tasks_data, charging_data, robot_locations if not robot_locations.empty else robot_data, operation_history_data, period_length
             )
 
             # Map coverage metrics
@@ -786,6 +910,244 @@ class DatabaseDataService:
                 'facility_resource_metrics': {},
                 'facility_breakdown_metrics': {}
             }
+
+    def calculate_robot_health_scores(self, operation_history: pd.DataFrame,
+                                    tasks_data: pd.DataFrame,
+                                    target_robots: List[str]) -> Dict[str, Dict[str, Any]]:
+        """
+        Calculate health scores for all robots based on the reporting period data
+
+        Args:
+            operation_history: Operation history data for the reporting period
+            tasks_data: Task data for the reporting period
+            target_robots: List of robot serial numbers
+
+        Returns:
+            Dictionary mapping robot_sn to health score metrics
+
+        Note: Health scores reflect performance during the specific reporting period,
+                not all-time historical performance.
+        """
+        logger.info(f"Calculating health scores for {len(target_robots)} robots")
+
+        try:
+            health_scores = {}
+
+            for robot_sn in target_robots:
+                # Filter data for this robot
+                robot_history = operation_history[
+                    operation_history['robot_sn'] == robot_sn
+                ] if not operation_history.empty else pd.DataFrame()
+
+                robot_tasks = tasks_data[
+                    tasks_data['robot_sn'] == robot_sn
+                ] if not tasks_data.empty else pd.DataFrame()
+
+                # If both are empty, skip this robot
+                if robot_history.empty and robot_tasks.empty:
+                    logger.warning(f"No data available for robot {robot_sn}, skipping health score")
+                    health_scores[robot_sn] = {}
+                    continue
+
+                # === AVAILABILITY SCORE ===
+                # Always calculated - defaults to 100% if no operation history
+                if not robot_history.empty and 'status' in robot_history.columns:
+                    online_count = len(robot_history[robot_history['status'].str.lower() == 'online'])
+                    total_count = len(robot_history)
+                    availability_score = (online_count / total_count * 100) if total_count > 0 else 100.0
+                    logger.info(f"Robot {robot_sn} availability from history: {availability_score:.1f}%")
+                else:
+                    # Assume fully online if no operation history
+                    availability_score = 100.0
+                    logger.info(f"Robot {robot_sn} no operation history, assuming 100% availability")
+
+                # === TASK SUCCESS SCORE ===
+                task_success_score = None
+                if not robot_tasks.empty and 'status' in robot_tasks.columns:
+                    status_counts = self.metrics_calculator._count_tasks_by_status(robot_tasks)
+                    total_tasks = len(robot_tasks)
+                    task_success_score = (status_counts['completed'] / total_tasks * 100) if total_tasks > 0 else 0
+                    logger.info(f"Robot {robot_sn} task success: {task_success_score:.1f}%")
+
+                # === EFFICIENCY SCORE ===
+                efficiency_score = None
+                if not robot_tasks.empty and 'efficiency' in robot_tasks.columns and not robot_tasks['efficiency'].isna().all():
+                    avg_efficiency = robot_tasks['efficiency'].fillna(0).mean()
+                    # Map efficiency to 0-100 scale (assuming 700+ is excellent)
+                    if avg_efficiency >= 700:
+                        efficiency_score = 100
+                    elif avg_efficiency >= 600:
+                        efficiency_score = 95
+                    elif avg_efficiency >= 500:
+                        efficiency_score = 85
+                    elif avg_efficiency >= 400:
+                        efficiency_score = 75
+                    elif avg_efficiency >= 300:
+                        efficiency_score = 60
+                    elif avg_efficiency >= 200:
+                        efficiency_score = 50
+                    elif avg_efficiency >= 100:
+                        efficiency_score = 30
+                    else:
+                        efficiency_score = 10
+                    logger.info(f"Robot {robot_sn} efficiency: {efficiency_score}")
+
+                # === BATTERY SOH SCORE ===
+                battery_soh_score = None
+                if not robot_history.empty and 'battery_soh' in robot_history.columns and not robot_history['battery_soh'].isna().all():
+                    battery_soh = robot_history['battery_soh'].dropna()
+                    if not battery_soh.empty:
+                        # Parse battery SOH (remove % and + signs)
+                        try:
+                            soh_values = battery_soh.astype(str).str.replace(
+                                '+', ''
+                            ).str.replace('%', '').str.strip()
+                            soh_numeric = pd.to_numeric(soh_values, errors='coerce').dropna()
+                            if not soh_numeric.empty:
+                                battery_soh_score = soh_numeric.mean()
+                                logger.info(f"Robot {robot_sn} battery SOH: {battery_soh_score:.1f}%")
+                        except Exception as e:
+                            logger.warning(f"Error parsing battery SOH for {robot_sn}: {e}")
+
+                # === MODE PERFORMANCE SCORE ===
+                mode_performance_score = None
+                if not robot_tasks.empty and 'mode' in robot_tasks.columns and 'battery_usage' in robot_tasks.columns and 'actual_area' in robot_tasks.columns and not robot_tasks['actual_area'].isna().all() and not robot_tasks['battery_usage'].isna().all():
+                    mode_performance_score = 0
+                    # Get max area by mode
+                    for mode in robot_tasks['mode'].unique():
+                        if pd.isna(mode):
+                            continue
+
+                        mode_tasks = robot_tasks[robot_tasks['mode'] == mode]
+                        mode_tasks_filtered = mode_tasks[mode_tasks['battery_usage'] > 0]
+                        max_area = (mode_tasks_filtered['actual_area'] * (100 / mode_tasks_filtered['battery_usage'])).max()
+
+                        if mode.lower() == 'sweeping':
+                            if max_area >= 2700:
+                                mode_performance_score = max(mode_performance_score, 100)
+                            elif max_area >= 2400:
+                                mode_performance_score = max(mode_performance_score, 90)
+                            elif max_area >= 2100:
+                                mode_performance_score = max(mode_performance_score, 80)
+                            elif max_area >= 1800:
+                                mode_performance_score = max(mode_performance_score, 70)
+                            elif max_area >= 1500:
+                                mode_performance_score = max(mode_performance_score, 60)
+                            elif max_area >= 1200:
+                                mode_performance_score = max(mode_performance_score, 50)
+                            elif max_area >= 900:
+                                mode_performance_score = max(mode_performance_score, 40)
+                            elif max_area >= 600:
+                                mode_performance_score = max(mode_performance_score, 30)
+                            elif max_area >= 300:
+                                mode_performance_score = max(mode_performance_score, 20)
+                            elif max_area > 0:
+                                mode_performance_score = max(mode_performance_score, 10)
+
+                        elif mode.lower() == 'scrubbing':
+                            if max_area >= 1800:
+                                mode_performance_score = max(mode_performance_score, 100)
+                            elif max_area >= 1600:
+                                mode_performance_score = max(mode_performance_score, 90)
+                            elif max_area >= 1400:
+                                mode_performance_score = max(mode_performance_score, 80)
+                            elif max_area >= 1200:
+                                mode_performance_score = max(mode_performance_score, 70)
+                            elif max_area >= 1000:
+                                mode_performance_score = max(mode_performance_score, 60)
+                            elif max_area >= 800:
+                                mode_performance_score = max(mode_performance_score, 50)
+                            elif max_area >= 600:
+                                mode_performance_score = max(mode_performance_score, 40)
+                            elif max_area >= 400:
+                                mode_performance_score = max(mode_performance_score, 30)
+                            elif max_area >= 200:
+                                mode_performance_score = max(mode_performance_score, 20)
+                            elif max_area > 0:
+                                mode_performance_score = max(mode_performance_score, 10)
+
+                    logger.info(f"Robot {robot_sn} mode performance: {mode_performance_score}")
+
+                # === CALCULATE OVERALL HEALTH SCORE ===
+                # Default weights
+                base_weights = {
+                    'availability': 0.4,
+                    'task_success': 0.2,
+                    'efficiency': 0.2,
+                    'mode_performance': 0.1,
+                    'battery_soh': 0.1
+                }
+
+                # Build component scores dict and calculate adjusted weights
+                component_scores = {}
+                active_components = {}
+                total_weight = 0
+
+                # Availability is always available (guaranteed non-None)
+                component_scores['Availability'] = availability_score
+                active_components['availability'] = availability_score
+                total_weight += base_weights['availability']
+
+                # Add optional components if available
+                if task_success_score is not None:
+                    component_scores['Task Success'] = task_success_score
+                    active_components['task_success'] = task_success_score
+                    total_weight += base_weights['task_success']
+
+                if efficiency_score is not None:
+                    component_scores['Efficiency'] = efficiency_score
+                    active_components['efficiency'] = efficiency_score
+                    total_weight += base_weights['efficiency']
+
+                if mode_performance_score is not None:
+                    component_scores['Mode Performance'] = mode_performance_score
+                    active_components['mode_performance'] = mode_performance_score
+                    total_weight += base_weights['mode_performance']
+
+                if battery_soh_score is not None:
+                    component_scores['Battery Health'] = battery_soh_score
+                    active_components['battery_soh'] = battery_soh_score
+                    total_weight += base_weights['battery_soh']
+
+                # Calculate weighted average (normalized to 0-100)
+                overall_health_score = 0
+                for component_key, component_value in active_components.items():
+                    weight = base_weights[component_key]
+                    normalized_weight = weight / total_weight  # Normalize so weights sum to 1
+                    overall_health_score += component_value * normalized_weight
+
+                # Determine rating
+                if overall_health_score >= 90:
+                    rating = 'Excellent'
+                elif overall_health_score >= 80:
+                    rating = 'Good'
+                elif overall_health_score >= 60:
+                    rating = 'Fair'
+                else:
+                    rating = 'Poor'
+
+                # Build final health score dict
+                health_scores[robot_sn] = {
+                    'robot_sn': robot_sn,
+                    'overall_health_score': round(overall_health_score, 1),
+                    'overall_health_rating': rating,
+                    'availability_score': round(availability_score, 1),
+                    'task_success_score': round(task_success_score, 1) if task_success_score is not None else None,
+                    'efficiency_score': round(efficiency_score, 1) if efficiency_score is not None else None,
+                    'mode_performance_score': round(mode_performance_score, 1) if mode_performance_score is not None else None,
+                    'battery_soh_score': round(battery_soh_score, 1) if battery_soh_score is not None else None,
+                    'component_scores': {k: round(v, 1) for k, v in component_scores.items()}
+                }
+
+                logger.info(f"Robot {robot_sn} overall health: {overall_health_score:.1f} ({rating}), "
+                           f"components: {list(component_scores.keys())}")
+
+            logger.info(f"Calculated health scores for {len(health_scores)} robots")
+            return health_scores
+
+        except Exception as e:
+            logger.error(f"Error calculating robot health scores: {e}", exc_info=True)
+            return {}
 
     def calculate_map_coverage_metrics(self, tasks_data: pd.DataFrame) -> List[Dict[str, Any]]:
         """
@@ -1017,6 +1379,23 @@ class DatabaseDataService:
             else:
                 logger.warning("No target robots for ROI calculation")
                 self._set_default_roi_metrics(current_metrics)
+
+            # === ROBOT HEALTH SCORES ===
+            if target_robots:
+                logger.info("Calculating robot health scores")
+
+                # Calculate health scores
+                operation_history_data = current_data.get('operation_history', pd.DataFrame())
+                robot_health_scores = self.calculate_robot_health_scores(
+                    operation_history_data,
+                    tasks_data,
+                    target_robots
+                )
+
+                current_metrics['robot_health_scores'] = robot_health_scores
+                logger.info(f"Health scores calculated for {len(robot_health_scores)} robots")
+            else:
+                current_metrics['robot_health_scores'] = {}
 
             # === ADDITIONAL CURRENT PERIOD METRICS ===
 

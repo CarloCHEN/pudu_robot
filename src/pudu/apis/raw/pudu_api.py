@@ -934,6 +934,7 @@ def get_cleaning_report_list(start_time, end_time, shop_id=None, sn=None, offset
     start_time = int(pd.to_datetime(start_time).timestamp())
     end_time = int(pd.to_datetime(end_time).timestamp())
     url = f"https://csu-open-platform.pudutech.com/pudu-entry/data-board/v1/log/clean_task/query_list?start_time={start_time}&end_time={end_time}"
+    print(url)
     if shop_id:
         url += f"&shop_id={shop_id}"
     if sn:

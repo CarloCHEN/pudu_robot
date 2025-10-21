@@ -393,6 +393,182 @@ class RobotPDFTemplate:
                     page-break-inside: avoid;
                 }
             }
+        /* Health Score Styles - PDF optimized */
+            .health-score-container {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 15px;
+                margin: 15px 0;
+                align-items: center;
+                page-break-inside: avoid;
+            }
+
+            .health-pentagon {
+                position: relative;
+                width: 100%;
+                margin: 0 auto;
+                text-align: center;
+            }
+
+            .health-details {
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .health-component {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                margin: 5px 0;
+            }
+
+            .health-component-label {
+                min-width: 100px;
+                font-weight: 600;
+                color: #495057;
+                font-size: 10px;
+            }
+
+            .health-component-bar {
+                flex: 1;
+                height: 12px;
+                background: #e9ecef;
+                border-radius: 6px;
+                overflow: hidden;
+                position: relative;
+            }
+
+            .health-component-fill {
+                height: 100%;
+                transition: none; /* No transitions in PDF */
+                border-radius: 6px;
+            }
+
+            .health-excellent { background: linear-gradient(90deg, #28a745, #20c997); }
+            .health-good { background: linear-gradient(90deg, #17a2b8, #3498db); }
+            .health-fair { background: linear-gradient(90deg, #ffc107, #f39c12); }
+            .health-poor { background: linear-gradient(90deg, #dc3545, #c0392b); }
+
+            .health-component-value {
+                min-width: 40px;
+                text-align: right;
+                font-weight: bold;
+                color: #2c3e50;
+                font-size: 10px;
+            }
+
+            /* Utilization breakdown styles */
+            .utilization-breakdown {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+                gap: 10px;
+                margin: 15px 0;
+                page-break-inside: avoid;
+            }
+
+            .utilization-card {
+                background: #f8f9fa;
+                border: 1px solid #e9ecef;
+                border-radius: 5px;
+                padding: 10px;
+                text-align: center;
+                page-break-inside: avoid;
+            }
+
+            .utilization-label {
+                font-size: 9px;
+                color: #6c757d;
+                margin-bottom: 5px;
+            }
+
+            .utilization-value {
+                font-size: 14px;
+                font-weight: bold;
+                color: #2c3e50;
+            }
+
+            .utilization-bar-container {
+                margin-top: 8px;
+                height: 6px;
+                background: #e9ecef;
+                border-radius: 3px;
+                overflow: hidden;
+            }
+
+            .utilization-bar-fill {
+                height: 100%;
+            }
+
+            .working-time { background: #28a745; }
+            .idle-time { background: #ffc107; }
+            .charging-time { background: #17a2b8; }
+            .downtime { background: #dc3545; }
+
+            /* Metric definition boxes */
+            .metric-definition-box {
+                background: #e3f2fd;
+                padding: 12px;
+                border-radius: 5px;
+                margin: 15px 0;
+                border-left: 4px solid #2196f3;
+                page-break-inside: avoid;
+                font-size: 10px;
+            }
+
+            .metric-definition-box h4 {
+                color: #1976d2;
+                margin-top: 0;
+                font-size: 12px;
+                margin-bottom: 8px;
+            }
+
+            .metric-definition-box p {
+                margin: 3px 0;
+                font-size: 10px;
+            }
+
+            /* Time distribution chart containers */
+            .time-chart-container {
+                margin: 8px 0;
+                page-break-inside: avoid;
+            }
+
+            .time-chart-title {
+                margin: 5px 0;
+                font-size: 10px;
+                color: #495057;
+                font-weight: 600;
+            }
+
+            .time-metrics-summary {
+                background: #e9ecef;
+                padding: 8px;
+                border-radius: 3px;
+                font-size: 9px;
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 5px;
+            }
+
+            .time-metrics-summary div {
+                white-space: nowrap;
+            }
+
+            @media print {
+                .health-score-container {
+                    page-break-inside: avoid;
+                }
+                .utilization-breakdown {
+                    page-break-inside: avoid;
+                }
+                .metric-definition-box {
+                    page-break-inside: avoid;
+                }
+                .time-chart-container {
+                    page-break-inside: avoid;
+                }
+            }
         </style>"""
 
     def _generate_executive_summary(self, content: Dict[str, Any], detail_level: str = 'in-depth') -> str:
@@ -431,24 +607,54 @@ class RobotPDFTemplate:
         # Get days with tasks ratio format
         days_ratio = fleet_data.get('days_ratio', fleet_data.get('days_with_tasks', 0))
 
-        # Generate robot performance table with NEW COLUMNS
+        # Generate robot performance table with NEW COLUMNS including health score and utilization
         robot_rows = ""
+        robot_health_scores = content.get('robot_health_scores', {})
+
         if individual_robots:
             for robot in individual_robots[:10]:
+                robot_id = robot.get('robot_id', 'Unknown')
+
+                # Get health data if available
+                has_health_data = robot_health_scores and robot_id in robot_health_scores
+                if has_health_data:
+                    health_data = robot_health_scores.get(robot_id, {})
+                    health_score = health_data.get('overall_health_score', 0)
+                    health_rating = health_data.get('overall_health_rating', 'N/A')
+
+                    # Color code health rating
+                    if health_rating == 'Excellent':
+                        health_color = '#28a745'
+                    elif health_rating == 'Good':
+                        health_color = '#17a2b8'
+                    elif health_rating == 'Fair':
+                        health_color = '#ffc107'
+                    else:
+                        health_color = '#dc3545'
+
+                    health_display = f'<span style="color: {health_color}; font-weight: bold;">{health_score:.1f} ({health_rating})</span>'
+                else:
+                    health_display = '<span style="color: #6c757d;">N/A</span>'
+
+                # Get utilization
+                utilization = robot.get('utilization_score', robot.get('working_ratio', 0))
+
                 robot_rows += f"""
                 <tr>
-                    <td>{robot.get('robot_id', 'Unknown')}</td>
+                    <td>{robot_id}</td>
                     <td>{robot.get('location', 'Unknown Location')}</td>
                     <td>{robot.get('total_tasks', 0)}</td>
                     <td>{robot.get('tasks_completed', 0)}</td>
                     <td>{robot.get('total_area_cleaned', 0):,.0f} sq ft</td>
                     <td>{robot.get('average_coverage', 0):.1f}%</td>
                     <td>{robot.get('days_with_tasks', 0)}</td>
-                    <td>{robot.get('running_hours', 0)} hrs</td>
+                    <td>{robot.get('running_hours', 0):.1f} hrs</td>
+                    <td>{utilization:.1f}%</td>
+                    <td>{health_display}</td>
                 </tr>"""
 
         if not robot_rows:
-            robot_rows = '<tr><td colspan="8">No robot data available</td></tr>'
+            robot_rows = '<tr><td colspan="10">No robot data available</td></tr>'
 
         roi_breakdown_rows = ""
         robot_roi_breakdown = cost_data.get('robot_roi_breakdown', {})
@@ -539,6 +745,14 @@ class RobotPDFTemplate:
         if detail_level in ['detailed', 'in-depth']:
             robot_performance_html = f"""
             <h3>🤖 Individual Robot Performance</h3>
+
+            <!-- Metric Definitions for Table -->
+            <div style="background: #e3f2fd; padding: 10px; border-radius: 5px; margin-bottom: 10px; border-left: 4px solid #2196f3; font-size: 9px; page-break-inside: avoid;">
+                <strong style="color: #1976d2;">Key Metrics:</strong>
+                <span style="margin-left: 10px;"><strong>Utilization:</strong> Working hours / Uptime hours × 100. Measures productive time efficiency.</span>
+                <span style="margin-left: 10px;"><strong>Health Score:</strong> Overall robot health (0-100) based on availability (40%), task success (20%), efficiency (20%), mode performance (10%), and battery health (10%).</span>
+            </div>
+
             <table>
                 <thead>
                     <tr>
@@ -550,6 +764,8 @@ class RobotPDFTemplate:
                         <th>Average Coverage</th>
                         <th>Days with Tasks</th>
                         <th>Running Hours</th>
+                        <th>Utilization</th>
+                        <th>Health Score</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -994,7 +1210,7 @@ class RobotPDFTemplate:
         </section>"""
 
     def _generate_resource_section(self, content: Dict[str, Any], detail_level: str = 'in-depth') -> str:
-        """Generate resource utilization section (PDF version)"""
+        """Generate resource utilization section (PDF version) with health scores and utilization"""
         resource_data = content.get('resource_utilization', {})
         comparisons = content.get('period_comparisons', {})
         facility_comparisons = comparisons.get('facility_comparisons', {})
@@ -1085,6 +1301,11 @@ class RobotPDFTemplate:
         if detail_level != 'overview':
             chart_html = self._get_chart_image_html('resource_chart', 'Weekly Resource Utilization', max_height=200)
 
+        # Add robot health scores and utilization for in-depth reports
+        robot_health_utilization = ""
+        if detail_level == 'in-depth':
+            robot_health_utilization = self._generate_robot_health_utilization_pdf(content)
+
         return f"""
         <section id="resource-utilization" class="section">
             <h2>⚡ Resource Utilization & Efficiency</h2>
@@ -1094,7 +1315,308 @@ class RobotPDFTemplate:
             {chart_html}
 
             {facility_breakdown}
+
+            {robot_health_utilization}
         </section>"""
+
+    def _generate_robot_health_utilization_pdf(self, content: Dict[str, Any]) -> str:
+        """Generate robot health and utilization section for PDF (static version with metric definitions)"""
+        robot_health_scores = content.get('robot_health_scores', {})
+        individual_robots = content.get('individual_robots', [])
+
+        # Only show if we have actual health score data
+        if not robot_health_scores or not isinstance(robot_health_scores, dict) or len(robot_health_scores) == 0:
+            return ""
+
+        # Filter out empty health scores
+        valid_health_scores = {k: v for k, v in robot_health_scores.items() if v and len(v) > 0}
+        if not valid_health_scores:
+            return ""
+
+        html = """
+        <h3>🤖 Robot Health & Utilization Analysis</h3>
+        <p>Comprehensive health and utilization metrics for each robot, including uptime/downtime analysis and component-level health scores.</p>
+
+        <!-- Metric Definitions Box -->
+        <div style="background: #e3f2fd; padding: 12px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #2196f3; page-break-inside: avoid;">
+            <h4 style="color: #1976d2; margin-top: 0; font-size: 12px;">📘 Metric Definitions</h4>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 10px;">
+                <div>
+                    <p style="margin: 3px 0;"><strong>Utilization:</strong> Working hours / Uptime hours × 100. Indicates how efficiently the robot's available time is used for productive tasks.</p>
+                    <p style="margin: 3px 0;"><strong>Availability:</strong> Percentage of time robot is online and available (weight: 40%)</p>
+                    <p style="margin: 3px 0;"><strong>Task Success:</strong> Percentage of successfully completed tasks (weight: 20%)</p>
+                </div>
+                <div>
+                    <p style="margin: 3px 0;"><strong>Efficiency:</strong> Task efficiency score based on performance metrics (weight: 20%)</p>
+                    <p style="margin: 3px 0;"><strong>Mode Performance:</strong> Performance in different cleaning modes like sweeping/scrubbing (weight: 10%)</p>
+                    <p style="margin: 3px 0;"><strong>Battery Health:</strong> Battery State of Health (SOH) percentage (weight: 10%)</p>
+                </div>
+            </div>
+        </div>
+        """
+
+        # Process each robot (up to 5 for PDF)
+        for robot in individual_robots[:5]:
+            robot_id = robot.get('robot_id', 'Unknown')
+            robot_name = robot.get('robot_name', robot_id)
+            health_data = valid_health_scores.get(robot_id, {})
+
+            if not health_data:
+                continue
+
+            component_scores = health_data.get('component_scores', {})
+            overall_score = health_data.get('overall_health_score', 0)
+            overall_rating = health_data.get('overall_health_rating', 'N/A')
+
+            # Determine color
+            if overall_rating == 'Excellent':
+                rating_color = '#28a745'
+            elif overall_rating == 'Good':
+                rating_color = '#17a2b8'
+            elif overall_rating == 'Fair':
+                rating_color = '#ffc107'
+            else:
+                rating_color = '#dc3545'
+
+            # Get utilization metrics
+            uptime_hours = robot.get('uptime_hours', 0)
+            uptime_hours_perc = robot.get('uptime_ratio', 0)
+            downtime_hours = robot.get('downtime_hours', 0)
+            downtime_hours_perc = 100 - uptime_hours_perc
+
+            working_hours = robot.get('working_hours', 0)
+            working_hours_perc = robot.get('working_ratio', 0)
+            idle_hours = robot.get('idle_hours', 0)
+            idle_hours_perc = robot.get('idle_ratio', 0)
+            charging_hours = robot.get('charging_hours', 0)
+            charging_hours_perc = robot.get('charging_ratio', 0)
+
+            utilization_score = robot.get('utilization_score', 0)
+
+            # Check if all 5 components are present
+            expected_components = ['Availability', 'Task Success', 'Efficiency', 'Mode Performance', 'Battery Health']
+            has_all_components = all(comp in component_scores and component_scores[comp] is not None for comp in expected_components)
+
+            html += f"""
+            <div style="background: #f8f9fa; border-radius: 5px; padding: 15px; margin: 15px 0; border-left: 4px solid {rating_color}; page-break-inside: avoid;">
+                <h4 style="margin-top: 0; color: #2c3e50; font-size: 13px;">
+                    Robot {robot_id} ({robot_name}) -
+                    <span style="color: {rating_color};">Health: {overall_score:.1f} ({overall_rating})</span> |
+                    <span style="color: #3498db;">Utilization: {utilization_score:.1f}%</span>
+                </h4>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 10px;">
+                    <!-- Left: Health Score Breakdown -->
+                    <div>
+                        <h5 style="color: #2c3e50; margin-bottom: 8px; font-size: 11px;">Health Score Breakdown</h5>
+            """
+
+            if has_all_components:
+                # Show pentagon chart - generate it as base64 image
+                safe_robot_id = robot_id.replace('-', '_')
+
+                # Create radar chart data for this robot
+                radar_labels = list(component_scores.keys())
+                radar_values = list(component_scores.values())
+
+                # Generate the radar chart image inline
+                radar_chart_html = self._generate_health_radar_chart_inline(
+                    robot_id, radar_labels, radar_values
+                )
+
+                html += f"""
+                        <div style="text-align: center; margin: 10px 0;">
+                            {radar_chart_html}
+                        </div>
+                """
+            else:
+                # Show text-based component breakdown
+                html += """
+                        <div style="font-size: 10px;">
+                """
+
+                for component_name, component_score in component_scores.items():
+                    if component_score is None:
+                        continue
+
+                    # Determine color
+                    if component_score >= 90:
+                        bar_color = '#28a745'
+                    elif component_score >= 80:
+                        bar_color = '#17a2b8'
+                    elif component_score >= 60:
+                        bar_color = '#ffc107'
+                    else:
+                        bar_color = '#dc3545'
+
+                    html += f"""
+                            <div style="margin: 8px 0;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
+                                    <span style="font-weight: 600;">{component_name}</span>
+                                    <span style="font-weight: bold;">{component_score:.1f}</span>
+                                </div>
+                                <div style="width: 100%; height: 10px; background: #e9ecef; border-radius: 5px; overflow: hidden;">
+                                    <div style="width: {component_score}%; height: 100%; background: {bar_color};"></div>
+                                </div>
+                            </div>
+                    """
+
+                html += """
+                        </div>
+                """
+
+            html += f"""
+                    </div>
+
+                    <!-- Right: Time Distribution -->
+                    <div>
+                        <h5 style="color: #2c3e50; margin-bottom: 8px; font-size: 11px;">Time Distribution</h5>
+
+                        <!-- Uptime vs Downtime Chart -->
+                        <div style="margin-bottom: 10px;">
+                            <h6 style="margin: 5px 0; font-size: 10px; color: #495057;">Uptime vs Downtime</h6>
+                            {self._generate_bar_chart_inline(
+                                ['Uptime', 'Downtime'],
+                                [uptime_hours, downtime_hours],
+                                ['#28a745', '#dc3545'],
+                                width=4, height=1.5
+                            )}
+                        </div>
+
+                        <!-- Working vs Idle vs Charging Chart -->
+                        <div style="margin-bottom: 10px;">
+                            <h6 style="margin: 5px 0; font-size: 10px; color: #495057;">Working vs Idle vs Charging</h6>
+                            {self._generate_bar_chart_inline(
+                                ['Working', 'Idle', 'Charging'],
+                                [working_hours, idle_hours, charging_hours],
+                                ['#28a745', '#ffc107', '#17a2b8'],
+                                width=4, height=1.8
+                            )}
+                        </div>
+
+                        <!-- Time Metrics Summary -->
+                        <div style="background: #e9ecef; padding: 8px; border-radius: 3px; font-size: 9px;">
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
+                                <div><strong>Uptime:</strong> {uptime_hours:.1f}h ({uptime_hours_perc:.1f}%)</div>
+                                <div><strong>Downtime:</strong> {downtime_hours:.1f}h ({downtime_hours_perc:.1f}%)</div>
+                                <div><strong>Working:</strong> {working_hours:.1f}h ({working_hours_perc:.1f}%)</div>
+                                <div><strong>Idle:</strong> {idle_hours:.1f}h ({idle_hours_perc:.1f}%)</div>
+                                <div><strong>Charging:</strong> {charging_hours:.1f}h ({charging_hours_perc:.1f}%)</div>
+                                <div><strong>Utilization:</strong> {utilization_score:.1f}%</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            """
+
+        return html
+
+    def _generate_health_radar_chart_inline(self, robot_id: str, labels: list, values: list) -> str:
+        """Generate a health radar chart as base64 inline image for PDF"""
+        try:
+            import matplotlib.pyplot as plt
+            import numpy as np
+            from io import BytesIO
+            import base64
+
+            # Create figure
+            fig, ax = plt.subplots(figsize=(4, 4), subplot_kw=dict(projection='polar'))
+
+            # Number of variables
+            num_vars = len(labels)
+
+            # Compute angle for each axis
+            angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
+
+            # Close the plot
+            values_plot = values + [values[0]]
+            angles_plot = angles + [angles[0]]
+
+            # Plot
+            ax.plot(angles_plot, values_plot, 'o-', linewidth=2, color='#3498db')
+            ax.fill(angles_plot, values_plot, alpha=0.25, color='#3498db')
+
+            # Fix axis to go in the right order and start at 12 o'clock
+            ax.set_theta_offset(np.pi / 2)
+            ax.set_theta_direction(-1)
+
+            # Set labels
+            ax.set_xticks(angles)
+            ax.set_xticklabels(labels, size=8)
+
+            # Set y-axis limits
+            ax.set_ylim(0, 100)
+            ax.set_yticks([20, 40, 60, 80, 100])
+            ax.set_yticklabels(['20', '40', '60', '80', '100'], size=7)
+
+            # Add grid
+            ax.grid(True, linestyle='--', alpha=0.7)
+
+            # Title
+            ax.set_title(f'Health Score: {np.mean(values):.1f}', size=10, pad=20)
+
+            # Convert to base64
+            buffer = BytesIO()
+            plt.savefig(buffer, format='png', dpi=100, bbox_inches='tight', facecolor='white')
+            buffer.seek(0)
+            image_base64 = base64.b64encode(buffer.read()).decode()
+            plt.close(fig)
+
+            return f'<img src="data:image/png;base64,{image_base64}" alt="{robot_id} Health Radar" style="max-width: 90%; height: auto; max-height: 250px;">'
+
+        except Exception as e:
+            logger.error(f"Error generating health radar chart for {robot_id}: {e}")
+            # Fallback to text if chart generation fails
+            return f'<p style="font-size: 10px; color: #6c757d; text-align: center;">Health radar chart unavailable</p>'
+
+    def _generate_bar_chart_inline(self, labels: list, values: list, colors: list, width: float = 4, height: float = 2) -> str:
+        """Generate a horizontal bar chart as base64 inline image for PDF"""
+        try:
+            import matplotlib.pyplot as plt
+            from io import BytesIO
+            import base64
+
+            # Create figure
+            fig, ax = plt.subplots(figsize=(width, height))
+
+            # Create horizontal bar chart
+            y_pos = range(len(labels))
+            ax.barh(y_pos, values, color=colors, alpha=0.8)
+
+            # Customize
+            ax.set_yticks(y_pos)
+            ax.set_yticklabels(labels, size=8)
+            ax.set_xlabel('Hours', size=8)
+            ax.set_xlim(0, max(values) * 1.1 if max(values) > 0 else 1)
+
+            # Add value labels
+            for i, (label, value) in enumerate(zip(labels, values)):
+                ax.text(value + max(values) * 0.02, i, f'{value:.1f}h',
+                       va='center', size=7, fontweight='bold')
+
+            # Remove top and right spines
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+
+            # Grid
+            ax.grid(axis='x', linestyle='--', alpha=0.3)
+
+            # Tight layout
+            plt.tight_layout()
+
+            # Convert to base64
+            buffer = BytesIO()
+            plt.savefig(buffer, format='png', dpi=100, bbox_inches='tight', facecolor='white')
+            buffer.seek(0)
+            image_base64 = base64.b64encode(buffer.read()).decode()
+            plt.close(fig)
+
+            return f'<img src="data:image/png;base64,{image_base64}" alt="Bar Chart" style="max-width: 100%; height: auto;">'
+
+        except Exception as e:
+            logger.error(f"Error generating bar chart: {e}")
+            return '<p style="font-size: 9px; color: #6c757d;">Chart unavailable</p>'
 
     def _generate_financial_section(self, content: Dict[str, Any], detail_level: str = 'in-depth') -> str:
         """Generate financial performance section (PDF version)"""

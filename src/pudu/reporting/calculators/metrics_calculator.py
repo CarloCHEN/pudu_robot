@@ -10,10 +10,11 @@ logger = logging.getLogger(__name__)
 class PerformanceMetricsCalculator:
     """Enhanced calculator for all report metrics with real data processing"""
 
-    def __init__(self):
+    def __init__(self, start_date: str, end_date: str):
         """Initialize the metrics calculator with caching"""
         self._duration_cache = {}
         self._date_cache = {}
+        self.period_length = self._calculate_period_length(start_date, end_date)
 
     # ============================================================================
     # HELPER METHODS - Centralized parsing and validation
@@ -132,6 +133,12 @@ class PerformanceMetricsCalculator:
             )]),
             'interrupted': len(tasks_df[status_lower.str.contains(
                 'interrupt|abort', na=False
+            )]),
+            'suspended': len(tasks_df[status_lower.str.contains(
+                'suspend', na=False
+            )]),
+            'abnormal': len(tasks_df[status_lower.str.contains(
+                'abnorm', na=False
             )])
         }
 
@@ -148,6 +155,106 @@ class PerformanceMetricsCalculator:
     # ============================================================================
     # CORE METRICS - Fleet & Robot Performance
     # ============================================================================
+
+    def calculate_uptime_downtime_metrics(
+        self,
+        operation_history: pd.DataFrame,
+        tasks_data: pd.DataFrame,
+        charging_data: pd.DataFrame,
+        robot_sn: Optional[str] = None,
+        period_length: int = 0
+    ) -> Dict[str, Any]:
+        """
+        Calculate uptime, downtime, working time, idle time metrics
+        OPTIMIZED: Vectorized calculations
+
+        Args:
+            operation_history: Robot operation history data
+            tasks_data: Task data for working hours
+            charging_data: Charging session data
+            robot_sn: Optional specific robot SN (None for all robots)
+            period_length: Period length in days
+
+        Returns:
+            Dict with uptime/downtime/working/idle metrics
+        """
+        try:
+            # Filter by robot if specified
+            if robot_sn:
+                operation_history = operation_history[operation_history['robot_sn'] == robot_sn] if not operation_history.empty else pd.DataFrame()
+                tasks_data = tasks_data[tasks_data['robot_sn'] == robot_sn] if not tasks_data.empty else pd.DataFrame()
+                charging_data = charging_data[charging_data['robot_sn'] == robot_sn] if not charging_data.empty else pd.DataFrame()
+
+            # Calculate uptime/downtime (5 min intervals converted to hours)
+            uptime_hours = 0
+            downtime_hours = 0
+            if not operation_history.empty and 'status' in operation_history.columns:
+                online_count = len(operation_history[operation_history['status'].str.lower() == 'online'])
+                offline_count = len(operation_history[operation_history['status'].str.lower() == 'offline'])
+                uptime_hours = (online_count * 5) / 60.0  # 5 min intervals
+                downtime_hours = (offline_count * 5) / 60.0
+                # make sure uptime and downtime hours add up to period_length
+                if uptime_hours + downtime_hours != period_length * 24:
+                    uptime_hours = (online_count / (online_count + offline_count)) * period_length * 24
+                    downtime_hours = period_length * 24 - uptime_hours
+            else:
+                uptime_hours = period_length * 24
+                downtime_hours = 0
+            # Calculate working hours
+            working_hours = self._sum_task_durations(tasks_data)
+
+            # Calculate charging hours
+            charging_hours = 0
+            if not charging_data.empty and 'duration' in charging_data.columns:
+                # Parse charging durations
+                durations = charging_data['duration'].apply(
+                    self._parse_duration_str_to_minutes
+                ).sum()
+                charging_hours = durations / 60.0
+
+            # Calculate idle hours: uptime - working - charging
+            idle_hours = max(uptime_hours - working_hours - charging_hours, 0)
+
+            # Calculate ratios
+            total_time = uptime_hours + downtime_hours
+            uptime_ratio = (uptime_hours / total_time * 100) if total_time > 0 else 0
+            working_ratio = (working_hours / uptime_hours * 100) if uptime_hours > 0 else 0
+            idle_ratio = (idle_hours / uptime_hours * 100) if uptime_hours > 0 else 0
+            charging_ratio = (charging_hours / uptime_hours * 100) if uptime_hours > 0 else 0
+
+            return {
+                'uptime_hours': round(uptime_hours, 1),
+                'downtime_hours': round(downtime_hours, 1),
+                'working_hours': round(working_hours, 1),
+                'charging_hours': round(charging_hours, 1),
+                'idle_hours': round(idle_hours, 1),
+                'uptime_ratio': round(uptime_ratio, 1),
+                'downtime_ratio': round(100 - uptime_ratio, 1),
+                'working_ratio': round(working_ratio, 1),
+                'idle_ratio': round(idle_ratio, 1),
+                'charging_ratio': round(charging_ratio, 1),
+                'utilization_score': round(working_ratio, 1)  # Working time as % of uptime
+            }
+
+        except Exception as e:
+            logger.error(f"Error calculating uptime/downtime metrics: {e}")
+            return self._get_default_uptime_metrics()
+
+    def _get_default_uptime_metrics(self) -> Dict[str, Any]:
+        """Return default uptime metrics when calculation fails"""
+        return {
+            'uptime_hours': 0.0,
+            'downtime_hours': 0.0,
+            'working_hours': 0.0,
+            'charging_hours': 0.0,
+            'idle_hours': 0.0,
+            'uptime_ratio': 0.0,
+            'downtime_ratio': 0.0,
+            'working_ratio': 0.0,
+            'idle_ratio': 0.0,
+            'charging_ratio': 0.0,
+            'utilization_score': 0.0
+        }
 
     def calculate_fleet_availability(self, robot_data: pd.DataFrame, tasks_data: pd.DataFrame,
                                      start_date: str, end_date: str) -> Dict[str, Any]:
@@ -951,8 +1058,10 @@ class PerformanceMetricsCalculator:
     # ============================================================================
 
     def calculate_individual_robot_performance(self, tasks_data: pd.DataFrame,
-                                              charging_data: pd.DataFrame,
-                                              robot_status: pd.DataFrame) -> List[Dict[str, Any]]:
+                                               charging_data: pd.DataFrame,
+                                               robot_status: pd.DataFrame,
+                                               operation_history: pd.DataFrame = None,
+                                               period_length: int = 0) -> List[Dict[str, Any]]:
         """
         Calculate detailed performance for individual robots
         OPTIMIZED: Single pass per robot with groupby
@@ -1013,6 +1122,16 @@ class PerformanceMetricsCalculator:
                 if not robot_tasks.empty and 'efficiency' in robot_tasks.columns:
                     avg_efficiency = robot_tasks['efficiency'].fillna(0).mean()
 
+                # Calculate uptime/downtime metrics for this robot
+                uptime_metrics = self.calculate_uptime_downtime_metrics(
+                    operation_history,
+                    robot_tasks,
+                    robot_charging,
+                    robot_sn,
+                    period_length
+                )
+
+                # Add uptime metrics to robot data
                 robot_metrics.append({
                     'robot_id': robot_sn,
                     'robot_name': robot.get('robot_name', f'Robot {robot_sn}'),
@@ -1028,7 +1147,17 @@ class PerformanceMetricsCalculator:
                     'charging_sessions': len(robot_charging),
                     'battery_level': robot.get('battery_level', 0),
                     'water_level': robot.get('water_level', 0),
-                    'sewage_level': robot.get('sewage_level', 0)
+                    'sewage_level': robot.get('sewage_level', 0),
+                    'uptime_hours': uptime_metrics['uptime_hours'],
+                    'downtime_hours': uptime_metrics['downtime_hours'],
+                    'idle_hours': uptime_metrics['idle_hours'],
+                    'working_hours': uptime_metrics['working_hours'],
+                    'charging_hours': uptime_metrics['charging_hours'],
+                    'charging_ratio': uptime_metrics['charging_ratio'],
+                    'uptime_ratio': uptime_metrics['uptime_ratio'],
+                    'working_ratio': uptime_metrics['working_ratio'],
+                    'idle_ratio': uptime_metrics['idle_ratio'],
+                    'utilization_score': uptime_metrics['utilization_score']
                 })
 
             # Sort by running hours - OPTIMIZED

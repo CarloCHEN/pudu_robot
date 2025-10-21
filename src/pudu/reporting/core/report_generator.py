@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class ReportGenerator:
     """Enhanced report generation service that creates comprehensive HTML and PDF reports"""
 
-    def __init__(self, config_path: str = "database_config.yaml", output_dir: str = "reports"):
+    def __init__(self, report_config: ReportConfig, config_path: str = "database_config.yaml", output_dir: str = "reports"):
         """Initialize report generator with database infrastructure and both HTML/PDF capability"""
         self.config_path = config_path
         self.output_dir = output_dir
@@ -24,8 +24,11 @@ class ReportGenerator:
         self.resolver = RobotDatabaseResolver(self.config.main_database_name)
         self.chart_formatter = ChartDataFormatter()
 
+        # Store report configuration
+        self.report_config = report_config
+
         # Initialize enhanced database data service
-        self.data_service = DatabaseDataService(self.config)
+        self.data_service = DatabaseDataService(self.config, self.report_config.get_date_range()[0], self.report_config.get_date_range()[1])
 
         # Initialize both HTML and PDF templates
         self.html_template = RobotPerformanceTemplate()
@@ -205,9 +208,7 @@ class ReportGenerator:
             logger.error(f"Failed to save PDF report: {e}")
             raise Exception(f"Failed to save PDF report: {e}")
 
-    def generate_and_save_report(self, report_config: ReportConfig,
-                               save_file: bool = True,
-                               custom_filename: Optional[str] = None) -> Dict[str, Any]:
+    def generate_and_save_report(self, save_file: bool = True, custom_filename: Optional[str] = None) -> Dict[str, Any]:
         """
         Generate report and optionally save to file in specified format
 
@@ -220,7 +221,7 @@ class ReportGenerator:
         Returns:
             Dict containing generated report data, metadata, and file path if saved
         """
-        output_format = report_config.output_format.lower()
+        output_format = self.report_config.output_format.lower()
         # Validate output format
         if output_format.lower() not in ["html", "pdf"]:
             raise ValueError("output_format must be 'html' or 'pdf'")
@@ -230,7 +231,7 @@ class ReportGenerator:
             raise Exception("PDF generation not available. Install playwright: pip install playwright")
 
         # Generate the report data (same for both formats)
-        result = self.generate_report(report_config)
+        result = self.generate_report()
 
         if not result['success']:
             return result
@@ -244,13 +245,13 @@ class ReportGenerator:
                     file_path = self.save_report_html(
                         report_html,
                         custom_filename,
-                        report_config.database_name
+                        self.report_config.database_name
                     )
                 else:  # PDF
                     file_path = self.save_report_pdf(
                         report_html,
                         custom_filename,
-                        report_config.database_name
+                        self.report_config.database_name
                     )
 
                 result['saved_file_path'] = file_path
@@ -270,15 +271,13 @@ class ReportGenerator:
         result['metadata']['output_format'] = output_format.upper()
         return result
 
-    def generate_both_formats(self, report_config: ReportConfig,
-                            html_filename: Optional[str] = None,
-                            pdf_filename: Optional[str] = None,
-                            save_files: bool = True) -> Dict[str, Any]:
+    def generate_both_formats(self, html_filename: Optional[str] = None,
+                             pdf_filename: Optional[str] = None,
+                             save_files: bool = True) -> Dict[str, Any]:
         """
         Generate both HTML and PDF reports with the same data
 
         Args:
-            report_config: Report configuration
             html_filename: Optional custom filename for HTML
             pdf_filename: Optional custom filename for PDF
             save_files: Whether to save files to disk
@@ -286,21 +285,19 @@ class ReportGenerator:
         Returns:
             Dict containing results for both formats
         """
-        logger.info(f"Starting dual report generation (HTML + PDF) for project {report_config.database_name}")
+        logger.info(f"Starting dual report generation (HTML + PDF) for project {self.report_config.database_name}")
 
         try:
-            report_config.output_format = 'html'
+            self.report_config.output_format = 'html'
             # Generate HTML report
             html_result = self.generate_and_save_report(
-                report_config,
                 save_file=save_files,
                 custom_filename=html_filename
             )
 
             # Generate PDF report
-            report_config.output_format = 'pdf'
+            self.report_config.output_format = 'pdf'
             pdf_result = self.generate_and_save_report(
-                report_config,
                 save_file=save_files,
                 custom_filename=pdf_filename
             )
@@ -310,7 +307,7 @@ class ReportGenerator:
                 'html_result': html_result,
                 'pdf_result': pdf_result,
                 'metadata': {
-                    'database_name': report_config.database_name,
+                    'database_name': self.report_config.database_name,
                     'generation_time': datetime.now().isoformat(),
                     'formats_generated': ['HTML', 'PDF'] if html_result['success'] and pdf_result['success'] else
                                        (['HTML'] if html_result['success'] else []) +
@@ -328,28 +325,27 @@ class ReportGenerator:
                 'html_result': {'success': False},
                 'pdf_result': {'success': False},
                 'metadata': {
-                    'database_name': report_config.database_name,
+                    'database_name': self.report_config.database_name,
                     'error_occurred': True
                 }
             }
 
-    def generate_report(self, report_config: ReportConfig) -> Dict[str, Any]:
+    def generate_report(self) -> Dict[str, Any]:
         """
         Generate comprehensive report based on configuration using database queries with period comparison
         (This is the original HTML generation method - UNTOUCHED)
 
         Args:
-            report_config: Report configuration from user input
 
         Returns:
             Dict containing generated report data and metadata
         """
-        logger.info(f"Starting comprehensive report generation with comparison for project {report_config.database_name}")
+        logger.info(f"Starting comprehensive report generation with comparison for project {self.report_config.database_name}")
         start_time = datetime.now()
 
         try:
             # Validate configuration
-            validation_errors = report_config.validate()
+            validation_errors = self.report_config.validate()
             if validation_errors:
                 logger.error(f"Report configuration validation failed: {validation_errors}")
                 return {
@@ -360,28 +356,28 @@ class ReportGenerator:
                 }
 
             # Get current and previous period date ranges for comparison
-            (current_start, current_end), (previous_start, previous_end) = report_config.get_comparison_periods()
+            (current_start, current_end), (previous_start, previous_end) = self.report_config.get_comparison_periods()
             logger.info(f"Current period: {current_start} to {current_end}")
             logger.info(f"Previous period: {previous_start} to {previous_end}")
 
             # Filter robots based on configuration
-            target_robots = self._resolve_target_robots(report_config)
+            target_robots = self._resolve_target_robots()
             if not target_robots:
-                logger.warning(f"No robots found for project {report_config.database_name} with given criteria")
-                target_robots = self._get_all_customer_robots(report_config.database_name)
+                logger.warning(f"No robots found for project {self.report_config.database_name} with given criteria")
+                target_robots = self._get_all_customer_robots(self.report_config.database_name)
 
             logger.info(f"Targeting {len(target_robots)} robots for report generation")
 
             # Fetch current period data
             logger.info("Fetching current period data...")
             current_data = self.data_service.fetch_all_report_data(
-                target_robots, current_start, current_end, report_config.content_categories
+                target_robots, current_start, current_end, self.report_config.content_categories
             )
 
             # Fetch previous period data for comparison
             logger.info("Fetching previous period data for comparison...")
             previous_data = self.data_service.fetch_all_report_data(
-                target_robots, previous_start, previous_end, report_config.content_categories
+                target_robots, previous_start, previous_end, self.report_config.content_categories
             )
 
             # Calculate comprehensive metrics with comparison
@@ -393,27 +389,27 @@ class ReportGenerator:
             # Generate structured report content
             logger.info("Generating structured report content...")
             report_content = self._generate_comprehensive_report_content(
-                comprehensive_metrics, report_config, current_start, current_end, target_robots
+                comprehensive_metrics, current_start, current_end, target_robots
             )
             # Create HTML or PDF report using template
             logger.info("Generating HTML or PDF report using comprehensive template...")
-            if 'html' in report_config.output_format.lower(): # html
-                report_html = self.html_template.generate_comprehensive_report(report_content, report_config)
+            if 'html' in self.report_config.output_format.lower(): # html
+                report_html = self.html_template.generate_comprehensive_report(report_content, self.report_config)
             else: # pdf
-                report_html = self.pdf_template.generate_comprehensive_pdf_content(report_content, report_config)
+                report_html = self.pdf_template.generate_comprehensive_pdf_content(report_content, self.report_config)
             # Calculate execution time and prepare metadata
             execution_time = (datetime.now() - start_time).total_seconds()
 
             # Enhanced metadata
             metadata = {
-                'database_name': report_config.database_name,
+                'database_name': self.report_config.database_name,
                 'generation_time': start_time.isoformat(),
                 'execution_time_seconds': execution_time,
                 'date_range': {'start': current_start, 'end': current_end},
                 'comparison_period': {'start': previous_start, 'end': previous_end},
                 'robots_included': len(target_robots),
-                'detail_level': report_config.detail_level.value,
-                'content_categories': report_config.content_categories,
+                'detail_level': self.report_config.detail_level.value,
+                'content_categories': self.report_config.content_categories,
                 'total_records_processed': sum(len(data) if hasattr(data, '__len__') else 0
                                              for data in current_data.values()),
                 'comparison_records_processed': sum(len(data) if hasattr(data, '__len__') else 0
@@ -451,33 +447,33 @@ class ReportGenerator:
                 'error': str(e),
                 'report_html': None,
                 'metadata': {
-                    'database_name': report_config.database_name,
+                    'database_name': self.report_config.database_name,
                     'generation_time': start_time.isoformat(),
                     'execution_time_seconds': execution_time,
                     'error_occurred': True
                 }
             }
 
-    def _resolve_target_robots(self, report_config: ReportConfig) -> List[str]:
+    def _resolve_target_robots(self) -> List[str]:
         """Resolve target robots based on configuration - Enhanced for multiple selections"""
         try:
             from ..services.robot_location_resolver import RobotLocationResolver
             location_resolver = RobotLocationResolver(self.config)
 
             # Extract robot criteria
-            robot_names = report_config.robot.get('names', [])
-            robot_sns = report_config.robot.get('serialNumbers', [])
+            robot_names = self.report_config.robot.get('names', [])
+            robot_sns = self.report_config.robot.get('serialNumbers', [])
 
             # Extract location criteria
             location_criteria = {}
-            if report_config.location.get('countries'):
-                location_criteria['countries'] = report_config.location['countries']
-            if report_config.location.get('states'):
-                location_criteria['states'] = report_config.location['states']
-            if report_config.location.get('cities'):
-                location_criteria['cities'] = report_config.location['cities']
-            if report_config.location.get('buildings'):
-                location_criteria['buildings'] = report_config.location['buildings']
+            if self.report_config.location.get('countries'):
+                location_criteria['countries'] = self.report_config.location['countries']
+            if self.report_config.location.get('states'):
+                location_criteria['states'] = self.report_config.location['states']
+            if self.report_config.location.get('cities'):
+                location_criteria['cities'] = self.report_config.location['cities']
+            if self.report_config.location.get('buildings'):
+                location_criteria['buildings'] = self.report_config.location['buildings']
 
             # Use the new combined resolver method
             robots = location_resolver.resolve_robots_combined(
@@ -493,7 +489,7 @@ class ReportGenerator:
                 logger.warning("No robots found with specified criteria")
                 # If no specific criteria matched, return all project robots
                 logger.info("Falling back to all project robots")
-                return self._get_all_customer_robots(report_config.database_name)
+                return self._get_all_customer_robots(self.report_config.database_name)
 
         except Exception as e:
             logger.error(f"Error resolving target robots: {e}")
@@ -514,22 +510,21 @@ class ReportGenerator:
             logger.error(f"Error getting project robots: {e}")
             return []
 
-    def _generate_comprehensive_report_content(self, comprehensive_metrics: Dict[str, Any],
-                                         report_config: ReportConfig, start_date: str,
+    def _generate_comprehensive_report_content(self, comprehensive_metrics: Dict[str, Any], start_date: str,
                                          end_date: str, target_robots: List[str]) -> Dict[str, Any]:
         """
         Generate structured report content from comprehensive metrics - UPDATED with timezone-aware display
         """
-        logger.info(f"Generating comprehensive report content with detail level: {report_config.detail_level.value}")
+        logger.info(f"Generating comprehensive report content with detail level: {self.report_config.detail_level.value}")
 
         # Build comprehensive content structure matching the enhanced template
         content = {
-            'title': self._generate_report_title(report_config),
-            'period': report_config.get_display_date_range(),  # Use display-friendly date range
+            'title': self._generate_report_title(),
+            'period': self.report_config.get_display_date_range(),  # Use display-friendly date range
             'generation_time': datetime.now(),
-            'detail_level': report_config.detail_level,
-            'content_categories': report_config.content_categories,
-            'database_name': report_config.database_name,
+            'detail_level': self.report_config.detail_level,
+            'content_categories': self.report_config.content_categories,
+            'database_name': self.report_config.database_name,
 
             # Core metrics - pass comprehensive_metrics directly
             'fleet_performance': comprehensive_metrics.get('fleet_performance', {}),
@@ -558,6 +553,10 @@ class ReportGenerator:
 
             'daily_location_efficiency': comprehensive_metrics.get('daily_location_efficiency', {}),
             'avg_task_duration_minutes': comprehensive_metrics.get('task_performance', {}).get('avg_task_duration_minutes', 0),
+
+            # Add new metrics for uptime/downtime and health scores
+            'robot_health_scores': comprehensive_metrics.get('robot_health_scores', {}),
+            'fleet_uptime_metrics': comprehensive_metrics.get('fleet_uptime_metrics', {}),
 
             # Metadata
             'robots_included': len(target_robots),
@@ -652,15 +651,15 @@ class ReportGenerator:
                 'total_area_cleaned': 847200
             }
 
-    def _generate_report_title(self, report_config: ReportConfig) -> str:
+    def _generate_report_title(self) -> str:
         """Generate appropriate report title"""
-        if report_config.report_name:
-            return report_config.report_name
-        elif report_config.detail_level == ReportDetailLevel.OVERVIEW:
+        if self.report_config.report_name:
+            return self.report_config.report_name
+        elif self.report_config.detail_level == ReportDetailLevel.OVERVIEW:
             return "Overview Robot Performance Report"
-        elif report_config.detail_level == ReportDetailLevel.DETAILED:
+        elif self.report_config.detail_level == ReportDetailLevel.DETAILED:
             return "Detailed Robot Performance Report"
-        elif report_config.detail_level == ReportDetailLevel.IN_DEPTH:
+        elif self.report_config.detail_level == ReportDetailLevel.IN_DEPTH:
             return "In-Depth Robot Performance Report"
         else:
             return "Robot Performance Report"
