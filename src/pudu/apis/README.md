@@ -1,195 +1,159 @@
-# 机器人API统一框架
+# Multi-Customer API Usage
 
-## 概述
+## Quick Setup
 
-这是一个简洁的Factory+Adapter模式实现，用于统一管理普渡API和高仙API。通过统一的接口，业务代码可以根据机器人类型自动选择对应的API。
-
-## 核心特性
-
-- **统一接口**：通过foxx_api提供统一的服务接口
-- **类型驱动**：根据robot_type参数自动选择API
-- **简洁架构**：Factory+Adapter模式，层次清晰
-- **易于扩展**：新增机器人类型只需添加适配器
-- **向后兼容**：保持原有API不变
-- **配置管理**：通过配置文件管理API设置
-
-## 架构设计
-
-### 简洁的Factory+Adapter模式
-
-```
-apis/
-├── core/                           # 工厂层
-│   ├── __init__.py
-│   ├── api_interface.py           # 统一API接口定义
-│   ├── api_registry.py            # API注册中心
-│   ├── api_factory.py             # API工厂
-│   └── config_manager.py          # 配置管理器
-├── adapters/                       # 适配器层
-│   ├── __init__.py
-│   ├── pudu_adapter.py            # 普渡API适配器
-│   └── gas_adapter.py             # 高仙API适配器
-├── configs/                        # 配置层
-│   ├── api_config.yaml            # API配置
-│   └── api_mapping.yaml           # API映射配置
-├── pudu_api.py                    # 普渡API基础库
-├── gas_api.py                     # 高仙API基础库
-├── utils.py                       # 工具函数
-└── foxx_api.py                    # 统一对外服务接口
+1. **Create credentials file:**
+```bash
+cp src/pudu/apis/configs/credentials.example.yaml src/pudu/apis/configs/credentials.yaml
 ```
 
-### 架构层次
+2. **Edit credentials.yaml** - add your customers and credentials
 
-1. **基础API库层**：`pudu_api.py`, `gas_api.py` - 原始API实现
-2. **适配器层**：`adapters/` - 将不同API适配到统一接口
-3. **工厂层**：`core/` - 根据机器人类型创建对应API实例
-4. **服务层**：`foxx_api.py` - 对外提供统一接口
-5. **配置层**：`configs/` - 管理API配置和映射
+3. **Set environment variable:**
+```bash
+# .env file
+ROBOT_API_CUSTOMERS=customer_a,customer_b,customer_c
+```
 
-## 核心组件
+## Usage Patterns
 
-### 1. 基础API库
-- **pudu_api.py**: 普渡API的原始实现
-- **gas_api.py**: 高仙API的原始实现
-
-### 2. 适配器层
-- **pudu_adapter.py**: 将普渡API适配到统一接口
-- **gas_adapter.py**: 将高仙API适配到统一接口
-
-### 3. 工厂层
-- **api_factory.py**: 根据机器人类型创建API实例
-- **api_interface.py**: 定义统一的API接口
-- **api_registry.py**: 管理适配器注册
-- **config_manager.py**: 管理配置
-
-### 4. 服务层
-- **foxx_api.py**: 对外提供统一的服务接口
-
-### 5. 配置层
-- **api_config.yaml**: API配置
-- **api_mapping.yaml**: API方法映射
-
-## 使用方法
-
-### 推荐使用方式（通过foxx_api）
-
+### Pattern 1: Single Customer (Direct API calls)
 ```python
-# 导入统一接口
-from foxx_api import get_robot_status, get_ongoing_tasks_table
+from pudu.apis import foxx_api
 
-# 普渡机器人
-pudu_status = get_robot_status("robot_001", robot_type="pudu")
+# Set customer once
+foxx_api.set_customer('customer_a')
 
-# 高仙机器人
-gas_status = get_robot_status("robot_001", robot_type="gas")
-
-# 获取任务表
-pudu_tasks = get_ongoing_tasks_table(robot_type="pudu")
-gas_tasks = get_ongoing_tasks_table(robot_type="gas")
+# Make API calls
+schedule = foxx_api.get_schedule_table(
+    start_time='2024-01-01 00:00:00',
+    end_time='2024-01-31 23:59:59',
+    robot_type='pudu'
+)
 ```
 
-### 高级使用方式（直接使用API工厂）
+### Pattern 2: Multiple Customers (main.py - Automatic)
 
+The `main.py` pipeline automatically:
+1. Reads customers from `ROBOT_API_CUSTOMERS` environment variable
+2. Determines robot types for each customer from credentials
+3. Fetches data for all customers in parallel
+4. Combines and processes data
 ```python
-from core.api_factory import APIFactory
-
-# 获取API工厂实例
-api_factory = APIFactory()
-
-# 获取不同机器人类型的API实例
-pudu_api = api_factory.create_api("pudu")
-gas_api = api_factory.create_api("gas")
-
-# 使用普渡API
-robot_details = pudu_api.get_robot_details("robot_001")
-
-# 使用高仙API
-robot_status = gas_api.get_robot_status("robot_001")
+# In main.py - happens automatically
+app = App(config_path='database_config.yaml')
+app.run(start_time='2024-01-01 00:00:00', end_time='2024-01-31 23:59:59')
 ```
 
-## 配置文件
+### Pattern 3: Per-Request Customer Override
+```python
+from pudu.apis import foxx_api
 
-### API配置 (configs/api_config.yaml)
+# Query different customers without switching global state
+data_a = foxx_api.get_schedule_table(
+    start_time='2024-01-01 00:00:00',
+    end_time='2024-01-31 23:59:59',
+    robot_type='pudu',
+    customer_name='customer_a'
+)
 
+data_b = foxx_api.get_schedule_table(
+    start_time='2024-01-01 00:00:00',
+    end_time='2024-01-31 23:59:59',
+    robot_type='gas',
+    customer_name='customer_b'
+)
+```
+
+## Configuration Files
+
+### credentials.yaml Structure
 ```yaml
-default_api: "pudu"
+customers:
+  customer_a:
+    pudu:
+      enabled: true
+      api_app_key: "key_here"
+      api_app_secret: "secret_here"
+    gas:
+      enabled: false
 
-apis:
-  pudu:
-    enabled: true
-    priority: 1
-    config:
-      base_url: "https://api.pudu.com"
-      
-  gas:
-    enabled: true
-    priority: 2
-    config:
+  customer_b:
+    pudu:
+      enabled: false
+    gas:
+      enabled: true
+      client_id: "id_here"
+      client_secret: "secret_here"
+      open_access_key: "key_here"
       base_url: "https://openapi.gs-robot.com"
-      client_id: "your_client_id"
-      client_secret: "your_client_secret"
-      open_access_key: "your_access_key"
 ```
 
-### API映射配置 (configs/api_mapping.yaml)
+### Environment Variables
+```bash
+# List of customers to process (comma-separated)
+ROBOT_API_CUSTOMERS=customer_a,customer_b
 
-```yaml
-function_mapping:
-  get_robot_details:
-    pudu: "get_robot_details"
-    gas: "get_robot_status"
-    
-  get_list_stores:
-    pudu: "get_list_stores"
-    gas: "list_robots"  # 高仙API没有门店概念，使用机器人列表
+# Optional: Custom credentials path
+ROBOT_API_CREDENTIALS_PATH=/path/to/credentials.yaml
 ```
 
-## 扩展指南
+## Troubleshooting
 
-### 添加新的机器人类型
+**No customers found:**
+```bash
+# Check credentials file exists
+ls src/pudu/apis/configs/credentials.yaml
 
-1. 在`adapters/`目录下添加新的适配器
-2. 在`configs/api_config.yaml`中添加配置
-3. 在`core/api_registry.py`中注册适配器
-4. 业务代码中指定新的`robot_type`
+# List available customers
+python -c "from src.pudu.apis import foxx_api; print(foxx_api.list_customers())"
+```
 
-### 添加新的API方法
-
-1. 在`core/api_interface.py`中添加方法定义
-2. 在各个适配器中实现该方法
-3. 在`foxx_api.py`中添加对应的服务方法
-
-## 示例代码
-
-### 业务代码中的使用
-
+**Wrong credentials:**
 ```python
-# 导入统一接口
-from foxx_api import get_robot_status, get_ongoing_tasks_table
+# Check current customer
+from src.pudu.apis import foxx_api
+print(foxx_api.get_current_customer())
 
-def process_robot_request(robot_sn, robot_type):
-    """处理机器人请求"""
-    # 获取机器人状态
-    status = get_robot_status(robot_sn, robot_type)
-    
-    # 获取任务表
-    tasks = get_ongoing_tasks_table(robot_sn=robot_sn, robot_type=robot_type)
-    
-    return status, tasks
-
-# 使用示例
-pudu_status, pudu_tasks = process_robot_request("robot_001", "pudu")
-gas_status, gas_tasks = process_robot_request("robot_001", "gas")
+# Check enabled APIs
+from src.pudu.apis.core.api_factory import APIFactory
+print(APIFactory.get_enabled_apis())
 ```
 
-## 总结
+**Environment variable not working:**
+```bash
+# Verify environment variable
+echo $ROBOT_API_CUSTOMERS
 
-这个简洁的Factory+Adapter模式架构提供了：
+# Or check in Python
+python -c "import os; print(os.getenv('ROBOT_API_CUSTOMERS'))"
+```
 
-- **统一接口**：通过foxx_api提供统一的服务接口
-- **类型驱动**：根据robot_type参数自动选择API
-- **简洁架构**：Factory+Adapter模式，层次清晰
-- **易于扩展**：新增机器人类型只需添加适配器
-- **向后兼容**：保持原有API不变
+# Multi-Customer Setup Checklist
 
-业务代码只需要指定`robot_type`参数，就能自动使用对应的API，无需关心底层实现细节。
+## 1. Configuration Files
+- [ ] Copy `credentials.example.yaml` to `credentials.yaml`
+- [ ] Fill in credentials for each customer
+- [ ] Set `enabled: true/false` for each robot type per customer
+- [ ] Add to `.gitignore`: `credentials.yaml`
+
+## 2. Environment Setup
+- [ ] Create `.env` file (or set environment variables)
+- [ ] Set `ROBOT_API_CUSTOMERS=customer1,customer2,...`
+- [ ] Optionally set `ROBOT_API_CREDENTIALS_PATH` if using custom location
+
+## 3. Testing
+- [ ] Run `python test_multi_customer.py` to verify setup
+- [ ] Check all customers are detected
+- [ ] Verify robot types are correct for each customer
+- [ ] Test API instance creation
+
+## 4. Integration
+- [ ] Update `main.py` with new multi-customer methods
+- [ ] Remove old `_fetch_all_api_data_parallel` method
+- [ ] Test full pipeline with `app.run()`
+
+## 5. Verification
+- [ ] Check logs show all customers being processed
+- [ ] Verify data is fetched for correct robot types per customer
+- [ ] Confirm parallel execution is working (check execution time)

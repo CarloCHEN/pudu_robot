@@ -5,16 +5,11 @@ import hmac
 import json
 from urllib.parse import urlparse
 from urllib.parse import unquote
-
 import requests
 import pandas as pd
 
-# 应用 ApiAppKey
-ApiAppKey = 'APID18lGz1qBaBF9XWuttd5YszenrpsodKgt20i9'
-# 应用 ApiAppSecret
-ApiAppSecret = 'k2fmGdhz6mhqcl79eWot9f2kqoqosC2q0cm6csM1'
 
-def run_url(url):
+def run_url(url, ApiAppKey, ApiAppSecret):
     # Parse URL
     url_info = urlparse(url)
     host = url_info.hostname
@@ -55,7 +50,7 @@ def run_url(url):
     response = requests.get(url, headers=headers)
     return response.text
 
-def get_list_stores(limit=None, offset=None):
+def get_list_stores(limit=None, offset=None, api_app_key=None, api_app_secret=None):
     """Accepts limit and offset as parameters and returns a list of stores
     @param limit: The number of stores to return
     @param offset: The offset to start from
@@ -69,14 +64,14 @@ def get_list_stores(limit=None, offset=None):
         url += f"limit={limit}"
     elif offset:
         url += f"offset={offset}"
-    response = run_url(url)
+    response = run_url(url, api_app_key, api_app_secret)
     response = json.loads(response)
     if any(status in response["message"].lower() for status in ["success", "ok"]):
         return response["data"]
     else:
         return response
 
-def get_list_robots(shop_id=None, limit=None, offset=None):
+def get_list_robots(shop_id=None, limit=None, offset=None, api_app_key=None, api_app_secret=None):
     """Accepts limit and offset as parameters and returns a list of robots
     @param shop_id: The ID of the shop to filter robots by
     @param limit: The number of robots to return
@@ -98,7 +93,7 @@ def get_list_robots(shop_id=None, limit=None, offset=None):
     if params:
         url += "&".join(params)
 
-    response = run_url(url)  # Assuming run_url is a function that handles API requests
+    response = run_url(url, api_app_key, api_app_secret)  # Assuming run_url is a function that handles API requests
     response = json.loads(response)
 
     if any(status in response["message"].lower() for status in ["success", "ok"]):
@@ -106,20 +101,20 @@ def get_list_robots(shop_id=None, limit=None, offset=None):
     else:
         return response
 
-def get_list_maps(shop_id):
+def get_list_maps(shop_id, api_app_key=None, api_app_secret=None):
     """ Accepts a shop ID and returns a list of maps for that shop
     @param shop_id: The shop ID to get maps for
     @return: Count and a list of map dictionaries - {map_name}
     """
     url = f"https://csu-open-platform.pudutech.com/pudu-entry/data-open-platform-service/v1/api/maps?shop_id={shop_id}"
-    response = run_url(url)
+    response = run_url(url, api_app_key, api_app_secret)
     response = json.loads(response)
     if any(status in response["message"].lower() for status in ["success", "ok"]):
         return response["data"]
     else:
         return response
 
-def get_map_details(shop_id, map_name, device_width, device_height):
+def get_map_details(shop_id, map_name, device_width, device_height, api_app_key=None, api_app_secret=None):
     """ Accepts a shop ID, map name, device width, and device height and returns map details
     @param shop_id: The shop ID
     @param map_name: The map name
@@ -139,28 +134,28 @@ def get_map_details(shop_id, map_name, device_width, device_height):
                                            }]}
     """
     url = f"https://csu-open-platform.pudutech.com/pudu-entry/data-open-platform-service/v1/api/maps?shop_id={shop_id}&map_name={map_name}&device_width={device_width}&device_height={device_height}"
-    response = run_url(url)
+    response = run_url(url, api_app_key, api_app_secret)
     response = json.loads(response)
     if any(status in response["message"].lower() for status in ["success", "ok"]):
         return response["data"]
     else:
         return response
 
-def get_robot_current_position(shop_id, sn):
+def get_robot_current_position(shop_id, sn, api_app_key=None, api_app_secret=None):
     """ Accepts a shop ID and serial number and returns the current position of the robot. Only support PUDU CC1
     @param shop_id: The shop ID
     @param sn: The serial number of the robot
     @return: The current position dictionary - {}
     """
     url = f"https://csu-open-platform.pudutech.com/pudu-entry/data-open-platform-service/v1/api/map/robotCurrentPosition?shop_id={shop_id}&sn={sn}"
-    response = run_url(url)
+    response = run_url(url, api_app_key, api_app_secret)
     response = json.loads(response)
     if response["message"] != "Robot is offline":
         return response["data"]
     else:
         return response
 
-def get_robot_overview_data(start_time, end_time, shop_id=None, timezone_offset=0):
+def get_robot_overview_data(start_time, end_time, shop_id=None, timezone_offset=0, api_app_key=None, api_app_secret=None):
     """ Accepts a shop ID, start time, and end time and returns an overview of robot data
     @param shop_id: The shop ID
     @param start_time: The start time
@@ -183,14 +178,14 @@ def get_robot_overview_data(start_time, end_time, shop_id=None, timezone_offset=
     url = f"https://csu-open-platform.pudutech.com/pudu-entry/data-board/v1/brief/robot?timezone_offset={timezone_offset}&start_time={start_time}&end_time={end_time}"
     if shop_id:
         url += f"&shop_id={shop_id}"
-    response = run_url(url)
+    response = run_url(url, api_app_key, api_app_secret)
     response = json.loads(response)
     if any(status in response["message"].lower() for status in ["success", "ok"]):
         return response["data"]
     else:
         return response
 
-def get_robot_overview_operation_data(start_time, end_time, shop_id=None, timezone_offset=0):
+def get_robot_overview_operation_data(start_time, end_time, shop_id=None, timezone_offset=0, api_app_key=None, api_app_secret=None):
     """ Accepts a shop ID, start time, and end time and returns an overview of robot operation data
 
     returns the operation data of a shop for all robots?
@@ -209,14 +204,14 @@ def get_robot_overview_operation_data(start_time, end_time, shop_id=None, timezo
     url = f"https://csu-open-platform.pudutech.com/pudu-entry/data-board/v1/brief/run?timezone_offset={timezone_offset}&start_time={start_time}&end_time={end_time}"
     if shop_id:
         url += f"&shop_id={shop_id}"
-    response = run_url(url)
+    response = run_url(url, api_app_key, api_app_secret)
     response = json.loads(response)
     if any(status in response["message"].lower() for status in ["success", "ok"]):
         return response["data"]
     else:
         return response
 
-def get_store_overview_data(start_time, end_time, shop_id=None, timezone_offset=0):
+def get_store_overview_data(start_time, end_time, shop_id=None, timezone_offset=0, api_app_key=None, api_app_secret=None):
     """ Accepts a shop ID, start time, and end time and returns an overview of store data
     @param shop_id: The shop ID
     @param start_time: The start time
@@ -243,14 +238,14 @@ def get_store_overview_data(start_time, end_time, shop_id=None, timezone_offset=
     url = f"https://csu-open-platform.pudutech.com/pudu-entry/data-board/v1/brief/shop?timezone_offset={timezone_offset}&start_time={start_time}&end_time={end_time}"
     if shop_id:
         url += f"&shop_id={shop_id}"
-    response = run_url(url)
+    response = run_url(url, api_app_key, api_app_secret)
     response = json.loads(response)
     if any(status in response["message"].lower() for status in ["success", "ok"]):
         return response["data"]
     else:
         return response
 
-def get_store_analytics(start_time, end_time, shop_id=None, time_unit=None, timezone_offset=0):
+def get_store_analytics(start_time, end_time, shop_id=None, time_unit=None, timezone_offset=0, api_app_key=None, api_app_secret=None):
     """ Accepts a shop ID, start time, and end time and returns store analytics data
     @param shop_id: The shop ID
     @param start_time: The start time
@@ -280,14 +275,14 @@ def get_store_analytics(start_time, end_time, shop_id=None, time_unit=None, time
         url += f"&shop_id={shop_id}"
     if time_unit:
         url += f"&time_unit={time_unit}"
-    response = run_url(url)
+    response = run_url(url, api_app_key, api_app_secret)
     response = json.loads(response)
     if any(status in response["message"].lower() for status in ["success", "ok"]):
         return response["data"]
     else:
         return response
 
-def get_store_analytics_list(start_time, end_time, shop_id=None, time_unit=None, offset=None, limit=None, timezone_offset=0):
+def get_store_analytics_list(start_time, end_time, shop_id=None, time_unit=None, offset=None, limit=None, timezone_offset=0, api_app_key=None, api_app_secret=None):
     """ Accepts a shop ID, start time, and end time and returns store analytics data with paging
     @param shop_id: The shop ID
     @param start_time: The start time
@@ -322,14 +317,14 @@ def get_store_analytics_list(start_time, end_time, shop_id=None, time_unit=None,
         url += f"&offset={offset}"
     if limit:
         url += f"&limit={limit}"
-    response = run_url(url)
+    response = run_url(url, api_app_key, api_app_secret)
     response = json.loads(response)
     if any(status in response["message"].lower() for status in ["success", "ok"]):
         return response["data"]
     else:
         return response
 
-def get_machine_run_analytics(start_time, end_time, shop_id=None, time_unit=None, timezone_offset=0):
+def get_machine_run_analytics(start_time, end_time, shop_id=None, time_unit=None, timezone_offset=0, api_app_key=None, api_app_secret=None):
     """ Accepts a shop ID, start time, and end time and returns machine run analytics data
 
     returns the number of tasks run by each robot in a shop?
@@ -355,14 +350,14 @@ def get_machine_run_analytics(start_time, end_time, shop_id=None, time_unit=None
         url += f"&shop_id={shop_id}"
     if time_unit:
         url += f"&time_unit={time_unit}"
-    response = run_url(url)
+    response = run_url(url, api_app_key, api_app_secret)
     response = json.loads(response)
     if any(status in response["message"].lower() for status in ["success", "ok"]):
         return response["data"]
     else:
         return response
 
-def get_machine_run_analytics_list(start_time, end_time, shop_id=None, time_unit=None, offset=None, limit=None, timezone_offset=0):
+def get_machine_run_analytics_list(start_time, end_time, shop_id=None, time_unit=None, offset=None, limit=None, timezone_offset=0, api_app_key=None, api_app_secret=None):
     """ Accepts a shop ID, start time, and end time and returns machine run analytics data with paging
 
     returns the number of tasks, duration run by each robot in a shop, on each day? difference vs get_machine_run_analytics?
@@ -401,14 +396,14 @@ def get_machine_run_analytics_list(start_time, end_time, shop_id=None, time_unit
         url += f"&offset={offset}"
     if limit:
         url += f"&limit={limit}"
-    response = run_url(url)
+    response = run_url(url, api_app_key, api_app_secret)
     response = json.loads(response)
     if any(status in response["message"].lower() for status in ["success", "ok"]):
         return response["data"]
     else:
         return response
 
-def get_log_list(start_time, end_time, shop_id=None, offset=None, limit=None, check_step=None, is_success=None, timezone_offset=0):
+def get_log_list(start_time, end_time, shop_id=None, offset=None, limit=None, check_step=None, is_success=None, timezone_offset=0, api_app_key=None, api_app_secret=None):
     """ Accepts a shop ID, start time, and end time and returns a list of logs
     @param shop_id: The shop ID
     @param start_time: The start time
@@ -437,14 +432,14 @@ def get_log_list(start_time, end_time, shop_id=None, offset=None, limit=None, ch
         url += f"&is_success={is_success}"
     if timezone_offset:
         url += f"&timezone_offset={timezone_offset}"
-    response = run_url(url)
+    response = run_url(url, api_app_key, api_app_secret)
     response = json.loads(response)
     if any(status in response["message"].lower() for status in ["success", "ok"]):
         return response["data"]
     else:
         return response
 
-def get_event_list(start_time, end_time, shop_id=None, offset=None, limit=None, error_levels=None, error_types=None, timezone_offset=0):
+def get_event_list(start_time, end_time, shop_id=None, offset=None, limit=None, error_levels=None, error_types=None, timezone_offset=0, api_app_key=None, api_app_secret=None):
     """ Accepts a shop ID, start time, and end time and returns a list of events
     @param shop_id: The shop ID
     @param start_time: The start time
@@ -488,14 +483,14 @@ def get_event_list(start_time, end_time, shop_id=None, offset=None, limit=None, 
         url += f"&error_types={error_types}"
     if timezone_offset:
         url += f"&timezone_offset={timezone_offset}"
-    response = run_url(url)
+    response = run_url(url, api_app_key, api_app_secret)
     response = json.loads(response)
     if any(status in response["message"].lower() for status in ["success", "ok"]):
         return response["data"]
     else:
         return response
 
-def get_charging_record_list(start_time, end_time, shop_id=None, offset=None, limit=None, timezone_offset=0):
+def get_charging_record_list(start_time, end_time, shop_id=None, offset=None, limit=None, timezone_offset=0, api_app_key=None, api_app_secret=None):
     """ Accepts a shop ID, start time, and end time and returns a list of charging records
     @param shop_id: The shop ID
     @param start_time: The start time
@@ -535,14 +530,14 @@ def get_charging_record_list(start_time, end_time, shop_id=None, offset=None, li
         url += f"&limit={limit}"
     if timezone_offset:
         url += f"&timezone_offset={timezone_offset}"
-    response = run_url(url)
+    response = run_url(url, api_app_key, api_app_secret)
     response = json.loads(response)
     if any(status in response["message"].lower() for status in ["success", "ok"]):
         return response["data"]
     else:
         return response
 
-def get_battery_health_list(start_time, end_time, shop_id=None, sn=None, offset=None, limit=None, timezone_offset=0):
+def get_battery_health_list(start_time, end_time, shop_id=None, sn=None, offset=None, limit=None, timezone_offset=0, api_app_key=None, api_app_secret=None):
     """ Accepts a shop ID, start time, and end time and returns a list of battery health records
     @param shop_id: The shop ID
     @param start_time: The start time
@@ -611,7 +606,7 @@ def get_battery_health_list(start_time, end_time, shop_id=None, sn=None, offset=
         if timezone_offset:
             url += f"&timezone_offset={timezone_offset}"
 
-        response = run_url(url)
+        response = run_url(url, api_app_key, api_app_secret)
 
         # 解析JSON响应
         response_data = json.loads(response)
@@ -632,7 +627,7 @@ def get_battery_health_list(start_time, end_time, shop_id=None, sn=None, offset=
         print(f"Request failed: {e}")
         return {"error": f"Request failed: {str(e)}"}
 
-def get_task_list(shop_id=None, sn=None):
+def get_task_list(shop_id=None, sn=None, api_app_key=None, api_app_secret=None):
     """ Accepts a shop ID and serial number and returns a list of tasks
     @param shop_id: The shop ID
     @param sn: The serial number of the robot
@@ -699,14 +694,14 @@ def get_task_list(shop_id=None, sn=None):
         url += f"?shop_id={shop_id}"
     if sn:
         url += f"&sn={sn}"
-    response = run_url(url)
+    response = run_url(url, api_app_key, api_app_secret)
     response = json.loads(response)
     if any(status in response["message"].lower() for status in ["success", "ok"]):
         return response["data"]
     else:
         return response
 
-def get_scheduled_task_list(sn=None):
+def get_scheduled_task_list(sn=None, api_app_key=None, api_app_secret=None):
     """ Accepts a serial number and returns a list of scheduled tasks
     @param sn: The serial number of the robot
     @return: The task list dictionary -
@@ -714,14 +709,14 @@ def get_scheduled_task_list(sn=None):
     if not sn:
         raise ValueError("Serial number is required")
     url = f"https://csu-open-platform.pudutech.com/pudu-entry/cleanbot-service/v1/api/open/cron/list?sn={sn}"
-    response = run_url(url)
+    response = run_url(url, api_app_key, api_app_secret)
     response = json.loads(response)
     if any(status in response["message"].lower() for status in ["success", "ok"]):
         return response["data"]
     else:
         return response
 
-def get_robot_details(sn):
+def get_robot_details(sn, api_app_key=None, api_app_secret=None):
     """ Accepts a serial number and returns the details of the robot updated every 30s
     @param sn: The serial number of the robot
     @return: The robot details dictionary - {'mac': 'B0:0C:9D:59:16:E8',
@@ -743,7 +738,7 @@ def get_robot_details(sn):
                                              'sn': '811064412050012'}
     """
     url = f"https://csu-open-platform.pudutech.com/pudu-entry/cleanbot-service/v1/api/open/robot/detail?sn={sn}"
-    response = run_url(url)
+    response = run_url(url, api_app_key, api_app_secret)
     response = json.loads(response)
     if any(status in response["message"].lower() for status in ["success", "ok"]):
         return response["data"]
@@ -753,7 +748,7 @@ def get_robot_details(sn):
 def send_command_to_robot():
     pass
 
-def get_task_schema_analytics(start_time, end_time, shop_id=None, time_unit=None, clean_mode=None, sub_mode=None, timezone_offset=None):
+def get_task_schema_analytics(start_time, end_time, shop_id=None, time_unit=None, clean_mode=None, sub_mode=None, timezone_offset=None, api_app_key=None, api_app_secret=None):
     """ Accepts a shop ID, start time, and end time and returns a list of task schema analytics
     @param shop_id: The shop ID
     @param start_time: The start time
@@ -802,14 +797,15 @@ def get_task_schema_analytics(start_time, end_time, shop_id=None, time_unit=None
         url += f"&sub_mode={sub_mode}"
     if timezone_offset:
         url += f"&timezone_offset={timezone_offset}"
-    response = run_url(url)
+    response = run_url(url, api_app_key, api_app_secret)
     response = json.loads(response)
     if any(status in response["message"].lower() for status in ["success", "ok"]):
         return response["data"]
     else:
         return response
 
-def get_task_schema_analytics_list(start_time, end_time, shop_id=None, offset=None, limit=None, time_unit=None, group_by=None, clean_mode=None, sub_mode=None, timezone_offset=None):
+def get_task_schema_analytics_list(start_time, end_time, shop_id=None, offset=None, limit=None, time_unit=None, group_by=None, clean_mode=None, sub_mode=None,
+                                   timezone_offset=None, api_app_key=None, api_app_secret=None):
     """ Accepts a shop ID, start time, and end time and returns a list of task schema analytics with paging
 
     Returns a list in which each contains running statistics of each robot of a shop.
@@ -865,14 +861,14 @@ def get_task_schema_analytics_list(start_time, end_time, shop_id=None, offset=No
         url += f"&group_by={group_by}"
     if timezone_offset:
         url += f"&timezone_offset={timezone_offset}"
-    response = run_url(url)
+    response = run_url(url, api_app_key, api_app_secret)
     response = json.loads(response)
     if any(status in response["message"].lower() for status in ["success", "ok"]):
         return response["data"]
     else:
         return response
 
-def get_task_distribution_schema_analytics(start_time, end_time, shop_id=None, clean_mode=None, sub_mode=None, timezone_offset=None):
+def get_task_distribution_schema_analytics(start_time, end_time, shop_id=None, clean_mode=None, sub_mode=None, timezone_offset=None, api_app_key=None, api_app_secret=None):
     """ Accepts a shop ID, start time, and end time and returns a list of task distribution schema analytics
     @param shop_id: The shop ID
     @param start_time: The start time
@@ -896,14 +892,14 @@ def get_task_distribution_schema_analytics(start_time, end_time, shop_id=None, c
         url += f"&sub_mode={sub_mode}"
     if timezone_offset:
         url += f"&timezone_offset={timezone_offset}"
-    response = run_url(url)
+    response = run_url(url, api_app_key, api_app_secret)
     response = json.loads(response)
     if any(status in response["message"].lower() for status in ["success", "ok"]):
         return response["chart"]
     else:
         return response
 
-def get_cleaning_report_list(start_time, end_time, shop_id=None, sn=None, offset=None, limit=None, timezone_offset=None):
+def get_cleaning_report_list(start_time, end_time, shop_id=None, sn=None, offset=None, limit=None, timezone_offset=None, api_app_key=None, api_app_secret=None):
     """ Accepts a shop ID, start time, and end time and returns a list of cleaning reports
     @param shop_id: The shop ID
     @param start_time: The start time
@@ -934,7 +930,6 @@ def get_cleaning_report_list(start_time, end_time, shop_id=None, sn=None, offset
     start_time = int(pd.to_datetime(start_time).timestamp())
     end_time = int(pd.to_datetime(end_time).timestamp())
     url = f"https://csu-open-platform.pudutech.com/pudu-entry/data-board/v1/log/clean_task/query_list?start_time={start_time}&end_time={end_time}"
-    print(url)
     if shop_id:
         url += f"&shop_id={shop_id}"
     if sn:
@@ -945,14 +940,14 @@ def get_cleaning_report_list(start_time, end_time, shop_id=None, sn=None, offset
         url += f"&limit={limit}"
     if timezone_offset:
         url += f"&timezone_offset={timezone_offset}"
-    response = run_url(url)
+    response = run_url(url, api_app_key, api_app_secret)
     response = json.loads(response)
     if any(status in response["message"].lower() for status in ["success", "ok"]):
         return response["data"]
     else:
         return response
 
-def get_cleaning_report_detail(start_time, end_time, sn, report_id, shop_id=None, timezone_offset=None):
+def get_cleaning_report_detail(start_time, end_time, sn, report_id, shop_id=None, timezone_offset=None, api_app_key=None, api_app_secret=None):
     """ Accepts a shop ID, start time, and end time and returns a cleaning report detail updated in real time
     @param shop_id: The shop ID
     @param start_time: The start time
@@ -998,9 +993,141 @@ def get_cleaning_report_detail(start_time, end_time, sn, report_id, shop_id=None
         url += f"&shop_id={shop_id}"
     if timezone_offset:
         url += f"&timezone_offset={timezone_offset}"
-    response = run_url(url)
+    response = run_url(url, api_app_key, api_app_secret)
     response = json.loads(response)
     if any(status in response["message"].lower() for status in ["success", "ok"]):
         return response["data"]
     else:
         return response
+
+class PuduRobotAPI:
+    """Pudu Robot API Client - wrapper to handle credentials"""
+
+    def __init__(self, api_app_key: str = None, api_app_secret: str = None):
+        """
+        Initialize Pudu API client with credentials
+
+        Args:
+            api_app_key: API application key
+            api_app_secret: API application secret
+        """
+        self.api_app_key = api_app_key or 'APID18lGz1qBaBF9XWuttd5YszenrpsodKgt20i9'
+        self.api_app_secret = api_app_secret or 'k2fmGdhz6mhqcl79eWot9f2kqoqosC2q0cm6csM1'
+
+    # Wrap all existing functions to pass credentials
+    def get_list_stores(self, limit=None, offset=None):
+        return get_list_stores(limit, offset, self.api_app_key, self.api_app_secret)
+
+    def get_list_robots(self, shop_id=None, limit=None, offset=None):
+        return get_list_robots(shop_id, limit, offset, self.api_app_key, self.api_app_secret)
+
+    def get_robot_details(self, sn):
+        return get_robot_details(sn, self.api_app_key, self.api_app_secret)
+
+    def get_list_maps(self, shop_id):
+        return get_list_maps(shop_id, self.api_app_key, self.api_app_secret)
+
+    def get_map_details(self, shop_id, map_name, device_width, device_height):
+        return get_map_details(shop_id, map_name, device_width, device_height,
+                              self.api_app_key, self.api_app_secret)
+
+    def get_robot_current_position(self, shop_id, sn):
+        return get_robot_current_position(shop_id, sn, self.api_app_key, self.api_app_secret)
+
+    def get_robot_overview_data(self, start_time, end_time, shop_id=None, timezone_offset=0):
+        return get_robot_overview_data(start_time, end_time, shop_id, timezone_offset,
+                                       self.api_app_key, self.api_app_secret)
+
+    def get_robot_overview_operation_data(self, start_time, end_time, shop_id=None, timezone_offset=0):
+        return get_robot_overview_operation_data(start_time, end_time, shop_id, timezone_offset,
+                                                 self.api_app_key, self.api_app_secret)
+
+    def get_store_overview_data(self, start_time, end_time, shop_id=None, timezone_offset=0):
+        return get_store_overview_data(start_time, end_time, shop_id, timezone_offset,
+                                       self.api_app_key, self.api_app_secret)
+
+    def get_store_analytics(self, start_time, end_time, shop_id=None, time_unit=None, timezone_offset=0):
+        return get_store_analytics(start_time, end_time, shop_id, time_unit, timezone_offset,
+                                   self.api_app_key, self.api_app_secret)
+
+    def get_store_analytics_list(self, start_time, end_time, shop_id=None, time_unit=None,
+                                 offset=None, limit=None, timezone_offset=0):
+        return get_store_analytics_list(start_time, end_time, shop_id, time_unit, offset, limit,
+                                        timezone_offset, self.api_app_key, self.api_app_secret)
+
+    def get_machine_run_analytics(self, start_time, end_time, shop_id=None, time_unit=None, timezone_offset=0):
+        return get_machine_run_analytics(start_time, end_time, shop_id, time_unit, timezone_offset,
+                                         self.api_app_key, self.api_app_secret)
+
+    def get_machine_run_analytics_list(self, start_time, end_time, shop_id=None, time_unit=None,
+                                       offset=None, limit=None, timezone_offset=0):
+        return get_machine_run_analytics_list(start_time, end_time, shop_id, time_unit, offset, limit,
+                                              timezone_offset, self.api_app_key, self.api_app_secret)
+
+    def get_log_list(self, start_time, end_time, shop_id=None, offset=None, limit=None,
+                    check_step=None, is_success=None, timezone_offset=0):
+        return get_log_list(start_time, end_time, shop_id, offset, limit, check_step, is_success,
+                           timezone_offset, self.api_app_key, self.api_app_secret)
+
+    def get_event_list(self, start_time, end_time, shop_id=None, offset=None, limit=None,
+                      error_levels=None, error_types=None, timezone_offset=0):
+        return get_event_list(start_time, end_time, shop_id, offset, limit, error_levels, error_types,
+                             timezone_offset, self.api_app_key, self.api_app_secret)
+
+    def get_charging_record_list(self, start_time, end_time, shop_id=None, offset=None,
+                                 limit=None, timezone_offset=0):
+        return get_charging_record_list(start_time, end_time, shop_id, offset, limit, timezone_offset,
+                                        self.api_app_key, self.api_app_secret)
+
+    def get_battery_health_list(self, start_time, end_time, shop_id=None, sn=None,
+                                offset=None, limit=None, timezone_offset=0):
+        return get_battery_health_list(start_time, end_time, shop_id, sn, offset, limit, timezone_offset,
+                                       self.api_app_key, self.api_app_secret)
+
+    def get_task_list(self, shop_id=None, sn=None):
+        return get_task_list(shop_id, sn, self.api_app_key, self.api_app_secret)
+
+    def get_scheduled_task_list(self, sn=None):
+        return get_scheduled_task_list(sn, self.api_app_key, self.api_app_secret)
+
+    def get_task_schema_analytics(self, start_time, end_time, shop_id=None, time_unit=None,
+                                  clean_mode=None, sub_mode=None, timezone_offset=None):
+        return get_task_schema_analytics(start_time, end_time, shop_id, time_unit, clean_mode,
+                                         sub_mode, timezone_offset, self.api_app_key, self.api_app_secret)
+
+    def get_task_schema_analytics_list(self, start_time, end_time, shop_id=None, offset=None,
+                                       limit=None, time_unit=None, group_by=None, clean_mode=None,
+                                       sub_mode=None, timezone_offset=None):
+        return get_task_schema_analytics_list(start_time, end_time, shop_id, offset, limit, time_unit,
+                                              group_by, clean_mode, sub_mode, timezone_offset,
+                                              self.api_app_key, self.api_app_secret)
+
+    def get_task_distribution_schema_analytics(self, start_time, end_time, shop_id=None,
+                                               clean_mode=None, sub_mode=None, timezone_offset=None):
+        return get_task_distribution_schema_analytics(start_time, end_time, shop_id, clean_mode,
+                                                      sub_mode, timezone_offset,
+                                                      self.api_app_key, self.api_app_secret)
+
+    def get_cleaning_report_list(self, start_time, end_time, shop_id=None, sn=None,
+                                 offset=None, limit=None, timezone_offset=None):
+        return get_cleaning_report_list(start_time, end_time, shop_id, sn, offset, limit,
+                                        timezone_offset, self.api_app_key, self.api_app_secret)
+
+    def get_cleaning_report_detail(self, start_time, end_time, sn, report_id, shop_id=None,
+                                   timezone_offset=None):
+        return get_cleaning_report_detail(start_time, end_time, sn, report_id, shop_id,
+                                          timezone_offset, self.api_app_key, self.api_app_secret)
+
+
+def create_pudu_api_client(api_app_key: str = None, api_app_secret: str = None) -> PuduRobotAPI:
+    """
+    Create Pudu Robot API client instance
+
+    Args:
+        api_app_key: API application key
+        api_app_secret: API application secret
+
+    Returns:
+        PuduRobotAPI instance
+    """
+    return PuduRobotAPI(api_app_key, api_app_secret)

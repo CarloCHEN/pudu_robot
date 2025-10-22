@@ -101,8 +101,10 @@ class APIRegistry:
         Returns:
             适配器实例，如果创建失败则返回None
         """
-        # Create a cache key based on api_name and config
-        cache_key = f"{api_name}_{str(config)}"
+        # Use a hash of the config to make unique cache keys per customer
+        import json
+        config_str = json.dumps(config, sort_keys=True) if config else "default"
+        cache_key = f"{api_name}_{hash(config_str)}"
 
         # Check if instance already exists in cache
         if cache_key in self._instances:

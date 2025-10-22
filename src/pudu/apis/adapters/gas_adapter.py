@@ -787,7 +787,7 @@ class GasAdapter(RobotAPIInterface):
                         'wash_speed': ['Standard'],
                         'wash_suction': ['Standard'],
                         'wash_water': ['Standard'],
-                        'extra_fields': []
+                        'extra_fields': [None]
                     })
 
                     ongoing_tasks_df = pd.concat([ongoing_tasks_df, ongoing_task_row], ignore_index=True)
@@ -796,7 +796,7 @@ class GasAdapter(RobotAPIInterface):
                 print(f"Error checking ongoing tasks for robot {sn}: {e}")
                 continue
 
-        return ongoing_tasks_df
+        return pd.DataFrame() # ongoing_tasks_df
 
     def get_robot_work_location_and_mapping_data(self) -> tuple:
         """

@@ -6,13 +6,13 @@ from pudu.configs import DynamicDatabaseConfig
 from pudu.services.task_management_service import TaskManagementService
 from pudu.services.transform_service import TransformService
 from pudu.rds.rdsTable import ConnectionManager
+from pudu.apis.core.config_manager import config_manager
 import logging
 from typing import Dict, List
 from datetime import datetime
 import sys
 import pandas as pd
 import concurrent.futures
-import threading
 
 # Add src to Python path
 sys.path.append('../')
@@ -82,91 +82,236 @@ class App:
         else:
             logger.info("S3 service not configured - skipping connectivity test")
 
-    def _fetch_all_api_data_parallel(self, start_time: str, end_time: str) -> Dict[str, any]:
+    def _get_customers_and_robot_types(self) -> Dict[str, List[str]]:
         """
-        Fetch all API data in parallel for robot types that exist in current region's database.
+        Get customers from environment and determine which robot types each customer has
+
+        Returns:
+            Dict mapping customer_name -> list of robot_types (e.g., ['pudu', 'gas'])
         """
-        logger.info("🔄 Detecting active robot types in current region...")
+        # Use the global config_manager (not self.config which is DynamicDatabaseConfig)
+        customers = config_manager.get_customers_from_env()
 
-        # Get active robot types from database
-        active_robot_types = self.config.resolver.get_active_robot_types()
+        if not customers:
+            logger.warning("No customers configured - using default")
+            return {'default': ['pudu', 'gas']}
 
-        # Determine which APIs to call based on substring matching
-        api_robot_types = []
-        has_pudu = False
-        has_gas = False
+        customer_robot_types = {}
 
-        for robot_type in active_robot_types:
-            robot_type_lower = robot_type.lower()
+        for customer in customers:
+            try:
+                # Get enabled APIs for this customer from config_manager
+                enabled_apis = config_manager.get_customer_enabled_apis(customer)
 
-            # Check for Pudu robots
-            if 'pudu' in robot_type_lower and not has_pudu:
-                api_robot_types.append('pudu')
-                has_pudu = True
-                logger.info(f"Detected Pudu robot type: {robot_type}")
+                if enabled_apis:
+                    customer_robot_types[customer] = enabled_apis
+                    logger.info(f"Customer '{customer}' has robot types: {enabled_apis}")
+                else:
+                    logger.warning(f"Customer '{customer}' has no enabled robot types")
 
-            # Check for Gas/Gausium robots
-            if any(keyword in robot_type_lower for keyword in ['gausium', 'gas', 'gs']) and not has_gas:
-                api_robot_types.append('gas')
-                has_gas = True
-                logger.info(f"Detected Gas/Gausium robot type: {robot_type}")
+            except Exception as e:
+                logger.error(f"Error getting robot types for customer '{customer}': {e}")
+                continue
 
-        if not api_robot_types:
-            logger.warning("No active robot types found in database - defaulting to both types")
-            api_robot_types = ['pudu', 'gas']
+        if not customer_robot_types:
+            logger.warning("No valid customer configurations found - using default")
+            return {'default': ['pudu', 'gas']}
 
-        logger.info(f"🔄 Fetching API data for robot types: {api_robot_types}")
-        api_start_time = datetime.now()
+        return customer_robot_types
 
-        # Define API calls dynamically based on active robot types
+    def _fetch_api_data_for_customer(self, customer_name: str, robot_types: List[str],
+                                     start_time: str, end_time: str) -> Dict[str, any]:
+        """
+        Fetch all API data for a single customer in parallel
+        Each API call is independent - if one fails, others continue
+
+        Args:
+            customer_name: Customer name
+            robot_types: List of robot types for this customer (e.g., ['pudu', 'gas'])
+            start_time: Start time
+            end_time: End time
+
+        Returns:
+            Dict with API data for this customer (always returns valid structure, even if some calls fail)
+        """
+        logger.info(f"🔄 Fetching API data for customer: {customer_name} (robot types: {robot_types})")
+
+        # Define API calls for this customer's robot types
         api_calls = {}
 
-        for robot_type in api_robot_types:
+        for robot_type in robot_types:
             api_calls.update({
-                f'robot_status_{robot_type}': (get_robot_status_table, (), {'robot_type': robot_type}),
-                f'ongoing_tasks_{robot_type}': (get_ongoing_tasks_table, (), {'robot_type': robot_type}),
-                f'schedule_{robot_type}': (get_schedule_table, (start_time, end_time, None, None, 0), {'robot_type': robot_type}),
-                f'charging_{robot_type}': (get_charging_table, (start_time, end_time, None, None, 0), {'robot_type': robot_type}),
-                f'events_{robot_type}': (get_events_table, (start_time, end_time, None, None, None, None, 0), {'robot_type': robot_type}),
+                f'robot_status_{robot_type}': (
+                    get_robot_status_table,
+                    (),
+                    {'robot_type': robot_type, 'customer_name': customer_name}
+                ),
+                f'ongoing_tasks_{robot_type}': (
+                    get_ongoing_tasks_table,
+                    (),
+                    {'robot_type': robot_type, 'customer_name': customer_name}
+                ),
+                f'schedule_{robot_type}': (
+                    get_schedule_table,
+                    (start_time, end_time, None, None, 0),
+                    {'robot_type': robot_type, 'customer_name': customer_name}
+                ),
+                f'charging_{robot_type}': (
+                    get_charging_table,
+                    (start_time, end_time, None, None, 0),
+                    {'robot_type': robot_type, 'customer_name': customer_name}
+                ),
+                f'events_{robot_type}': (
+                    get_events_table,
+                    (start_time, end_time, None, None, None, None, 0),
+                    {'robot_type': robot_type, 'customer_name': customer_name}
+                ),
             })
 
         api_data = {}
 
-        # Use ThreadPoolExecutor to make all API calls simultaneously
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10, thread_name_prefix="api_worker") as executor:
+        # Use ThreadPoolExecutor to make all API calls for this customer simultaneously
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10, thread_name_prefix=f"api_{customer_name}") as executor:
             # Submit all API calls
             future_to_name = {}
             for api_name, (api_func, args, kwargs) in api_calls.items():
                 future = executor.submit(api_func, *args, **kwargs)
                 future_to_name[future] = api_name
-                logger.debug(f"📡 Submitted API call for {api_name}")
+                logger.debug(f"📡 Submitted API call for {customer_name}.{api_name}")
 
-            # Collect results as they complete
-            for future in concurrent.futures.as_completed(future_to_name, timeout=60):
+            # Collect results as they complete - ALWAYS store result (success or failure)
+            for future in concurrent.futures.as_completed(future_to_name, timeout=120):
                 api_name = future_to_name[future]
                 try:
                     result = future.result()
                     api_data[api_name] = result
-                    logger.info(f"✅ Completed API call for {api_name}: {len(result) if hasattr(result, '__len__') else 'N/A'} records")
+                    record_count = len(result) if hasattr(result, '__len__') else 'N/A'
+                    logger.info(f"✅ [{customer_name}] Completed {api_name}: {record_count} records")
                 except Exception as e:
                     import traceback
-                    logger.error(f"❌ API call failed for {api_name}: {e}")
+                    logger.error(f"❌ [{customer_name}] API call failed for {api_name}: {e}")
                     logger.error(f"📋 Traceback: {traceback.format_exc()}")
-                    api_data[api_name] = pd.DataFrame()  # Empty DataFrame as fallback
+                    # IMPORTANT: Store empty DataFrame on failure - don't let one failure kill everything
+                    api_data[api_name] = pd.DataFrame()
 
-        # Combine results from all active robot types
+        # Combine results from all robot types for this customer
+        # Use .get() with empty DataFrame default to handle missing data gracefully
         combined_data = {
-            'robot_status': pd.concat([api_data.get(f'robot_status_{rt}', pd.DataFrame()) for rt in api_robot_types], ignore_index=True),
-            'ongoing_tasks': pd.concat([api_data.get(f'ongoing_tasks_{rt}', pd.DataFrame()) for rt in api_robot_types], ignore_index=True),
-            'schedule': pd.concat([api_data.get(f'schedule_{rt}', pd.DataFrame()) for rt in api_robot_types], ignore_index=True),
-            'charging': pd.concat([api_data.get(f'charging_{rt}', pd.DataFrame()) for rt in api_robot_types], ignore_index=True),
-            'events': pd.concat([api_data.get(f'events_{rt}', pd.DataFrame()) for rt in api_robot_types], ignore_index=True),
+            'robot_status': pd.concat(
+                [api_data.get(f'robot_status_{rt}', pd.DataFrame()) for rt in robot_types],
+                ignore_index=True
+            ) if any(f'robot_status_{rt}' in api_data for rt in robot_types) else pd.DataFrame(),
+
+            'ongoing_tasks': pd.concat(
+                [api_data.get(f'ongoing_tasks_{rt}', pd.DataFrame()) for rt in robot_types],
+                ignore_index=True
+            ) if any(f'ongoing_tasks_{rt}' in api_data for rt in robot_types) else pd.DataFrame(),
+
+            'schedule': pd.concat(
+                [api_data.get(f'schedule_{rt}', pd.DataFrame()) for rt in robot_types],
+                ignore_index=True
+            ) if any(f'schedule_{rt}' in api_data for rt in robot_types) else pd.DataFrame(),
+
+            'charging': pd.concat(
+                [api_data.get(f'charging_{rt}', pd.DataFrame()) for rt in robot_types],
+                ignore_index=True
+            ) if any(f'charging_{rt}' in api_data for rt in robot_types) else pd.DataFrame(),
+
+            'events': pd.concat(
+                [api_data.get(f'events_{rt}', pd.DataFrame()) for rt in robot_types],
+                ignore_index=True
+            ) if any(f'events_{rt}' in api_data for rt in robot_types) else pd.DataFrame(),
         }
 
-        api_total_time = (datetime.now() - api_start_time).total_seconds()
-        logger.info(f"🚀 All API calls completed in {api_total_time:.2f} seconds")
+        # Add customer column to all non-empty dataframes for tracking
+        for key, df in combined_data.items():
+            if not df.empty:
+                df['customer'] = customer_name
+
+        # Log summary with success/failure counts
+        successful_calls = sum(1 for v in api_data.values() if not v.empty)
+        total_calls = len(api_calls)
+        logger.info(f"✅ [{customer_name}] Completed {successful_calls}/{total_calls} non-empty API calls successfully")
 
         return combined_data
+
+    def _fetch_all_customers_data_parallel(self, start_time: str, end_time: str) -> Dict[str, Dict[str, any]]:
+        """
+        Fetch API data for ALL customers in parallel
+        Each customer is processed independently - if one customer fails, others continue
+
+        Returns:
+            Dict mapping customer_name -> api_data_dict
+        """
+        logger.info("=" * 80)
+        logger.info("🌐 MULTI-CUSTOMER PARALLEL API FETCH PHASE")
+        logger.info("=" * 80)
+
+        fetch_start_time = datetime.now()
+
+        # Get customer and robot type mapping
+        customer_robot_types = self._get_customers_and_robot_types()
+
+        logger.info(f"📋 Processing {len(customer_robot_types)} customers: {list(customer_robot_types.keys())}")
+
+        all_customer_data = {}
+
+        # Process each customer in parallel
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=len(customer_robot_types),
+            thread_name_prefix="customer"
+        ) as executor:
+            # Submit API fetch for each customer
+            future_to_customer = {}
+            for customer_name, robot_types in customer_robot_types.items():
+                future = executor.submit(
+                    self._fetch_api_data_for_customer,
+                    customer_name,
+                    robot_types,
+                    start_time,
+                    end_time
+                )
+                future_to_customer[future] = customer_name
+                logger.info(f"🚀 Launched API fetch for customer: {customer_name}")
+
+            # Collect results as they complete
+            for future in concurrent.futures.as_completed(future_to_customer, timeout=180):
+                customer_name = future_to_customer[future]
+                try:
+                    customer_data = future.result()
+                    all_customer_data[customer_name] = customer_data
+
+                    # Log summary for this customer
+                    total_records = sum(len(df) for df in customer_data.values() if not df.empty)
+                    non_empty_types = [k for k, df in customer_data.items() if not df.empty]
+                    logger.info(f"✅ Customer '{customer_name}' fetch complete: {total_records} total records across {len(non_empty_types)} data types")
+
+                except Exception as e:
+                    # This should rarely happen now since _fetch_api_data_for_customer handles failures gracefully
+                    logger.error(f"❌ Critical failure for customer '{customer_name}': {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+                    # Store empty data structure for completely failed customer
+                    all_customer_data[customer_name] = {
+                        'robot_status': pd.DataFrame(),
+                        'ongoing_tasks': pd.DataFrame(),
+                        'schedule': pd.DataFrame(),
+                        'charging': pd.DataFrame(),
+                        'events': pd.DataFrame(),
+                    }
+
+        fetch_total_time = (datetime.now() - fetch_start_time).total_seconds()
+
+        # Log final summary
+        successful_customers = sum(1 for data in all_customer_data.values()
+                                   if any(not df.empty for df in data.values()))
+        total_customers = len(customer_robot_types)
+
+        logger.info(f"🚀 All customer API calls completed in {fetch_total_time:.2f} seconds")
+        logger.info(f"📊 Successfully fetched data for {successful_customers}/{total_customers} customers")
+        logger.info("=" * 80)
+
+        return all_customer_data
 
     def _get_robots_for_data(self, data_df, robot_sn_column='robot_sn'):
         """Extract robot SNs from data DataFrame"""
@@ -575,7 +720,7 @@ class App:
             logger.error(f"Error processing project database locations: {e}")
             return 0, 1, {}
 
-    def _process_ongoing_robot_tasks(self, table_type: str, ongoing_tasks_data):
+    def _process_ongoing_robot_tasks(self, table_type: str, ongoing_tasks_data, columns_to_remove: list = []):
         """
         Process ongoing robot tasks with complete upsert and cleanup logic.
 
@@ -587,7 +732,7 @@ class App:
         logger.info("📋 Processing ongoing robot tasks (complete upsert with cleanup)...")
 
         try:
-            processed_data = self._prepare_df_for_database(ongoing_tasks_data, columns_to_remove=['id', 'location_id'])
+            processed_data = self._prepare_df_for_database(ongoing_tasks_data, columns_to_remove=columns_to_remove)
 
             # Get all robots that have data OR need cleanup
             robots_with_tasks = set()
@@ -926,9 +1071,10 @@ class App:
         return result_data, pd.DataFrame()
 
     def run(self, start_time: str, end_time: str):
-        """Run the dynamic data pipeline with parallel API processing"""
+        """Run the dynamic data pipeline with parallel multi-customer API processing"""
         pipeline_start = datetime.now()
-        logger.info(f"🚀 Starting PARALLEL API data pipeline for period: {start_time} to {end_time}")
+        logger.info(f"🚀 Starting MULTI-CUSTOMER PARALLEL API data pipeline")
+        logger.info(f"📅 Time period: {start_time} to {end_time}")
 
         # Log connection pool status at start
         pool_status = ConnectionManager.get_pool_status()
@@ -942,28 +1088,40 @@ class App:
         }
 
         try:
-            # STEP 1: Fetch all API data in parallel (NEW OPTIMIZATION)
-            logger.info("=" * 50)
-            logger.info("🔄 PARALLEL API FETCH PHASE")
-            logger.info("=" * 50)
+            # STEP 1: Fetch all API data for all customers in parallel (NEW MULTI-CUSTOMER LOGIC)
+            all_customer_data = self._fetch_all_customers_data_parallel(start_time, end_time)
 
-            api_data = self._fetch_all_api_data_parallel(start_time, end_time)
+            # Combine data from all customers for processing
+            logger.info("=" * 80)
+            logger.info("🔄 COMBINING DATA FROM ALL CUSTOMERS")
+            logger.info("=" * 80)
 
-            # STEP 2: Process each data type using pre-fetched data
-            logger.info("=" * 50)
+            combined_api_data = {
+                'robot_status': pd.concat([data['robot_status'] for data in all_customer_data.values()], ignore_index=True),
+                'ongoing_tasks': pd.concat([data['ongoing_tasks'] for data in all_customer_data.values()], ignore_index=True),
+                'schedule': pd.concat([data['schedule'] for data in all_customer_data.values()], ignore_index=True),
+                'charging': pd.concat([data['charging'] for data in all_customer_data.values()], ignore_index=True),
+                'events': pd.concat([data['events'] for data in all_customer_data.values()], ignore_index=True),
+            }
+
+            # Log combined data summary
+            for data_type, df in combined_api_data.items():
+                if not df.empty:
+                    customer_counts = df.groupby('customer').size().to_dict() if 'customer' in df.columns else {}
+                    logger.info(f"📊 {data_type}: {len(df)} total records across customers: {customer_counts}")
+                else:
+                    logger.info(f"📊 {data_type}: No data")
+
+            # STEP 2: Process each data type using combined data (existing logic)
+            logger.info("=" * 80)
             logger.info("🔄 DATA PROCESSING PHASE")
-            logger.info("=" * 50)
-
-            # 1.1. Location data (special case)
-            # successful, failed, changes = self._process_location_data()
-            # pipeline_stats['total_successful_inserts'] += successful
-            # pipeline_stats['total_failed_inserts'] += failed
-            # self._handle_notifications(changes, 'location', pipeline_stats)
+            logger.info("=" * 80)
 
             # 1. Robot status data
-            if api_data.get('robot_status') is not None and not api_data['robot_status'].empty:
+            if not combined_api_data['robot_status'].empty:
                 successful, failed, changes = self._process_robot_data_with_prefetched(
-                    'robot_status', api_data['robot_status'], 'robot_sn', columns_to_remove=['id', 'location_id']
+                    'robot_status', combined_api_data['robot_status'], 'robot_sn',
+                    columns_to_remove=['id', 'location_id', 'customer']
                 )
                 pipeline_stats['total_successful_inserts'] += successful
                 pipeline_stats['total_failed_inserts'] += failed
@@ -974,8 +1132,10 @@ class App:
             logger.info("=" * 50)
 
             # 2. Ongoing task data
-            if api_data.get('ongoing_tasks') is not None and not api_data['ongoing_tasks'].empty:
-                successful, failed, changes = self._process_ongoing_robot_tasks('robot_task', api_data['ongoing_tasks'])
+            if not combined_api_data['ongoing_tasks'].empty:
+                successful, failed, changes = self._process_ongoing_robot_tasks(
+                    'robot_task', combined_api_data['ongoing_tasks'], columns_to_remove=['id', 'location_id', 'customer']
+                )
                 pipeline_stats['total_successful_inserts'] += successful
                 pipeline_stats['total_failed_inserts'] += failed
                 self._handle_notifications(changes, 'robot_task', pipeline_stats)
@@ -985,9 +1145,10 @@ class App:
             logger.info("=" * 50)
 
             # 3. Report task data WITH MAP TRANSFORMATIONS
-            if api_data.get('schedule') is not None and not api_data['schedule'].empty:
+            if not combined_api_data['schedule'].empty:
                 successful, failed, changes = self._process_schedule_data_with_transforms(
-                    'robot_task', api_data['schedule'], 'robot_sn', columns_to_remove=['id', 'location_id']
+                    'robot_task', combined_api_data['schedule'], 'robot_sn',
+                    columns_to_remove=['id', 'location_id', 'customer']
                 )
                 pipeline_stats['total_successful_inserts'] += successful
                 pipeline_stats['total_failed_inserts'] += failed
@@ -998,9 +1159,10 @@ class App:
             logger.info("=" * 50)
 
             # 4. Robot charging data
-            if api_data.get('charging') is not None and not api_data['charging'].empty:
+            if not combined_api_data['charging'].empty:
                 successful, failed, changes = self._process_robot_data_with_prefetched(
-                    'robot_charging', api_data['charging'], 'robot_sn', columns_to_remove=['id', 'location_id']
+                    'robot_charging', combined_api_data['charging'], 'robot_sn',
+                    columns_to_remove=['id', 'location_id', 'customer']
                 )
                 pipeline_stats['total_successful_inserts'] += successful
                 pipeline_stats['total_failed_inserts'] += failed
@@ -1011,9 +1173,10 @@ class App:
             logger.info("=" * 50)
 
             # 5. Robot events data
-            if api_data.get('events') is not None and not api_data['events'].empty:
+            if not combined_api_data['events'].empty:
                 successful, failed, changes = self._process_robot_data_with_prefetched(
-                    'robot_events', api_data['events'], 'robot_sn', columns_to_remove=['id', 'location_id']
+                    'robot_events', combined_api_data['events'], 'robot_sn',
+                    columns_to_remove=['id', 'location_id', 'customer']
                 )
                 pipeline_stats['total_successful_inserts'] += successful
                 pipeline_stats['total_failed_inserts'] += failed
@@ -1023,21 +1186,6 @@ class App:
 
             logger.info("=" * 50)
 
-            # 6. Robot work location data WITH COORDINATE TRANSFORMATIONS - moved to a separate lambda
-            # from pudu.services.work_location_service import WorkLocationService
-
-            # logger.info("=" * 50)
-            # logger.info("🗺️ PROCESSING WORK LOCATION DATA WITH ARCHIVAL")
-            # logger.info("=" * 50)
-
-            # work_location_service = WorkLocationService(self.config, self.s3_config)
-            # work_location_success = work_location_service.run_work_location_updates()
-
-            # if work_location_success:
-            #     logger.info("✅ Work location updates with archival completed successfully")
-            # else:
-            #     logger.warning("⚠️ Work location updates completed with some failures")
-
             # Calculate execution time and print summary
             pipeline_end = datetime.now()
             execution_time = (pipeline_end - pipeline_start).total_seconds()
@@ -1046,35 +1194,32 @@ class App:
             final_pool_status = ConnectionManager.get_pool_status()
             logger.info(f"🔗 Connection pool status at end: {final_pool_status}")
 
-            logger.info("=" * 60)
-            logger.info("📊 PARALLEL API PIPELINE EXECUTION SUMMARY")
-            logger.info("=" * 60)
+            logger.info("=" * 80)
+            logger.info("📊 MULTI-CUSTOMER PIPELINE EXECUTION SUMMARY")
+            logger.info("=" * 80)
+            logger.info(f"👥 Customers processed: {list(all_customer_data.keys())}")
             logger.info(f"⏱️  Execution time: {execution_time:.2f} seconds")
             logger.info(f"✅ Total successful inserts: {pipeline_stats['total_successful_inserts']}")
             logger.info(f"❌ Total failed inserts: {pipeline_stats['total_failed_inserts']}")
             logger.info(f"📧 Total successful notifications: {pipeline_stats['total_successful_notifications']}")
             logger.info(f"📧 Total failed notifications: {pipeline_stats['total_failed_notifications']}")
-            # logger.info(f"🗺️ Work location updates success: {work_location_success}")
-            logger.info(f"🔗 Active database connections: {pool_status['active_connections']}")
+            logger.info(f"🔗 Active database connections: {final_pool_status['active_connections']}")
 
-            success = pipeline_stats['total_failed_inserts'] == 0 # and work_location_success == True
+            success = pipeline_stats['total_failed_inserts'] == 0
             if success:
-                logger.info("✅ Parallel API Lambda service completed successfully")
+                logger.info("✅ Multi-customer pipeline completed successfully")
             else:
-                logger.warning("⚠️ Parallel API Lambda service completed with some failures")
+                logger.warning("⚠️ Multi-customer pipeline completed with some failures")
 
             return success
 
         except Exception as e:
-            logger.error(f"💥 Critical error in parallel API data pipeline: {e}", exc_info=True)
+            logger.error(f"💥 Critical error in multi-customer pipeline: {e}", exc_info=True)
             raise
         finally:
-            # IMPORTANT: Close all connections at the end of Lambda execution
-            # This ensures clean state for next invocation while allowing reuse during execution
+            # Close all connections at the end
             logger.info("🔒 Closing all pooled connections...")
             ConnectionManager.close_all_connections()
-
-            # Close resolver connection
             self.config.close()
 
     def _handle_notifications(self, changes: Dict, table_type: str, pipeline_stats: Dict, start_time: str = None, end_time: str = None):

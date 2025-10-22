@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Any
 import datetime
 from datetime import timedelta, timezone
 from ..core.api_interface import RobotAPIInterface
-from ..raw.pudu_api import *
+from ..raw.pudu_api import create_pudu_api_client
 
 
 API_NAME = "pudu"
@@ -96,19 +96,24 @@ class PuduAdapter(RobotAPIInterface):
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.config = config or {}
 
+        # Create Pudu API client with credentials from config
+        api_app_key = self.config.get('api_app_key')
+        api_app_secret = self.config.get('api_app_secret')
+        self.client = create_pudu_api_client(api_app_key, api_app_secret)
+
     # ==================== Basic API Methods ====================
 
     def get_robot_details(self, sn: str) -> Dict[str, Any]:
-        return get_robot_details(sn)
+        return self.client.get_robot_details(sn)
 
     def get_robot_status(self, sn: str) -> Dict[str, Any]:
-        return get_robot_details(sn)
+        return self.client.get_robot_details(sn)
 
     def get_list_stores(self, limit: Optional[int] = None, offset: Optional[int] = None) -> Dict[str, Any]:
-        return get_list_stores(limit=limit, offset=offset)
+        return self.client.get_list_stores(limit=limit, offset=offset)
 
     def get_list_robots(self, shop_id: Optional[str] = None, limit: Optional[int] = None, offset: Optional[int] = None) -> Dict[str, Any]:
-        return get_list_robots(shop_id=shop_id, limit=limit, offset=offset)
+        return self.client.get_list_robots(shop_id=shop_id, limit=limit, offset=offset)
 
     # ==================== Enhanced Methods with Data Processing ====================
 
@@ -128,14 +133,14 @@ class PuduAdapter(RobotAPIInterface):
         ])
 
         # Get list of stores and filter by location_id if provided
-        stores = [shop for shop in get_list_stores()['list']
+        stores = [shop for shop in self.client.get_list_stores()['list']
                   if location_id is None or shop['shop_id'] == location_id]
 
         for shop in stores:
             shop_id, shop_name = shop['shop_id'], shop['shop_name']
 
             # Get all robots for this shop
-            shop_robots = get_list_robots(shop_id=shop_id)['list']
+            shop_robots = self.client.get_list_robots(shop_id=shop_id)['list']
             shop_robots = [robot['sn'] for robot in shop_robots if 'sn' in robot]
 
             # Filter robots by robot_sn if provided
@@ -146,7 +151,7 @@ class PuduAdapter(RobotAPIInterface):
             robots_with_tasks = set()
 
             # Get cleaning reports for this shop for the entire period
-            results = get_cleaning_report_list(start_time, end_time, shop_id,
+            results = self.client.get_cleaning_report_list(start_time, end_time, shop_id,
                                                timezone_offset=timezone_offset)['list']
 
             # Filter by robot_sn if provided
@@ -175,7 +180,7 @@ class PuduAdapter(RobotAPIInterface):
                     task_end_time = pd.to_datetime(task['end_time'], unit='s')
 
                     # Get detailed cleaning report
-                    report = get_cleaning_report_detail(
+                    report = self.client.get_cleaning_report_detail(
                         start_time, end_time, sn, report_id, shop_id, timezone_offset=timezone_offset
                     )
                     task_id = report['task_id']
@@ -342,18 +347,18 @@ class PuduAdapter(RobotAPIInterface):
         ])
 
         # Get list of stores and filter by location_id if provided
-        stores = [shop for shop in get_list_stores()['list']
+        stores = [shop for shop in self.client.get_list_stores()['list']
                   if location_id is None or shop['shop_id'] == location_id]
 
         for shop in stores:
             shop_id, shop_name = shop['shop_id'], shop['shop_name']
 
             # Get list of robots in this shop
-            shop_robots = get_list_robots(shop_id=shop_id)['list']
+            shop_robots = self.client.get_list_robots(shop_id=shop_id)['list']
             shop_robots = [robot['sn'] for robot in shop_robots if 'sn' in robot]
 
             # Get charging records for this shop
-            results = get_charging_record_list(start_time, end_time, shop_id, timezone_offset=timezone_offset)['list']
+            results = self.client.get_charging_record_list(start_time, end_time, shop_id, timezone_offset=timezone_offset)['list']
             results = [record for record in results if 'sn' in record and record['sn'] in shop_robots]
 
             # Process each charging record
@@ -377,11 +382,11 @@ class PuduAdapter(RobotAPIInterface):
                 power_gain = final_power - initial_power
 
                 # Get robot name
-                robot_details = get_robot_details(record['sn'])
+                robot_details = self.client.get_robot_details(record['sn'])
                 robot_name = robot_details.get('nickname', f"{shop_name}_{record['product_code']}")
 
                 # Use the same start_time and end_time as the charging record query
-                battery_data = get_battery_health_list(start_time, end_time, sn=record['sn'])
+                battery_data = self.client.get_battery_health_list(start_time, end_time, sn=record['sn'])
 
                 soh = None
                 cycles = None
@@ -428,7 +433,7 @@ class PuduAdapter(RobotAPIInterface):
         ])
 
         # Get list of stores and filter by location_id if provided
-        all_shops = get_list_stores()['list']
+        all_shops = self.client.get_list_stores()['list']
         stores = [shop for shop in all_shops if location_id is None or shop['shop_id'] == location_id]
 
         all_events = []
@@ -438,7 +443,7 @@ class PuduAdapter(RobotAPIInterface):
 
             # Get list of robots in this shop
             try:
-                shop_robots = get_list_robots(shop_id=shop_id)['list']
+                shop_robots = self.client.get_list_robots(shop_id=shop_id)['list']
                 shop_robots_sn = [robot['sn'] for robot in shop_robots if 'sn' in robot]
 
                 # Filter by robot_sn if provided
@@ -456,7 +461,7 @@ class PuduAdapter(RobotAPIInterface):
 
             # Get events for this shop
             try:
-                events_response = get_event_list(
+                events_response = self.client.get_event_list(
                     start_time=start_time,
                     end_time=end_time,
                     shop_id=shop_id,
@@ -523,7 +528,7 @@ class PuduAdapter(RobotAPIInterface):
         """
         robot_df = pd.DataFrame(columns=['Robot SN', 'Water Level', 'Sewage Level', 'Battery Level', 'Battery SOH', 'Battery Cycles',
                                         'Status', 'Timestamp UTC'])
-        all_shops = get_list_stores()['list']
+        all_shops = self.client.get_list_stores()['list']
 
         for shop in all_shops:
             shop_id, shop_name = shop['shop_id'], shop['shop_name']
@@ -533,7 +538,7 @@ class PuduAdapter(RobotAPIInterface):
                 continue
 
             # Get the list of robots for this shop
-            shop_robots = get_list_robots(shop_id=shop_id)['list']
+            shop_robots = self.client.get_list_robots(shop_id=shop_id)['list']
 
             # Process each robot in the shop
             for robot in shop_robots:
@@ -544,7 +549,7 @@ class PuduAdapter(RobotAPIInterface):
                     continue
 
                 # Get robot details
-                robot_details = get_robot_details(sn)
+                robot_details = self.client.get_robot_details(sn)
 
                 # Get robot status
                 is_online = str(robot_details.get('online', '')).strip().lower() == 'true'
@@ -566,7 +571,7 @@ class PuduAdapter(RobotAPIInterface):
                 end_time = datetime.datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
                 start_time = (datetime.datetime.now(timezone.utc) - timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
 
-                battery_data = get_battery_health_list(start_time, end_time, sn=sn)
+                battery_data = self.client.get_battery_health_list(start_time, end_time, sn=sn)
 
                 soh = None
                 cycles = None
@@ -622,13 +627,13 @@ class PuduAdapter(RobotAPIInterface):
         current_time = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
 
         # Get all stores
-        all_shops = get_list_stores()['list']
+        all_shops = self.client.get_list_stores()['list']
 
         for shop in all_shops:
             shop_id = shop['shop_id']
 
             try:
-                shop_robots = get_list_robots(shop_id=shop_id)['list']
+                shop_robots = self.client.get_list_robots(shop_id=shop_id)['list']
 
                 for robot in shop_robots:
                     sn = robot.get('sn')
@@ -636,7 +641,7 @@ class PuduAdapter(RobotAPIInterface):
                         continue
 
                     try:
-                        robot_details = get_robot_details(sn)
+                        robot_details = self.client.get_robot_details(sn)
 
                         if not robot_details:
                             continue

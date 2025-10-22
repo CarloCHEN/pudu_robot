@@ -23,6 +23,22 @@ class APIFactory:
         return cls._instance
 
     @classmethod
+    def set_customer(cls, customer_name: str):
+        """设置当前客户并清除缓存
+
+        Args:
+            customer_name: 客户名称
+        """
+        config_manager.set_customer(customer_name)
+        cls.clear_cache()  # Clear cache when switching customers
+        logger.info(f"API Factory 切换到客户: {customer_name}")
+
+    @classmethod
+    def get_current_customer(cls) -> str:
+        """获取当前客户名称"""
+        return config_manager.get_current_customer()
+
+    @classmethod
     def get_default_api(cls) -> RobotAPIInterface:
         """获取默认API实例"""
         if cls._current_api is None:
@@ -30,8 +46,13 @@ class APIFactory:
         return cls._current_api
 
     @classmethod
-    def create_api(cls, api_name: Optional[str] = None) -> Optional[RobotAPIInterface]:
-        """创建API实例"""
+    def create_api(cls, api_name: Optional[str] = None, customer_name: Optional[str] = None) -> Optional[RobotAPIInterface]:
+        """创建API实例
+
+        Args:
+            api_name: API名称，如果不提供则使用最优API
+            customer_name: 客户名称，如果不提供则使用当前客户
+        """
         if api_name is None:
             api_name = config_manager.get_optimal_api()
 
@@ -43,27 +64,61 @@ class APIFactory:
             logger.error(f"API {api_name} 不可用")
             return None
 
-        api_config = config_manager.get_api_config(api_name)
+        # MODIFIED: Get config with customer-specific credentials
+        api_config = config_manager.get_api_config(api_name, customer_name)
+
+        # Check if this API is enabled for the customer
+        customer = customer_name or config_manager.get_current_customer()
+        if not api_config.get('config'):
+            logger.error(f"API {api_name} 未为客户 {customer} 配置凭证")
+            return None
+
         instance = api_registry.create_adapter_instance(api_name, api_config.get('config', {}))
 
         if instance:
-            logger.info(f"成功创建API实例: {api_name}")
+            logger.info(f"成功创建API实例: {api_name} (customer: {customer})")
         else:
             logger.error(f"创建API实例失败: {api_name}")
 
         return instance
 
     @classmethod
-    def create_api_with_fallback(cls, preferred_apis: Optional[List[str]] = None) -> Optional[RobotAPIInterface]:
-        """创建带故障转移的API实例"""
+    def list_enabled_apis_for_customer(cls, customer_name: str = None) -> List[str]:
+        """获取指定客户启用的API列表
+
+        Args:
+            customer_name: 客户名称
+
+        Returns:
+            启用的API名称列表
+        """
+        customer = customer_name or config_manager.get_current_customer()
+        return config_manager.get_customer_enabled_apis(customer)
+
+    @classmethod
+    def create_api_with_fallback(cls, preferred_apis: Optional[List[str]] = None,
+                                 customer_name: Optional[str] = None) -> Optional[RobotAPIInterface]:
+        """创建带故障转移的API实例
+
+        Args:
+            preferred_apis: 优先API列表
+            customer_name: 客户名称
+        """
         if preferred_apis is None:
-            preferred_apis = config_manager.get_enabled_apis()
-            # 按优先级排序
+            # Get only enabled APIs for this customer
+            customer = customer_name or config_manager.get_current_customer()
+            preferred_apis = config_manager.get_customer_enabled_apis(customer)
+
+            if not preferred_apis:
+                logger.warning(f"客户 {customer} 没有启用的API，使用全局启用的API")
+                preferred_apis = config_manager.get_enabled_apis()
+
+            # Sort by priority
             preferred_apis.sort(key=lambda x: config_manager.get_api_priority(x))
 
         for api_name in preferred_apis:
             try:
-                instance = cls.create_api(api_name)
+                instance = cls.create_api(api_name, customer_name)
                 if instance:
                     logger.info(f"使用API: {api_name}")
                     return instance
@@ -116,6 +171,11 @@ class APIFactory:
         return config_manager.get_enabled_apis()
 
     @classmethod
+    def list_customers(cls) -> List[str]:
+        """列出所有可用的客户"""
+        return config_manager.list_customers()
+
+    @classmethod
     def reload_configs(cls):
         """重新加载配置"""
         config_manager.reload_configs()
@@ -131,15 +191,21 @@ class APIFactory:
         logger.info("清除API缓存完成")
 
 
-# 便捷函数
-def get_api(api_name: Optional[str] = None) -> Optional[RobotAPIInterface]:
+def get_api(api_name: Optional[str] = None, customer_name: Optional[str] = None) -> Optional[RobotAPIInterface]:
     """获取API实例的便捷函数"""
-    return APIFactory.get_default_api() if api_name is None else APIFactory.create_api(api_name)
+    if api_name is None:
+        return APIFactory.get_default_api()
+    return APIFactory.create_api(api_name, customer_name)
 
-def get_api_with_fallback(preferred_apis: Optional[List[str]] = None) -> Optional[RobotAPIInterface]:
+def get_api_with_fallback(preferred_apis: Optional[List[str]] = None,
+                          customer_name: Optional[str] = None) -> Optional[RobotAPIInterface]:
     """获取带故障转移的API实例的便捷函数"""
-    return APIFactory.create_api_with_fallback(preferred_apis)
+    return APIFactory.create_api_with_fallback(preferred_apis, customer_name)
 
 def switch_api(api_name: str) -> bool:
     """切换API的便捷函数"""
     return APIFactory.switch_api(api_name)
+
+def set_customer(customer_name: str):
+    """设置当前客户的便捷函数"""
+    APIFactory.set_customer(customer_name)
