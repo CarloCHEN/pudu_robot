@@ -281,7 +281,7 @@ class RobotLocationResolver:
                 return []
 
             # Get robot management table configurations
-            robot_configs = self.config.get_all_table_configs('robot_status')
+            robot_configs = self.config.get_all_table_configs('robot_management')
 
             all_robots = []
             for config in robot_configs:
@@ -332,7 +332,7 @@ class RobotLocationResolver:
     def _get_robots_by_name(self, robot_name: str) -> List[str]:
         """Get robots by name - supports partial matching"""
         try:
-            robot_configs = self.config.get_all_table_configs('robot_status')
+            robot_configs = self.config.get_all_table_configs('robot_management')
 
             all_robots = []
             for config in robot_configs:
@@ -373,7 +373,7 @@ class RobotLocationResolver:
     def _validate_robot_exists(self, robot_sn: str) -> bool:
         """Validate that a robot with given SN exists"""
         try:
-            robot_configs = self.config.get_all_table_configs('robot_status')
+            robot_configs = self.config.get_all_table_configs('robot_management')
 
             for config in robot_configs:
                 try:
