@@ -1682,10 +1682,12 @@ class PerformanceMetricsCalculator:
     # ============================================================================
 
     def calculate_map_performance_by_building(self, tasks_data: pd.DataFrame,
-                                             robot_locations: pd.DataFrame) -> Dict[str, List[Dict[str, Any]]]:
+                                         robot_locations: pd.DataFrame,
+                                         performance_targets: pd.DataFrame = None) -> Dict[str, List[Dict[str, Any]]]:
         """
         Calculate map performance organized by building.
         OPTIMIZED: Uses cached robot-building map and duration sums.
+        UPDATED: Includes performance target analysis when targets are provided.
         """
         try:
             if tasks_data.empty or 'map_name' not in tasks_data.columns:
@@ -1700,6 +1702,12 @@ class PerformanceMetricsCalculator:
             tasks_with_building['building'] = tasks_with_building['robot_sn'].map(
                 robot_building_map
             ).fillna('Unknown Building')
+
+            # Analyze tasks against targets (if provided)
+            target_analysis_by_map = {}
+            if performance_targets is not None and not performance_targets.empty:
+                target_analysis_by_map = self._analyze_tasks_against_targets(tasks_data, performance_targets)
+                logger.info(f"Performance target analysis completed for {len(target_analysis_by_map)} maps")
 
             result = {}
 
@@ -1736,7 +1744,8 @@ class PerformanceMetricsCalculator:
                     # OPTIMIZED: Use cached days calculation
                     map_days_with_tasks = self.get_cached_days_with_tasks(map_tasks)
 
-                    result[building_name].append({
+                    # Base map performance data
+                    map_data = {
                         'map_name': map_name,
                         'coverage_percentage': round(coverage_percentage, 1),
                         'area_cleaned': round(area_sqft, 0),
@@ -1747,7 +1756,23 @@ class PerformanceMetricsCalculator:
                         'water_efficiency': round(water_efficiency, 1),
                         'days_with_tasks': map_days_with_tasks,
                         'total_tasks': total_tasks
-                    })
+                    }
+
+                    # NEW: Add target performance analysis if available for this map
+                    if map_name in target_analysis_by_map:
+                        analysis = target_analysis_by_map[map_name]
+                        map_data['target_performance'] = {
+                            'tasks_below_efficiency_target': analysis['tasks_below_efficiency_target'],
+                            'tasks_below_area_target': analysis['tasks_below_area_target'],
+                            'tasks_exceeding_duration_target': analysis['tasks_exceeding_duration_target'],
+                            'total_tasks_analyzed': analysis['total_tasks'],
+                            'efficiency_compliance_rate': analysis['efficiency_compliance_rate'],
+                            'area_compliance_rate': analysis['area_compliance_rate'],
+                            'duration_compliance_rate': analysis['duration_compliance_rate'],
+                            'targets': analysis['targets']
+                        }
+
+                    result[building_name].append(map_data)
 
                 # Sort by coverage
                 result[building_name].sort(key=lambda x: x['coverage_percentage'], reverse=True)
@@ -1755,7 +1780,136 @@ class PerformanceMetricsCalculator:
             return result
 
         except Exception as e:
-            logger.error(f"Error calculating map performance: {e}")
+            logger.error(f"Error calculating map performance: {e}", exc_info=True)
+            return {}
+
+
+    def _analyze_tasks_against_targets(self, tasks_data: pd.DataFrame,
+                                       performance_targets: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
+        """
+        Analyze tasks against performance targets by map_name.
+        Helper method for calculate_map_performance_by_building.
+
+        Returns:
+        {
+            'map_name_1': {
+                'tasks_below_efficiency_target': 5,
+                'tasks_below_area_target': 3,
+                'tasks_exceeding_duration_target': 2,
+                'total_tasks': 10,
+                'efficiency_compliance_rate': 50.0,
+                'area_compliance_rate': 70.0,
+                'duration_compliance_rate': 80.0,
+                'targets': {...}
+            }
+        }
+        """
+        try:
+            if tasks_data.empty or performance_targets.empty:
+                return {}
+
+            # Ensure required columns exist
+            required_task_cols = ['map_name', 'efficiency', 'actual_area', 'duration']
+            missing_cols = [col for col in required_task_cols if col not in tasks_data.columns]
+            if missing_cols:
+                logger.warning(f"Missing columns for target analysis: {missing_cols}")
+                return {}
+
+            target_analysis = {}
+
+            # Group tasks by map_name
+            for map_name, map_tasks in tasks_data.groupby('map_name'):
+                if pd.isna(map_name) or map_name == '':
+                    continue
+
+                # Check if we have targets for this map
+                map_targets = performance_targets[performance_targets['map_name'] == map_name]
+
+                if map_targets.empty:
+                    # No targets defined for this map - skip
+                    continue
+
+                # Get the target values (first row if multiple)
+                target = map_targets.iloc[0]
+
+                total_tasks = len(map_tasks)
+                below_efficiency = 0
+                below_area = 0
+                exceeding_duration = 0
+
+                # Analyze each task
+                for _, task in map_tasks.iterrows():
+                    # 1. Check efficiency target
+                    if pd.notna(target.get('target_efficiency')):
+                        task_efficiency = pd.to_numeric(task['efficiency'], errors='coerce')
+                        if pd.notna(task_efficiency) and task_efficiency < target['target_efficiency']:
+                            below_efficiency += 1
+
+                    # 2. Check area target (depends on area_storage_type)
+                    actual_area_sqm = pd.to_numeric(task['actual_area'], errors='coerce')
+                    if pd.notna(actual_area_sqm):
+                        actual_area_sqft = actual_area_sqm * 10.764  # Convert to sqft
+
+                        area_storage_type = target.get('area_storage_type', '').lower()
+
+                        if area_storage_type == 'value':
+                            # Compare against absolute value in sqft
+                            target_area_value = pd.to_numeric(target.get('target_area_value'), errors='coerce')
+                            if pd.notna(target_area_value) and actual_area_sqm < target_area_value:
+                                below_area += 1
+
+                        elif area_storage_type == 'percentage':
+                            # Compare against percentage of plan_area
+                            if 'plan_area' in task.index and pd.notna(task['plan_area']):
+                                plan_area_sqm = pd.to_numeric(task['plan_area'], errors='coerce')
+                                if pd.notna(plan_area_sqm) and plan_area_sqm > 0:
+                                    plan_area_sqft = plan_area_sqm * 10.764
+                                    actual_percentage = (actual_area_sqft / plan_area_sqft * 100)
+
+                                    target_area_pct = pd.to_numeric(target.get('target_area_percentage'), errors='coerce')
+                                    if pd.notna(target_area_pct) and actual_percentage < target_area_pct:
+                                        below_area += 1
+
+                    # 3. Check duration target (tasks exceeding target are below performance)
+                    target_duration = pd.to_numeric(target.get('target_duration'), errors='coerce')
+                    if pd.notna(target_duration):
+                        task_duration = pd.to_numeric(task['duration'], errors='coerce')
+                        if pd.notna(task_duration):
+                            # Duration in tasks is in seconds, target_duration is also in seconds
+                            # Tasks EXCEEDING target duration are considered poor performance
+                            if task_duration > target_duration:
+                                exceeding_duration += 1
+
+                # Calculate compliance rates
+                efficiency_compliance = round((total_tasks - below_efficiency) / total_tasks * 100, 1) if total_tasks > 0 else 0
+                area_compliance = round((total_tasks - below_area) / total_tasks * 100, 1) if total_tasks > 0 else 0
+                duration_compliance = round((total_tasks - exceeding_duration) / total_tasks * 100, 1) if total_tasks > 0 else 0
+
+                # Store results
+                target_analysis[map_name] = {
+                    'tasks_below_efficiency_target': below_efficiency,
+                    'tasks_below_area_target': below_area,
+                    'tasks_exceeding_duration_target': exceeding_duration,
+                    'total_tasks': total_tasks,
+                    'efficiency_compliance_rate': efficiency_compliance,
+                    'area_compliance_rate': area_compliance,
+                    'duration_compliance_rate': duration_compliance,
+                    'targets': {
+                        'efficiency': float(target['target_efficiency']) if pd.notna(target.get('target_efficiency')) else None,
+                        'area_value': float(target['target_area_value']) if pd.notna(target.get('target_area_value')) else None,
+                        'area_percentage': float(target['target_area_percentage']) if pd.notna(target.get('target_area_percentage')) else None,
+                        'area_type': str(target['area_storage_type']) if pd.notna(target.get('area_storage_type')) else None,
+                        'duration_seconds': int(target['target_duration']) if pd.notna(target.get('target_duration')) else None
+                    }
+                }
+
+                logger.debug(f"Map '{map_name}': {below_efficiency}/{total_tasks} below efficiency, "
+                            f"{below_area}/{total_tasks} below area, {exceeding_duration}/{total_tasks} exceeding duration")
+
+            return target_analysis
+
+        except Exception as e:
+            logger.error(f"Error analyzing tasks against targets: {e}", exc_info=True)
             return {}
 
     def calculate_map_days_with_tasks(self, map_df: pd.DataFrame) -> int:
@@ -2768,9 +2922,12 @@ class PerformanceMetricsCalculator:
         return comparisons
 
     def _calculate_map_comparisons(self, current_metrics: Dict[str, Any],
-                                   previous_metrics: Dict[str, Any],
-                                   calc_change) -> Dict[str, Dict[str, Dict[str, str]]]:
-        """Calculate map-level comparisons"""
+                               previous_metrics: Dict[str, Any],
+                               calc_change) -> Dict[str, Dict[str, Dict[str, str]]]:
+        """
+        Calculate map-level comparisons
+        UPDATED: Now includes target performance comparisons
+        """
         current_map_perf = current_metrics.get('map_performance_by_building', {})
         previous_map_perf = previous_metrics.get('map_performance_by_building', {})
 
@@ -2792,7 +2949,8 @@ class PerformanceMetricsCalculator:
 
                 prev_map = previous_maps[map_name]
 
-                comparisons[building_name][map_name] = {
+                # Base comparisons
+                map_comparisons = {
                     'coverage_percentage': calc_change(
                         map_data.get('coverage_percentage', 0),
                         prev_map.get('coverage_percentage', 0),
@@ -2830,6 +2988,61 @@ class PerformanceMetricsCalculator:
                     )
                 }
 
+                # NEW: Add target performance comparisons if both periods have target data
+                current_target_perf = map_data.get('target_performance')
+                prev_target_perf = prev_map.get('target_performance')
+
+                if current_target_perf and prev_target_perf:
+                    # Helper function for reverse logic (fewer tasks below target = better)
+                    def calc_reverse_change(current, previous, suffix=''):
+                        """Calculate change where negative is good (fewer tasks failing)"""
+                        if previous == 0 and current == 0:
+                            return 'N/A'
+
+                        change = current - previous
+
+                        if abs(change) < 0.01:
+                            return f'±0{suffix}'
+
+                        # Add sign
+                        sign = '+' if change > 0 else ''
+                        return f'{sign}{int(change)}{suffix}'
+
+                    map_comparisons['target_performance'] = {
+                        'tasks_below_efficiency': calc_reverse_change(
+                            current_target_perf.get('tasks_below_efficiency_target', 0),
+                            prev_target_perf.get('tasks_below_efficiency_target', 0),
+                            ' tasks'
+                        ),
+                        'tasks_below_area': calc_reverse_change(
+                            current_target_perf.get('tasks_below_area_target', 0),
+                            prev_target_perf.get('tasks_below_area_target', 0),
+                            ' tasks'
+                        ),
+                        'tasks_exceeding_duration': calc_reverse_change(
+                            current_target_perf.get('tasks_exceeding_duration_target', 0),
+                            prev_target_perf.get('tasks_exceeding_duration_target', 0),
+                            ' tasks'
+                        ),
+                        'efficiency_compliance_rate': calc_change(
+                            current_target_perf.get('efficiency_compliance_rate', 0),
+                            prev_target_perf.get('efficiency_compliance_rate', 0),
+                            'percent'
+                        ),
+                        'area_compliance_rate': calc_change(
+                            current_target_perf.get('area_compliance_rate', 0),
+                            prev_target_perf.get('area_compliance_rate', 0),
+                            'percent'
+                        ),
+                        'duration_compliance_rate': calc_change(
+                            current_target_perf.get('duration_compliance_rate', 0),
+                            prev_target_perf.get('duration_compliance_rate', 0),
+                            'percent'
+                        )
+                    }
+
+                comparisons[building_name][map_name] = map_comparisons
+
         return comparisons
 
     def _get_default_facility_comparison(self) -> Dict[str, str]:
@@ -2855,6 +3068,119 @@ class PerformanceMetricsCalculator:
             'highest_coverage_day': 'N/A',
             'lowest_coverage_day': 'N/A'
         }
+
+    def analyze_tasks_against_targets(self, tasks_data: pd.DataFrame,
+                                  performance_targets: pd.DataFrame) -> Dict[str, Dict[str, int]]:
+        """
+        Analyze tasks against performance targets by map_name
+
+        Returns:
+        {
+            'map_name_1': {
+                'tasks_below_efficiency_target': 5,
+                'tasks_below_area_target': 3,
+                'tasks_below_duration_target': 2,
+                'total_tasks': 10
+            },
+            'map_name_2': {...}
+        }
+        """
+        try:
+            if tasks_data.empty or performance_targets.empty:
+                logger.info("No tasks or targets available for target analysis")
+                return {}
+
+            # Ensure required columns exist
+            required_task_cols = ['map_name', 'efficiency', 'actual_area', 'duration']
+            if not all(col in tasks_data.columns for col in required_task_cols):
+                logger.warning(f"Missing required columns in tasks_data for target analysis")
+                return {}
+
+            target_analysis = {}
+
+            # Group tasks by map_name
+            for map_name, map_tasks in tasks_data.groupby('map_name'):
+                # Check if we have targets for this map
+                map_targets = performance_targets[performance_targets['map_name'] == map_name]
+
+                if map_targets.empty:
+                    # No targets defined for this map - skip
+                    logger.debug(f"No performance targets found for map: {map_name}")
+                    continue
+
+                # Get the target values (first row if multiple)
+                target = map_targets.iloc[0]
+
+                total_tasks = len(map_tasks)
+                below_efficiency = 0
+                below_area = 0
+                below_duration = 0
+
+                # Analyze each task
+                for _, task in map_tasks.iterrows():
+                    # 1. Check efficiency target
+                    if pd.notna(target['target_efficiency']):
+                        task_efficiency = pd.to_numeric(task['efficiency'], errors='coerce')
+                        if pd.notna(task_efficiency) and task_efficiency < target['target_efficiency']:
+                            below_efficiency += 1
+
+                    # 2. Check area target (depends on area_storage_type)
+                    actual_area_sqm = pd.to_numeric(task['actual_area'], errors='coerce')
+                    if pd.notna(actual_area_sqm):
+                        actual_area_sqft = actual_area_sqm * 10.764  # Convert to sqft
+
+                        if target['area_storage_type'] == 'value':
+                            # Compare against absolute value
+                            if pd.notna(target['target_area_value']) and actual_area_sqft < target['target_area_value']:
+                                below_area += 1
+
+                        elif target['area_storage_type'] == 'percentage':
+                            # Compare against percentage of plan_area
+                            if 'plan_area' in task and pd.notna(task['plan_area']):
+                                plan_area_sqm = pd.to_numeric(task['plan_area'], errors='coerce')
+                                if pd.notna(plan_area_sqm):
+                                    plan_area_sqft = plan_area_sqm * 10.764
+                                    actual_percentage = (actual_area_sqft / plan_area_sqft * 100) if plan_area_sqft > 0 else 0
+
+                                    if pd.notna(target['target_area_percentage']) and actual_percentage < target['target_area_percentage']:
+                                        below_area += 1
+
+                    # 3. Check duration target
+                    if pd.notna(target['target_duration']):
+                        task_duration = pd.to_numeric(task['duration'], errors='coerce')
+                        if pd.notna(task_duration):
+                            # Duration in tasks is in seconds, target_duration is also in seconds
+                            # Tasks EXCEEDING target duration are considered "below target"
+                            if task_duration > target['target_duration']:
+                                below_duration += 1
+
+                # Store results only if we have targets
+                target_analysis[map_name] = {
+                    'tasks_below_efficiency_target': below_efficiency,
+                    'tasks_below_area_target': below_area,
+                    'tasks_exceeding_duration_target': below_duration,  # Exceeding = worse performance
+                    'total_tasks': total_tasks,
+                    'efficiency_compliance_rate': round((total_tasks - below_efficiency) / total_tasks * 100, 1) if total_tasks > 0 else 0,
+                    'area_compliance_rate': round((total_tasks - below_area) / total_tasks * 100, 1) if total_tasks > 0 else 0,
+                    'duration_compliance_rate': round((total_tasks - below_duration) / total_tasks * 100, 1) if total_tasks > 0 else 0,
+                    # Include target values for reference
+                    'targets': {
+                        'efficiency': target.get('target_efficiency'),
+                        'area_value': target.get('target_area_value'),
+                        'area_percentage': target.get('target_area_percentage'),
+                        'area_type': target.get('area_storage_type'),
+                        'duration_seconds': target.get('target_duration')
+                    }
+                }
+
+                logger.info(f"Map '{map_name}': {below_efficiency}/{total_tasks} below efficiency, "
+                           f"{below_area}/{total_tasks} below area, {below_duration}/{total_tasks} exceeding duration")
+
+            return target_analysis
+
+        except Exception as e:
+            logger.error(f"Error analyzing tasks against targets: {e}", exc_info=True)
+            return {}
 
     # ============================================================================
     # ADDITIONAL UTILITY METRICS (UNCHANGED)

@@ -1118,7 +1118,6 @@ class PuduRobotAPI:
         return get_cleaning_report_detail(start_time, end_time, sn, report_id, shop_id,
                                           timezone_offset, self.api_app_key, self.api_app_secret)
 
-
 def create_pudu_api_client(api_app_key: str = None, api_app_secret: str = None) -> PuduRobotAPI:
     """
     Create Pudu Robot API client instance

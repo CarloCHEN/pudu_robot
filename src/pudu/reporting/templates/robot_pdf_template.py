@@ -1130,6 +1130,11 @@ class RobotPDFTemplate:
 
                                 # Get comparison data for this map
                                 map_comp = map_comparisons.get(building_name, {}).get(map_name, {})
+                                target_comp = map_comp.get('target_performance', {})
+
+                                # Get target performance data
+                                target_perf = map_data.get('target_performance')
+                                targets = target_perf.get('targets', {}) if target_perf else {}
 
                                 map_sections += f"""
                                 <div style="margin: 10px 0; border: 1px solid #dee2e6; border-radius: 3px; padding: 10px;">
@@ -1187,19 +1192,94 @@ class RobotPDFTemplate:
                                                 vs last: {format_comparison(map_comp.get('days_with_tasks', 'N/A'))}
                                             </div>
                                         </div>
-                                    </div>
-                                </div>"""
+                                    </div>"""
+
+                                # NEW: Second row for target performance metrics (only if target data exists)
+                                if target_perf:
+                                    map_sections += """
+                                        <!-- Second row: Target Performance Metrics -->
+                                        <div class="map-metrics" style="margin-top: 10px; border-top: 2px solid #667eea; padding-top: 10px;">"""
+
+                                    # Show efficiency compliance if target exists
+                                    if targets.get('efficiency') is not None:
+                                        eff_compliance = target_perf.get('efficiency_compliance_rate', 0)
+                                        tasks_below_eff = target_perf.get('tasks_below_efficiency_target', 0)
+                                        total_tasks = target_perf.get('total_tasks_analyzed', 0)
+                                        # CONVERT: efficiency target from sqm/hr to sq ft/hr
+                                        target_eff_sqft = targets['efficiency'] * 10.764
+
+                                        map_sections += f"""
+                                            <div class="map-metric" style="border-left: 3px solid #667eea;">
+                                                <div style="font-weight: bold;">{eff_compliance:.1f}%</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">
+                                                    Efficiency Compliance
+                                                    <div style="font-size: 0.85em; color: #495057;">({tasks_below_eff}/{total_tasks} below {target_eff_sqft:.0f} sq ft/hr)</div>
+                                                </div>
+                                                <div style="font-size: 0.7em; color: {get_comparison_color(target_comp.get('efficiency_compliance_rate', 'N/A'))};">
+                                                    vs last: {format_comparison(target_comp.get('efficiency_compliance_rate', 'N/A'))}
+                                                </div>
+                                            </div>"""
+
+                                    # Show area compliance if target exists
+                                    if targets.get('area_value') is not None or targets.get('area_percentage') is not None:
+                                        area_compliance = target_perf.get('area_compliance_rate', 0)
+                                        tasks_below_area = target_perf.get('tasks_below_area_target', 0)
+                                        total_tasks = target_perf.get('total_tasks_analyzed', 0)
+
+                                        if targets.get('area_value') is not None and targets.get('area_type').lower() == 'value':
+                                            # CONVERT: area target from sqm to sq ft
+                                            target_area_sqft = targets['area_value'] * 10.764
+                                            target_desc = f"{target_area_sqft:.0f} sq ft"
+                                        elif targets.get('area_percentage') is not None and targets.get('area_type').lower() == 'percentage':
+                                            target_desc = f"{targets['area_percentage']:.0f}%"
+
+                                        map_sections += f"""
+                                            <div class="map-metric" style="border-left: 3px solid #667eea;">
+                                                <div style="font-weight: bold;">{area_compliance:.1f}%</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">
+                                                    Area Compliance
+                                                    <div style="font-size: 0.85em; color: #495057;">({tasks_below_area}/{total_tasks} below {target_desc})</div>
+                                                </div>
+                                                <div style="font-size: 0.7em; color: {get_comparison_color(target_comp.get('area_compliance_rate', 'N/A'))};">
+                                                    vs last: {format_comparison(target_comp.get('area_compliance_rate', 'N/A'))}
+                                                </div>
+                                            </div>"""
+
+                                    # Show duration compliance if target exists
+                                    if targets.get('duration_seconds') is not None:
+                                        dur_compliance = target_perf.get('duration_compliance_rate', 0)
+                                        tasks_exceeding = target_perf.get('tasks_exceeding_duration_target', 0)
+                                        total_tasks = target_perf.get('total_tasks_analyzed', 0)
+                                        target_minutes = targets['duration_seconds'] / 60
+
+                                        map_sections += f"""
+                                            <div class="map-metric" style="border-left: 3px solid #667eea;">
+                                                <div style="font-weight: bold;">{dur_compliance:.1f}%</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">
+                                                    Duration Compliance
+                                                    <div style="font-size: 0.85em; color: #495057;">({tasks_exceeding}/{total_tasks} exceed {target_minutes:.0f} min)</div>
+                                                </div>
+                                                <div style="font-size: 0.7em; color: {get_comparison_color(target_comp.get('duration_compliance_rate', 'N/A'))};">
+                                                    vs last: {format_comparison(target_comp.get('duration_compliance_rate', 'N/A'))}
+                                                </div>
+                                            </div>"""
+
+                                    map_sections += """
+                                        </div>"""
+
+                                map_sections += """
+                                    </div>"""
 
                         map_sections += """
                             </div>
                         </div>"""
             else:
                 map_sections = """
-                <h3>Map-Specific Performance</h3>
-                <p>No map-specific performance data available</p>"""
+                    <h3>Map-Specific Performance</h3>
+                    <p>No map-specific performance data available</p>"""
 
         return f"""
-        <section id="facility-performance" class="section">
+        <section id="facility-performance">
             <h2>🏢 Facility-Specific Performance</h2>
 
             <div class="two-column">
@@ -1208,6 +1288,7 @@ class RobotPDFTemplate:
 
             {map_sections}
         </section>"""
+
 
     def _generate_resource_section(self, content: Dict[str, Any], detail_level: str = 'in-depth') -> str:
         """Generate resource utilization section (PDF version) with health scores and utilization"""

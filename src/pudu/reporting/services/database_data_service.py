@@ -195,6 +195,10 @@ class DatabaseDataService:
                 target_robots, start_date, end_date
             )
 
+            # 7. Performance targets
+            logger.info("Fetching performance targets...")
+            report_data['performance_targets'] = self.fetch_performance_targets(target_robots)
+
             logger.info(f"Sequential data fetching completed: {list(report_data.keys())}")
             return report_data
 
@@ -681,6 +685,85 @@ class DatabaseDataService:
             logger.error(f"Error in fetch_all_time_tasks_for_roi: {e}")
             return pd.DataFrame()
 
+    def fetch_performance_targets(self, target_robots: List[str]) -> pd.DataFrame:
+        """
+        Fetch performance targets for maps used by target robots
+
+        Returns DataFrame with columns:
+        - map_name: str
+        - target_efficiency: float
+        - target_area_value: float (sqft)
+        - target_area_percentage: float
+        - area_storage_type: str ('value' or 'percentage')
+        - target_duration: int (seconds)
+        """
+        try:
+            table_configs = self.config.get_table_configs_for_robots(
+                'robot_performance_targets_setting',
+                target_robots
+            )
+
+            if not table_configs:
+                logger.warning("No performance targets table configuration found")
+                return pd.DataFrame()
+
+            all_targets = []
+
+            for table_config in table_configs:
+                db_robots = table_config.get('robot_sns', [])
+                if not db_robots:
+                    continue
+
+                table = self._create_table_with_retry(
+                    connection_config=self.connection_config,
+                    database_name=table_config['database'],
+                    table_name=table_config['table_name'],
+                    fields=table_config.get('fields'),
+                    primary_keys=table_config['primary_keys']
+                )
+
+                if not table:
+                    continue
+
+                database_name = table_config['database']
+                table_name = table_config['table_name']
+
+                # Query all targets (no date filter - targets are static)
+                query = f"""
+                    SELECT
+                        map_name,
+                        target_efficiency,
+                        target_area_value,
+                        target_area_percentage,
+                        area_storage_type,
+                        target_duration
+                    FROM {database_name}.{table_name}
+                    WHERE map_name IS NOT NULL
+                """
+
+                result = self._execute_query_with_retry(table, query)
+
+                if not result.empty:
+                    df = pd.DataFrame(result, columns=[
+                        'map_name', 'target_efficiency', 'target_area_value',
+                        'target_area_percentage', 'area_storage_type', 'target_duration'
+                    ])
+                    all_targets.append(df)
+                    logger.info(f"Fetched {len(df)} performance targets from {database_name}.{table_name}")
+
+            if all_targets:
+                combined_targets = pd.concat(all_targets, ignore_index=True)
+                # Remove duplicates (keep first)
+                combined_targets = combined_targets.drop_duplicates(subset=['map_name'], keep='first')
+                logger.info(f"Total unique performance targets: {len(combined_targets)}")
+                return combined_targets
+            else:
+                return pd.DataFrame()
+
+        except Exception as e:
+            logger.error(f"Error fetching performance targets: {e}")
+            return pd.DataFrame()
+
     # ============================================================================
     # PARALLELISM LEVEL 2: Parallel Calculation & Orchestration
     # ============================================================================
@@ -698,6 +781,7 @@ class DatabaseDataService:
             events_data = data.get('events', pd.DataFrame())
             robot_locations = data.get('robot_locations', pd.DataFrame())
             operation_history_data = data.get('operation_history', pd.DataFrame())
+            performance_targets = data.get('performance_targets', pd.DataFrame())
 
             # Start with empty dict
             metrics = {}
@@ -854,7 +938,7 @@ class DatabaseDataService:
             try:
                 if not robot_locations.empty:
                     metrics['map_performance_by_building'] = self.metrics_calculator.calculate_map_performance_by_building(
-                        tasks_data, robot_locations
+                        tasks_data, robot_locations, performance_targets
                     )
                 else:
                     metrics['map_performance_by_building'] = {}

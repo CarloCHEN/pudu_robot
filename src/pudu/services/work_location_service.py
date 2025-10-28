@@ -756,8 +756,8 @@ class WorkLocationService:
         if not robots_in_data:
             return building_context
 
-        # Get table configurations for robot status tables (project databases)
-        table_configs = self.config.get_table_configs_for_robots('robot_status', robots_in_data)
+        # Get table configurations for robot management tables (project databases)
+        table_configs = self.config.get_table_configs_for_robots('robot_management', robots_in_data)
 
         for table_config in table_configs:
             try:

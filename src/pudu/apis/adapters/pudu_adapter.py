@@ -106,9 +106,6 @@ class PuduAdapter(RobotAPIInterface):
     def get_robot_details(self, sn: str) -> Dict[str, Any]:
         return self.client.get_robot_details(sn)
 
-    def get_robot_status(self, sn: str) -> Dict[str, Any]:
-        return self.client.get_robot_details(sn)
-
     def get_list_stores(self, limit: Optional[int] = None, offset: Optional[int] = None) -> Dict[str, Any]:
         return self.client.get_list_stores(limit=limit, offset=offset)
 
@@ -116,6 +113,216 @@ class PuduAdapter(RobotAPIInterface):
         return self.client.get_list_robots(shop_id=shop_id, limit=limit, offset=offset)
 
     # ==================== Enhanced Methods with Data Processing ====================
+    def get_robot_status(self, sn: str) -> dict:
+        """
+        Get robot status and comprehensive task information
+        This is a convenience function that returns detailed status info
+
+        Args:
+            sn: Robot serial number
+            robot_type: Robot type ("pudu" or "gas")
+            customer_name: Customer name, if not provided uses current customer
+
+        Returns:
+            dict with keys: 'is_in_task', 'task_info', 'position'
+        """
+        # Mapping dictionaries (same as in get_schedule_table)
+        status_mapping = {
+            0: "Not Started",
+            1: "In Progress",
+            2: "Task Suspended",
+            3: "Task Interrupted",
+            4: "Task Ended",
+            5: "Task Abnormal",
+            6: "Task Cancelled"
+        }
+
+        mode_mapping = {
+            1: "Scrubbing",
+            2: "Sweeping"
+        }
+
+        submode_mapping = {
+            "Sweeping": {
+                0: "Custom",
+                1: "Carpet Vacuum",
+                3: "Silent Dust Push"
+            },
+            "Scrubbing": {
+                0: "Custom",
+                1: "Suction Mode",
+                11: "Scrubbing Suction",
+                12: "Brushing Suction",
+                13: "Scrubbing",
+                14: "Dry Brushing",
+            }
+        }
+
+        type_mapping = {
+            0: "Custom",
+            1: "Carpet Vacuuming",
+            2: "Silent Dust Pushing"
+        }
+
+        vacuum_speed_mapping = {
+            0: "Off",
+            1: "Energy Saving",
+            2: "Standard",
+            3: "High"
+        }
+
+        vacuum_suction_mapping = {
+            0: "Off",
+            1: "Low",
+            2: "Medium",
+            3: "High"
+        }
+
+        wash_speed_mapping = {
+            0: "Off",
+            1: "Energy Saving",
+            2: "Standard",
+            3: "High"
+        }
+
+        wash_suction_mapping = {
+            0: "Off",
+            1: "Low",
+            2: "Medium",
+            3: "High"
+        }
+
+        wash_water_mapping = {
+            0: "Off",
+            1: "Low",
+            2: "Medium",
+            3: "High"
+        }
+
+        try:
+            # Call the robot API
+            response = self.client.get_robot_details(sn)
+
+            # Check if response is valid
+            if not response:
+                return {
+                    'is_in_task': False,
+                    'task_info': None,
+                    'position': None
+                }
+
+            data = response
+
+            # Extract position (always available)
+            position = data.get('position', {})
+
+            # Check if robot is in task
+            cleanbot = data.get('cleanbot', {})
+            clean_data = cleanbot.get('clean')
+
+            # Robot is in task if clean data exists and is not None/empty
+            is_in_task = clean_data is not None and clean_data != {}
+
+            task_info = None
+            if is_in_task:
+                # Extract basic task information
+                task_data = clean_data.get('task', {})
+                result_data = clean_data.get('result', {})
+                config_data = clean_data.get('config', {})
+                map_data = clean_data.get('map', {})
+
+                # Get mode information
+                mode_id = clean_data.get('mode', 1)
+                mode = mode_mapping.get(mode_id, 'Unknown')
+
+                # Get sub mode (from config)
+                sub_mode_id = config_data.get('sub_mode') if config_data else None
+                sub_mode = submode_mapping.get(mode, {}).get(sub_mode_id, 'Unknown') if sub_mode_id is not None else 'Unknown'
+
+                # Calculate actual area from plan area and percentage
+                plan_area = result_data.get('task_area', 0)
+                percentage = result_data.get('percentage', 0)
+                actual_area = round(plan_area * (percentage / 100), 2) if plan_area and percentage else 0
+
+                # Calculate efficiency (area per second * 3600 to get per hour)
+                clean_time = result_data.get('time', 0)
+                if clean_time > 0 and actual_area > 0:
+                    efficiency = round((actual_area / clean_time) * 3600, 2)
+                else:
+                    efficiency = 0
+
+                # Infer start and end time
+                current_time = pd.Timestamp.now()
+                estimated_start_time = current_time - pd.Timedelta(seconds=clean_time) if clean_time > 0 else current_time
+                # Calculate estimated end_time based on remaining time
+                remaining_time = result_data.get('remaining_time', 0)
+                estimated_end_time = current_time + pd.Timedelta(seconds=remaining_time) if remaining_time > 0 else current_time
+
+                # Convert timestamp to format: 2025-08-15 10:00:00 by flooring to seconds (pd.Timestamp)
+                estimated_start_time = estimated_start_time.floor('s')
+                estimated_end_time = estimated_end_time.floor('s')
+
+                # Calculate consumption
+                battery_capacity = 1228.8 / 1000  # kWh
+                cost_battery = result_data.get('cost_battery', 0)
+                consumption = round((cost_battery / 100) * battery_capacity, 5) if cost_battery else 0
+
+                # Get status
+                status_code = result_data.get('status', 1)
+                status = status_mapping.get(status_code, f"Unknown ({status_code})")
+
+                # Extract comprehensive task information with snake_case naming
+                task_info = {
+                    # Snake_case column names:
+                    'location_id': data.get('shop', {}).get('id'),
+                    'task_name': task_data.get('name'),
+                    'task_id': task_data.get('task_id'),
+                    'robot_sn': sn,
+                    'map_name': map_data.get('name'),
+                    'map_url': '',  # Not available from current API call
+                    'actual_area': actual_area,
+                    'plan_area': round(plan_area, 2) if plan_area else 0,
+                    'start_time': estimated_start_time,  # Not available from current API call
+                    'end_time': estimated_end_time,  # Not available from current API call
+                    'duration': clean_time,
+                    'efficiency': efficiency,
+                    'remaining_time': result_data.get('remaining_time', 0),
+                    'consumption': consumption,
+                    'battery_usage': cost_battery,
+                    'water_consumption': result_data.get('cost_water', 0),
+                    'progress': round(percentage, 2) if percentage else 0,
+                    'status': status,
+                    'mode': mode,
+                    'sub_mode': sub_mode,
+                    'type': type_mapping.get(config_data.get('type', 0), 'Unknown') if config_data else 'Unknown',
+                    'vacuum_speed': vacuum_speed_mapping.get(config_data.get('vacuum_speed', 0), 'Unknown') if config_data else 'Unknown',
+                    'vacuum_suction': vacuum_suction_mapping.get(config_data.get('vacuum_suction', 0), 'Unknown') if config_data else 'Unknown',
+                    'wash_speed': wash_speed_mapping.get(config_data.get('wash_speed', 0), 'Unknown') if config_data else 'Unknown',
+                    'wash_suction': wash_suction_mapping.get(config_data.get('wash_suction', 0), 'Unknown') if config_data else 'Unknown',
+                    'wash_water': wash_water_mapping.get(config_data.get('wash_water', 0), 'Unknown') if config_data else 'Unknown',
+
+                    # Additional fields for backward compatibility and extra info
+                    'map': {
+                        'name': map_data.get('name'),
+                        'lv': map_data.get('lv'),
+                        'floor': map_data.get('floor')
+                    }
+                }
+
+            return {
+                'is_in_task': is_in_task,
+                'task_info': task_info,
+                'position': position
+            }
+
+        except Exception as e:
+            # Handle any errors gracefully
+            print(f"Error getting robot status: {e}")
+            return {
+                'is_in_task': False,
+                'task_info': None,
+                'position': None
+            }
 
     def get_schedule_table(self, start_time: str, end_time: str, location_id: Optional[str] = None,
                           robot_sn: Optional[str] = None, timezone_offset: int = 0) -> pd.DataFrame:
@@ -600,18 +807,82 @@ class PuduAdapter(RobotAPIInterface):
     def get_ongoing_tasks_table(self, location_id: Optional[str] = None, robot_sn: Optional[str] = None) -> pd.DataFrame:
         """
         Get ongoing tasks for all robots
-        包含完整的Pudu数据处理逻辑
         """
-        # This method requires get_robot_status which has complex logic
-        # For now, return empty DataFrame with correct columns
-        # Will implement in next iteration
-        return pd.DataFrame(columns=[
+        ongoing_tasks_df = pd.DataFrame(columns=[
             'location_id', 'task_name', 'task_id', 'robot_sn', 'map_name', 'is_report', 'map_url',
             'actual_area', 'plan_area', 'start_time', 'end_time', 'duration',
             'efficiency', 'remaining_time', 'battery_usage', 'consumption', 'water_consumption', 'progress', 'status',
             'mode', 'sub_mode', 'type', 'vacuum_speed', 'vacuum_suction',
             'wash_speed', 'wash_suction', 'wash_water'
         ])
+
+        # Get all stores
+        all_shops = self.client.get_list_stores()['list']
+
+        for shop in all_shops:
+            shop_id = shop['shop_id']
+
+            # Skip if location_id is specified and doesn't match current shop
+            if location_id is not None and shop_id != location_id:
+                continue
+
+            try:
+                # Get robots for this shop
+                shop_robots = self.client.get_list_robots(shop_id=shop_id)['list']
+
+                for robot in shop_robots:
+                    sn = robot.get('sn')
+                    if not sn:
+                        continue
+                    # Skip if robot_sn is specified and doesn't match current robot
+                    if robot_sn is not None and sn != robot_sn:
+                        continue
+                    try:
+                        # Get robot status including task information
+                        robot_status = self.get_robot_status(sn)
+
+                        if robot_status['is_in_task'] and robot_status['task_info']:
+                            task_info = robot_status['task_info']
+
+                            # Add ongoing task to DataFrame with is_report=0
+                            ongoing_task_row = pd.DataFrame({
+                                'location_id': [task_info.get('location_id')],
+                                'task_name': [task_info.get('task_name')],
+                                'task_id': [task_info.get('task_id')],
+                                'robot_sn': [task_info.get('robot_sn')],
+                                'map_name': [task_info.get('map_name')],
+                                'is_report': [0],  # Mark as ongoing task
+                                'map_url': [task_info.get('map_url', '')],  # Empty for ongoing tasks
+                                'actual_area': [task_info.get('actual_area')],
+                                'plan_area': [task_info.get('plan_area')],
+                                'start_time': [task_info.get('start_time')],
+                                'end_time': [task_info.get('end_time')],
+                                'duration': [task_info.get('duration')],
+                                'efficiency': [task_info.get('efficiency')],
+                                'remaining_time': [task_info.get('remaining_time')],
+                                'battery_usage': [task_info.get('battery_usage')],
+                                'consumption': [task_info.get('consumption')],
+                                'water_consumption': [task_info.get('water_consumption')],
+                                'progress': [task_info.get('progress')],
+                                'status': [task_info.get('status')],
+                                'mode': [task_info.get('mode')],
+                                'sub_mode': [task_info.get('sub_mode')],
+                                'type': [task_info.get('type')],
+                                'vacuum_speed': [task_info.get('vacuum_speed')],
+                                'vacuum_suction': [task_info.get('vacuum_suction')],
+                                'wash_speed': [task_info.get('wash_speed')],
+                                'wash_suction': [task_info.get('wash_suction')],
+                                'wash_water': [task_info.get('wash_water')]
+                            })
+                            ongoing_tasks_df = pd.concat([ongoing_tasks_df, ongoing_task_row], ignore_index=True)
+
+                    except Exception as e:
+                        continue
+
+            except Exception as e:
+                continue
+
+        return ongoing_tasks_df
 
     def get_robot_work_location_and_mapping_data(self) -> tuple:
         """

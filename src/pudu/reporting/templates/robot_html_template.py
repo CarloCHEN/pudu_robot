@@ -1182,7 +1182,7 @@ class RobotPerformanceTemplate:
         if not facility_sections:
             facility_sections = '<div><p>No facility-specific data available</p></div>'
 
-        # Generate map-specific performance section conditionally
+        # Generate map-specific performance section
         map_sections = ""
         if detail_level != 'overview':
             if map_performance_by_building:
@@ -1195,7 +1195,6 @@ class RobotPerformanceTemplate:
 
                 for building_name, maps in map_performance_by_building.items():
                     if maps and len(maps) > 0:
-                        # Maps are already sorted by coverage % in descending order from calculator
                         map_sections += f"""
                             <div class="map-section">
                                 <h4>{building_name} Maps</h4>
@@ -1226,14 +1225,20 @@ class RobotPerformanceTemplate:
                                         </td>
                                     </tr>"""
                             map_sections += "</tbody></table>"
+
                         elif detail_level == 'in-depth':
-                            # IN_DEPTH: Full detailed
+                            # IN-DEPTH: Full detailed with target performance
                             for map_data in maps:
                                 map_name = map_data.get('map_name', 'Unknown Map')
                                 coverage = map_data.get('coverage_percentage', 0)
 
                                 # Get comparison data for this map
                                 map_comp = map_comparisons.get(building_name, {}).get(map_name, {})
+                                target_comp = map_comp.get('target_performance', {})
+
+                                # Get target performance data
+                                target_perf = map_data.get('target_performance')
+                                targets = target_perf.get('targets', {}) if target_perf else {}
 
                                 map_sections += f"""
                                     <div style="margin: 15px 0; border: 1px solid #dee2e6; border-radius: 5px; padding: 15px;">
@@ -1248,6 +1253,8 @@ class RobotPerformanceTemplate:
                                                 vs last: {format_comparison(map_comp.get('coverage_percentage', 'N/A'))}
                                             </span>
                                         </div>
+
+                                        <!-- First row: Existing metrics -->
                                         <div class="map-metrics">
                                             <div class="map-metric">
                                                 <div style="font-weight: bold;">{map_data.get('area_cleaned', 0):,.0f}</div>
@@ -1291,7 +1298,82 @@ class RobotPerformanceTemplate:
                                                     vs last: {format_comparison(map_comp.get('days_with_tasks', 'N/A'))}
                                                 </div>
                                             </div>
-                                        </div>
+                                        </div>"""
+
+                                # NEW: Second row for target performance metrics (only if target data exists)
+                                if target_perf:
+                                    map_sections += """
+                                        <!-- Second row: Target Performance Metrics -->
+                                        <div class="map-metrics" style="margin-top: 10px; border-top: 2px solid #667eea; padding-top: 10px;">"""
+
+                                    # Show efficiency compliance if target exists
+                                    if targets.get('efficiency') is not None:
+                                        eff_compliance = target_perf.get('efficiency_compliance_rate', 0)
+                                        tasks_below_eff = target_perf.get('tasks_below_efficiency_target', 0)
+                                        total_tasks = target_perf.get('total_tasks_analyzed', 0)
+                                        # CONVERT: efficiency target from sqm/hr to sq ft/hr
+                                        target_eff_sqft = targets['efficiency'] * 10.764
+
+                                        map_sections += f"""
+                                            <div class="map-metric" style="border-left: 3px solid #667eea;">
+                                                <div style="font-weight: bold;">{eff_compliance:.1f}%</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">
+                                                    Efficiency Compliance
+                                                    <div style="font-size: 0.85em; color: #495057;">({tasks_below_eff}/{total_tasks} below {target_eff_sqft:.0f} sq ft/hr)</div>
+                                                </div>
+                                                <div style="font-size: 0.7em; color: {get_comparison_color(target_comp.get('efficiency_compliance_rate', 'N/A'))};">
+                                                    vs last: {format_comparison(target_comp.get('efficiency_compliance_rate', 'N/A'))}
+                                                </div>
+                                            </div>"""
+
+                                    # Show area compliance if target exists
+                                    if targets.get('area_value') is not None or targets.get('area_percentage') is not None:
+                                        area_compliance = target_perf.get('area_compliance_rate', 0)
+                                        tasks_below_area = target_perf.get('tasks_below_area_target', 0)
+                                        total_tasks = target_perf.get('total_tasks_analyzed', 0)
+
+                                        if targets.get('area_value') is not None and targets.get('area_type').lower() == 'value':
+                                            # CONVERT: area target from sqm to sq ft
+                                            target_area_sqft = targets['area_value'] * 10.764
+                                            target_desc = f"{target_area_sqft:.0f} sq ft"
+                                        elif targets.get('area_percentage') is not None and targets.get('area_type').lower() == 'percentage':
+                                            target_desc = f"{targets['area_percentage']:.0f}%"
+
+                                        map_sections += f"""
+                                            <div class="map-metric" style="border-left: 3px solid #667eea;">
+                                                <div style="font-weight: bold;">{area_compliance:.1f}%</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">
+                                                    Area Compliance
+                                                    <div style="font-size: 0.85em; color: #495057;">({tasks_below_area}/{total_tasks} below {target_desc})</div>
+                                                </div>
+                                                <div style="font-size: 0.7em; color: {get_comparison_color(target_comp.get('area_compliance_rate', 'N/A'))};">
+                                                    vs last: {format_comparison(target_comp.get('area_compliance_rate', 'N/A'))}
+                                                </div>
+                                            </div>"""
+
+                                    # Show duration compliance if target exists
+                                    if targets.get('duration_seconds') is not None:
+                                        dur_compliance = target_perf.get('duration_compliance_rate', 0)
+                                        tasks_exceeding = target_perf.get('tasks_exceeding_duration_target', 0)
+                                        total_tasks = target_perf.get('total_tasks_analyzed', 0)
+                                        target_minutes = targets['duration_seconds'] / 60
+
+                                        map_sections += f"""
+                                            <div class="map-metric" style="border-left: 3px solid #667eea;">
+                                                <div style="font-weight: bold;">{dur_compliance:.1f}%</div>
+                                                <div style="font-size: 0.8em; color: #6c757d;">
+                                                    Duration Compliance
+                                                    <div style="font-size: 0.85em; color: #495057;">({tasks_exceeding}/{total_tasks} exceed {target_minutes:.0f} min)</div>
+                                                </div>
+                                                <div style="font-size: 0.7em; color: {get_comparison_color(target_comp.get('duration_compliance_rate', 'N/A'))};">
+                                                    vs last: {format_comparison(target_comp.get('duration_compliance_rate', 'N/A'))}
+                                                </div>
+                                            </div>"""
+
+                                    map_sections += """
+                                        </div>"""
+
+                                map_sections += """
                                     </div>"""
 
                         map_sections += """
