@@ -44,15 +44,15 @@ def should_skip_notification(callback_type: str, change_info: Dict) -> bool:
     # Skip power updates unless battery is low
     if callback_type == 'power_event':
         power_level = new_values.get('battery_level', 100)
-        if isinstance(power_level, (int, float)) and power_level < 20:
-            return False  # Do not skip if battery < 20%
+        if isinstance(power_level, (int, float)) and power_level < 5:
+            return False  # Do not skip if battery < 5%
         return True
 
     # Skip status updates that are just position changes
     if callback_type == 'status_event':
-        status = new_values.get('status', 'unknown').lower()
-        if 'offline' in status:
-            return False
+        # status = new_values.get('status', 'unknown').lower()
+        # if 'offline' in status:
+        #     return False
         # Skip minor updates
         return True
 
@@ -125,21 +125,21 @@ def send_change_based_notifications(
             severity, status = get_severity_and_status(callback_type, change_info)
 
             # Format title with icons
-            icon_manager = get_icon_manager()
-            formatted_title = icon_manager.format_title_with_icons(title, severity, status)
+            # icon_manager = get_icon_manager()
+            # formatted_title = icon_manager.format_title_with_icons(title, severity, status)
 
             # Send notification
             if notification_service.send_notification(
                 robot_sn=robot_sn,
                 notification_type=notification_type,
-                title=formatted_title,
+                title=title,
                 content=content,
                 severity=severity,
                 status=status,
                 payload=payload
             ):
                 successful_notifications += 1
-                logger.info(f"✅ Sent notification for {unique_id}: {formatted_title} with payload: {payload}")
+                logger.info(f"✅ Sent notification for {unique_id}: {title} with payload: {payload}")
             else:
                 failed_notifications += 1
                 logger.error(f"❌ Failed to send notification for {unique_id}")
