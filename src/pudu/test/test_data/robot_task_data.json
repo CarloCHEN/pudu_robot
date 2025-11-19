@@ -1,0 +1,24 @@
+{
+    "valid_tasks": [
+      {
+        "name": "completed_task",
+        "robot_sn": "811064412050012",
+        "task_name": "Library Cleaning",
+        "mode": "Scrubbing",
+        "sub_mode": "Custom",
+        "actual_area": 150.5,
+        "plan_area": 200.0,
+        "progress": 100.0,
+        "status": "Task Ended",
+        "efficiency": 45.2
+      },
+      {
+        "name": "in_progress_task",
+        "robot_sn": "811064412050013",
+        "task_name": "Office Cleaning",
+        "mode": "Sweeping",
+        "progress": 65.0,
+        "status": "In Progress"
+      }
+    ]
+  }
