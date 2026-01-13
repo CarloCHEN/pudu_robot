@@ -1,6 +1,6 @@
 """
-普渡API适配器 - 包含完整的数据处理逻辑
-将pudu_api.py的函数调用和foxx_api.py中的数据处理逻辑整合到适配器中
+PUDU API Adapter - Contains complete data processing logic
+Integrates function calls from pudu_api.py and data processing logic from foxx_api.py into the adapter
 """
 
 import pandas as pd
@@ -16,7 +16,7 @@ API_NAME = "pudu"
 
 
 class PuduAdapter(RobotAPIInterface):
-    """普渡API适配器 - 包含完整的数据处理逻辑"""
+    """PUDU API Adapter - Contains complete data processing logic"""
 
     # Pudu-specific mappings
     STATUS_MAPPING = {
@@ -111,6 +111,50 @@ class PuduAdapter(RobotAPIInterface):
 
     def get_list_robots(self, shop_id: Optional[str] = None, limit: Optional[int] = None, offset: Optional[int] = None) -> Dict[str, Any]:
         return self.client.get_list_robots(shop_id=shop_id, limit=limit, offset=offset)
+
+    # ==================== Helper Methods ====================
+
+    def _get_battery_health_for_shop(self, shop_id: str, start_time: str, end_time: str) -> Dict[str, Dict]:
+        """
+        Fetch battery health data for ALL robots in a shop at once (single API call)
+        Returns a dictionary mapping robot_sn -> battery_health_data
+
+        This dramatically reduces API calls from N (one per robot) to 1 (per shop)
+        """
+        try:
+            # Fetch battery health for entire shop (no sn parameter = all robots)
+            battery_data = self.client.get_battery_health_list(
+                start_time,
+                end_time,
+                shop_id=shop_id,
+                sn=None  # Don't filter by sn - get all robots
+            )
+
+            # Build a lookup dictionary: robot_sn -> latest battery health record
+            battery_lookup = {}
+
+            if battery_data and "list" in battery_data and battery_data["list"]:
+                # Group records by robot SN and get the latest one
+                for record in battery_data["list"]:
+                    sn = record.get('sn')
+                    if not sn:
+                        continue
+
+                    # Keep the record with the latest upload_time for each robot
+                    if sn not in battery_lookup:
+                        battery_lookup[sn] = record
+                    else:
+                        # Compare upload times and keep the latest
+                        current_time = battery_lookup[sn].get('upload_time', '')
+                        new_time = record.get('upload_time', '')
+                        if new_time > current_time:
+                            battery_lookup[sn] = record
+
+            return battery_lookup
+
+        except Exception as e:
+            print(f"Error fetching battery health for shop {shop_id}: {e}")
+            return {}
 
     # ==================== Enhanced Methods with Data Processing ====================
     def get_robot_status(self, sn: str) -> dict:
@@ -544,7 +588,9 @@ class PuduAdapter(RobotAPIInterface):
                           robot_sn: Optional[str] = None, timezone_offset: int = 0) -> pd.DataFrame:
         """
         Get charging records for robots within a specified time period and location
-        包含完整的Pudu数据处理逻辑
+        Contains complete PUDU data processing logic
+
+        OPTIMIZED: Fetches battery health data once per shop instead of once per charging record
         """
         # Initialize empty DataFrame
         charging_df = pd.DataFrame(columns=[
@@ -567,6 +613,9 @@ class PuduAdapter(RobotAPIInterface):
             # Get charging records for this shop
             results = self.client.get_charging_record_list(start_time, end_time, shop_id, timezone_offset=timezone_offset)['list']
             results = [record for record in results if 'sn' in record and record['sn'] in shop_robots]
+
+            # ✅ OPTIMIZATION: Fetch battery health for ALL robots in this shop at once (1 API call)
+            battery_health_lookup = self._get_battery_health_for_shop(shop_id, start_time, end_time)
 
             # Process each charging record
             for record in results:
@@ -592,15 +641,13 @@ class PuduAdapter(RobotAPIInterface):
                 robot_details = self.client.get_robot_details(record['sn'])
                 robot_name = robot_details.get('nickname', f"{shop_name}_{record['product_code']}")
 
-                # Use the same start_time and end_time as the charging record query
-                battery_data = self.client.get_battery_health_list(start_time, end_time, sn=record['sn'])
-
+                # ✅ OPTIMIZATION: Look up battery health from cached data (no API call)
                 soh = None
                 cycles = None
-                if battery_data and "list" in battery_data and battery_data["list"]:
-                    latest_record = max(battery_data["list"], key=lambda x: x.get("upload_time", ""))
-                    soh = latest_record.get('soh', None)
-                    cycles = latest_record.get('cycle', None)
+                robot_battery_data = battery_health_lookup.get(record['sn'])
+                if robot_battery_data:
+                    soh = robot_battery_data.get('soh', None)
+                    cycles = robot_battery_data.get('cycle', None)
 
                 # Create a new entry for this charging record
                 new_entry = pd.DataFrame({
@@ -732,6 +779,8 @@ class PuduAdapter(RobotAPIInterface):
     def get_robot_status_table(self, location_id: Optional[str] = None, robot_sn: Optional[str] = None) -> pd.DataFrame:
         """
         Get a simplified table for robots with basic information
+
+        OPTIMIZED: Fetches battery health data once per shop instead of once per robot
         """
         robot_df = pd.DataFrame(columns=['Robot SN', 'Water Level', 'Sewage Level', 'Battery Level', 'Battery SOH', 'Battery Cycles',
                                         'Status', 'Timestamp UTC'])
@@ -746,6 +795,11 @@ class PuduAdapter(RobotAPIInterface):
 
             # Get the list of robots for this shop
             shop_robots = self.client.get_list_robots(shop_id=shop_id)['list']
+
+            # ✅ OPTIMIZATION: Fetch battery health for ALL robots in this shop at once (1 API call)
+            end_time = datetime.datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            start_time = (datetime.datetime.now(timezone.utc) - timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
+            battery_health_lookup = self._get_battery_health_for_shop(shop_id, start_time, end_time)
 
             # Process each robot in the shop
             for robot in shop_robots:
@@ -774,18 +828,13 @@ class PuduAdapter(RobotAPIInterface):
                 # Get robot name (nickname)
                 robot_name = robot_details.get('nickname', f"{shop_name}_{sn}")
 
-                # Get battery health
-                end_time = datetime.datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-                start_time = (datetime.datetime.now(timezone.utc) - timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
-
-                battery_data = self.client.get_battery_health_list(start_time, end_time, sn=sn)
-
+                # ✅ OPTIMIZATION: Look up battery health from cached data (no API call)
                 soh = None
                 cycles = None
-                if battery_data and "list" in battery_data and battery_data["list"]:
-                    latest_record = max(battery_data["list"], key=lambda x: x.get("upload_time", ""))
-                    soh = latest_record.get('soh', None)
-                    cycles = latest_record.get('cycle', None)
+                robot_battery_data = battery_health_lookup.get(sn)
+                if robot_battery_data:
+                    soh = robot_battery_data.get('soh', None)
+                    cycles = robot_battery_data.get('cycle', None)
 
                 # Create a row for this robot
                 robot_row = pd.DataFrame({

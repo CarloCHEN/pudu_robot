@@ -327,26 +327,29 @@ class ChartDataFormatter:
             for i, date_str in enumerate(dates):
                 if i < len(values) and values[i] is not None:
                     try:
-                        # Parse date (assuming MM/DD format)
-                        if '/' in date_str:
-                            month, day = map(int, date_str.split('/'))
-                            year = datetime.now().year
-                            date_obj = datetime(year, month, day)
-                            day_of_week = date_obj.weekday()  # 0=Monday, 6=Sunday
+                        # Try parsing full date first
+                        try:
+                            date_obj = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
+                        except ValueError:
+                            try:
+                                date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+                            except ValueError:
+                                # Fallback to MM/DD format, use current year
+                                month, day = map(int, date_str.split('/'))
+                                year = datetime.now().year
+                                date_obj = datetime(year, month, day)
 
-                            day_totals[day_of_week] += float(values[i])
-                            day_counts[day_of_week] += 1
+                        day_of_week = date_obj.weekday()  # 0=Monday, 6=Sunday
+                        day_totals[day_of_week] += float(values[i])
+                        day_counts[day_of_week] += 1
                     except (ValueError, IndexError):
                         continue
 
             # Calculate averages
             averages = []
             for i in range(7):
-                if day_counts[i] > 0:
-                    avg = round(day_totals[i] / day_counts[i], 2)
-                    averages.append(avg)
-                else:
-                    averages.append(0.0)
+                avg = round(day_totals[i] / day_counts[i], 2) if day_counts[i] > 0 else 0.0
+                averages.append(avg)
 
             return {
                 'labels': day_names,

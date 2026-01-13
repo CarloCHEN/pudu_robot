@@ -765,7 +765,7 @@ class App:
 
                     # Separate robots with tasks vs robots needing cleanup
                     table_robots_with_tasks = [robot for robot in target_robots if robot in robots_with_tasks]
-                    table_robots_needing_cleanup = [robot for robot in target_robots if robot not in robots_with_tasks]
+                    table_robots_needing_cleanup = target_robots
 
                     # Process robots with ongoing tasks
                     table_data = None

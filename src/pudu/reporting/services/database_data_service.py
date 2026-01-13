@@ -613,6 +613,8 @@ class DatabaseDataService:
                     how='left'
                 )
 
+                robot_locations = robot_locations.drop_duplicates(subset=['robot_sn'], keep='first')
+
                 logger.info(f"Mapped {len(robot_locations)} robots to locations")
                 return robot_locations
 

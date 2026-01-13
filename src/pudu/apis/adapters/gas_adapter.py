@@ -79,7 +79,7 @@ class GasAdapter(RobotAPIInterface):
 
             soh_status = str(soh_status).strip()
 
-            if soh_status in ['Healthy', 'Good', 'Fair', 'Poor', 'Unknown']:
+            if soh_status.lower() in ['healthy', 'good', 'fair', 'poor', 'unknown']:
                 return soh_status
 
             if soh_status in soh_mapping:
@@ -301,6 +301,7 @@ class GasAdapter(RobotAPIInterface):
             # Common cleaning modes
             '清洗': 'Cleaning',
             '清洁': 'Cleaning',
+            '洗地': 'Mopping',
             '清扫': 'Sweeping',
             '扫洗': 'Sweep and Wash',
             '尘推': 'Dust Push',
