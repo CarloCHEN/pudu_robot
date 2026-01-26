@@ -164,14 +164,14 @@ class ConfigManager:
             logger.error(f"加载凭证文件失败: {e}")
             self._credentials = {'customers': {}}
 
-    def get_customers_from_env(self) -> List[str]:
+    def get_customers_from_env(self, env_variable_name: str = 'ROBOT_API_CUSTOMERS') -> List[str]:
             """获取环境变量中配置的客户列表
 
             Returns:
-                客户名称列表，从环境变量 ROBOT_API_CUSTOMERS 读取
+                客户名称列表，从环境变量 env_variable_name 读取
                 如果环境变量未设置，返回所有可用客户
             """
-            env_customers = os.getenv('ROBOT_API_CUSTOMERS', '').strip()
+            env_customers = os.getenv(env_variable_name, '').strip()
 
             if env_customers:
                 # Parse comma-separated list
@@ -182,13 +182,13 @@ class ConfigManager:
                 valid_customers = [c for c in customer_list if c in available_customers]
 
                 if not valid_customers:
-                    logger.warning(f"No valid customers found in ROBOT_API_CUSTOMERS: {env_customers}")
+                    logger.warning(f"No valid customers found in {env_variable_name}: {env_customers}")
                     logger.warning(f"Available customers: {available_customers}")
                     return []
 
                 invalid = [c for c in customer_list if c not in available_customers]
                 if invalid:
-                    logger.warning(f"Invalid customers in ROBOT_API_CUSTOMERS (will be skipped): {invalid}")
+                    logger.warning(f"Invalid customers in {env_variable_name} (will be skipped): {invalid}")
 
                 logger.info(f"Processing customers from environment: {valid_customers}")
                 return valid_customers
@@ -196,7 +196,7 @@ class ConfigManager:
                 # If no env variable, return all customers except 'default'
                 all_customers = self.list_customers()
                 customers = [c for c in all_customers if c != 'default']
-                logger.info(f"No ROBOT_API_CUSTOMERS set, processing all customers: {customers}")
+                logger.info(f"No {env_variable_name} set, processing all customers: {customers}")
                 return customers
 
     def set_customer(self, customer_name: str):

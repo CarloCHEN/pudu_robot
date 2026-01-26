@@ -6,7 +6,7 @@ ENVIRONMENT=${1:-us-east-2}
 
 echo "🚀 Setting up Lambda services for: $ENVIRONMENT"
 
-# Define region-specific variables including transform databases and S3 buckets
+# Define region-specific variables
 case $ENVIRONMENT in
   "us-east-1")
     export AWS_REGION="us-east-1"
@@ -14,11 +14,12 @@ case $ENVIRONMENT in
     export RDS_HOST="database-1.cpakuqeqgh9q.us-east-1.rds.amazonaws.com"
     export RDS_SECRET_NAME="rds!db-ef989dd0-975a-4c33-ab17-69f8ef4e03a1"
 
-    # Multiple transform databases and buckets for us-east-1
-    # Only university_of_florida supports transformations
-    export TRANSFORM_DBS=("foxx_irvine_office")
+    # Customer configuration for this region - Sparc,SiteIQ,KBS
+    export ROBOT_API_CUSTOMERS="SiteIQ,Sparc,university_of_florida,KBS"
+    export ROBOT_LOCATION_CUSTOMERS="university_of_florida"
 
-    # But all databases have S3 buckets
+    # Transform databases and buckets
+    export TRANSFORM_DBS=("foxx_irvine_office")
     export ALL_DBS=("university_of_florida" "nexus_iq_office" "foxx_irvine_office")
     export S3_BUCKETS=(
       "pudu-robot-transforms-university-of-florida-145714-us-east-1"
@@ -32,11 +33,12 @@ case $ENVIRONMENT in
     export RDS_HOST="nexusiq-web-prod-database.cpgi0kcaa8wn.us-east-2.rds.amazonaws.com"
     export RDS_SECRET_NAME="rds!db-12d35fce-6171-4db1-a7e1-c75f1503ffed"
 
-    # Multiple transform databases and buckets for us-east-2
-    # Only university_of_florida supports transformations
-    export TRANSFORM_DBS=("university_of_florida")
+    # Customer configuration for this region
+    export ROBOT_API_CUSTOMERS="university_of_florida,123Bots,CPS"
+    export ROBOT_LOCATION_CUSTOMERS="university_of_florida"
 
-    # But all databases have S3 buckets
+    # Transform databases and buckets
+    export TRANSFORM_DBS=("university_of_florida")
     export ALL_DBS=("university_of_florida" "nexus_iq_office" "foxx_irvine_office")
     export S3_BUCKETS=(
       "pudu-robot-transforms-university-of-florida-889717-us-east-2"
@@ -51,6 +53,8 @@ case $ENVIRONMENT in
 esac
 
 echo "📋 Configuration: $AWS_REGION, $NOTIFICATION_API_HOST"
+echo "👥 Customers: $ROBOT_API_CUSTOMERS"
+echo "🗺️ Work Location Customers: $ROBOT_LOCATION_CUSTOMERS"
 echo "🔧 Transform Databases: ${TRANSFORM_DBS[*]}"
 echo "📦 S3 Buckets: ${#S3_BUCKETS[@]} buckets configured"
 
@@ -91,8 +95,9 @@ cp lambda/deploy_lambda.sh lambda/deploy_lambda.sh.bak
 
 # Use more robust sed that handles any previous region
 sed -i '' \
-  -e "s/REGION=\"us-east-[12]\"/REGION=\"$AWS_REGION\"/" \
-  -e "s/alb-[^\"]*\.elb\.amazonaws\.com/$NOTIFICATION_API_HOST/" \
+  -e "s/REGION=\${1:-us-east-[12]}/REGION=\${1:-$AWS_REGION}/" \
+  -e "s/NOTIFICATION_API_HOST=\"alb-[^\"]*\.elb\.amazonaws\.com\"/NOTIFICATION_API_HOST=\"$NOTIFICATION_API_HOST\"/" \
+  -e "s/ROBOT_API_CUSTOMERS=\"[^\"]*\"/ROBOT_API_CUSTOMERS=\"$ROBOT_API_CUSTOMERS\"/" \
   lambda/deploy_lambda.sh
 
 echo "📝 Updated lambda/deploy_lambda.sh for $AWS_REGION"
@@ -103,10 +108,23 @@ if [ -f "lambda/deploy_work_location_lambda.sh" ]; then
 
     sed -i '' \
       -e "s/REGION=\"us-east-[12]\"/REGION=\"$AWS_REGION\"/" \
+      -e "s/ROBOT_LOCATION_CUSTOMERS=\"[^\"]*\"/ROBOT_LOCATION_CUSTOMERS=\"$ROBOT_LOCATION_CUSTOMERS\"/" \
       lambda/deploy_work_location_lambda.sh
 
     echo "📝 Updated lambda/deploy_work_location_lambda.sh for $AWS_REGION"
 fi
+
+echo "📝 Creating .env file with customer configuration..."
+cat > src/pudu/apis/configs/.env << EOF
+# Robot API Customer Configuration
+ROBOT_API_CUSTOMERS=$ROBOT_API_CUSTOMERS
+ROBOT_LOCATION_CUSTOMERS=$ROBOT_LOCATION_CUSTOMERS
+
+# AWS Region
+AWS_REGION=$AWS_REGION
+EOF
+
+echo "✅ Created .env file with customers: $ROBOT_API_CUSTOMERS"
 
 # Update src/pudu/rds/credentials.yaml
 cat > src/pudu/rds/credentials.yaml << EOF

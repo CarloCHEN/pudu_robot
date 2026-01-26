@@ -110,7 +110,12 @@ class PuduAdapter(RobotAPIInterface):
         return self.client.get_list_stores(limit=limit, offset=offset)
 
     def get_list_robots(self, shop_id: Optional[str] = None, limit: Optional[int] = None, offset: Optional[int] = None) -> Dict[str, Any]:
-        return self.client.get_list_robots(shop_id=shop_id, limit=limit, offset=offset)
+        response = self.client.get_list_robots(shop_id=shop_id, limit=limit, offset=offset)
+        try:
+            return response['list']
+        except Exception as e:
+            print(f"Error getting robots for shop {shop_id}: {response['message']}")
+            return []
 
     # ==================== Helper Methods ====================
 
@@ -391,7 +396,9 @@ class PuduAdapter(RobotAPIInterface):
             shop_id, shop_name = shop['shop_id'], shop['shop_name']
 
             # Get all robots for this shop
-            shop_robots = self.client.get_list_robots(shop_id=shop_id)['list']
+            shop_robots = self.get_list_robots(shop_id=shop_id)
+            if len(shop_robots) == 0:
+                continue
             shop_robots = [robot['sn'] for robot in shop_robots if 'sn' in robot]
 
             # Filter robots by robot_sn if provided
@@ -607,7 +614,9 @@ class PuduAdapter(RobotAPIInterface):
             shop_id, shop_name = shop['shop_id'], shop['shop_name']
 
             # Get list of robots in this shop
-            shop_robots = self.client.get_list_robots(shop_id=shop_id)['list']
+            shop_robots = self.get_list_robots(shop_id=shop_id)
+            if len(shop_robots) == 0:
+                continue
             shop_robots = [robot['sn'] for robot in shop_robots if 'sn' in robot]
 
             # Get charging records for this shop
@@ -697,7 +706,9 @@ class PuduAdapter(RobotAPIInterface):
 
             # Get list of robots in this shop
             try:
-                shop_robots = self.client.get_list_robots(shop_id=shop_id)['list']
+                shop_robots = self.get_list_robots(shop_id=shop_id)
+                if len(shop_robots) == 0:
+                    continue
                 shop_robots_sn = [robot['sn'] for robot in shop_robots if 'sn' in robot]
 
                 # Filter by robot_sn if provided
@@ -794,7 +805,9 @@ class PuduAdapter(RobotAPIInterface):
                 continue
 
             # Get the list of robots for this shop
-            shop_robots = self.client.get_list_robots(shop_id=shop_id)['list']
+            shop_robots = self.get_list_robots(shop_id=shop_id)
+            if len(shop_robots) == 0:
+                continue
 
             # ✅ OPTIMIZATION: Fetch battery health for ALL robots in this shop at once (1 API call)
             end_time = datetime.datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
@@ -877,8 +890,9 @@ class PuduAdapter(RobotAPIInterface):
 
             try:
                 # Get robots for this shop
-                shop_robots = self.client.get_list_robots(shop_id=shop_id)['list']
-
+                shop_robots = self.get_list_robots(shop_id=shop_id)
+                if len(shop_robots) == 0:
+                    continue
                 for robot in shop_robots:
                     sn = robot.get('sn')
                     if not sn:
@@ -953,7 +967,9 @@ class PuduAdapter(RobotAPIInterface):
             shop_id = shop['shop_id']
 
             try:
-                shop_robots = self.client.get_list_robots(shop_id=shop_id)['list']
+                shop_robots = self.get_list_robots(shop_id=shop_id)
+                if len(shop_robots) == 0:
+                    continue
 
                 for robot in shop_robots:
                     sn = robot.get('sn')

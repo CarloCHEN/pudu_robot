@@ -137,7 +137,7 @@ check-bucket:
 	aws s3 ls s3://$$S3_REPORTS_BUCKET --region $$AWS_REGION || \
 	echo "❌ Cannot access bucket. Check AWS credentials and bucket permissions."
 
-# NEW: Quick redeploy for code changes
+# Quick redeploy for code changes
 quick-deploy:
 	@if [ ! -f "alb-config.env" ]; then \
 		echo "❌ ALB not configured. This is for existing ALB setups only."; \

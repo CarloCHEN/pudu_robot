@@ -87,7 +87,11 @@ def lambda_handler(event, context):
         logger.info("🔧 Initializing work location service...")
         config = DynamicDatabaseConfig(config_path)
         s3_config = _load_s3_config(config_path)
-        work_location_service = WorkLocationService(config, s3_config)
+
+        # run backfill only on the first run of the day
+        run_backfill = True 
+
+        work_location_service = WorkLocationService(config, s3_config, run_backfill=run_backfill)
 
         # Run the work location service
         logger.info("▶️ Starting work location service execution...")

@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import concurrent.futures
 from pudu.rds.rdsTable import RDSTable
 from pudu.apis.foxx_api import get_robot_work_location_and_mapping_data
+from pudu.apis.core.config_manager import config_manager
 
 
 logger = logging.getLogger(__name__)
@@ -21,7 +22,7 @@ class WorkLocationService:
     4. Data archival to S3 to maintain performance
     """
 
-    def __init__(self, config, s3_config: Dict):
+    def __init__(self, config, s3_config: Dict, run_backfill: bool = True):
         """
         Initialize with dynamic database configuration
 
@@ -40,6 +41,43 @@ class WorkLocationService:
         # self.MAX_RETENTION_COUNT = 1000    # 1000 records max
         self.ARCHIVE_BATCH_SIZE = 500      # Archive 500 records at a time
         self.MIN_ARCHIVE_THRESHOLD = 100    # Only archive if we have at least 100 excess records
+
+        self.run_backfill = run_backfill
+
+    def _get_customers_and_robot_types(self) -> Dict[str, List[str]]:
+        """
+        Determine which customers and robot types are enabled via environment/config.
+
+        Mirrors the main app pipeline logic so the work location flow calls the
+        right APIs per customer instead of relying on database-derived robot types.
+        """
+        customers = config_manager.get_customers_from_env(env_variable_name='ROBOT_LOCATION_CUSTOMERS')
+
+        if not customers:
+            logger.warning("No customers configured - using default customer with pudu+gas")
+            return {'default': ['pudu', 'gas']}
+
+        customer_robot_types: Dict[str, List[str]] = {}
+
+        for customer in customers:
+            try:
+                enabled_apis = config_manager.get_customer_enabled_apis(customer)
+
+                if enabled_apis:
+                    customer_robot_types[customer] = enabled_apis
+                    logger.info(f"Customer '{customer}' has robot types: {enabled_apis}")
+                else:
+                    logger.warning(f"Customer '{customer}' has no enabled robot types")
+
+            except Exception as e:
+                logger.error(f"Error getting robot types for customer '{customer}': {e}")
+                continue
+
+        if not customer_robot_types:
+            logger.warning("No valid customer configurations found - using default customer with pudu+gas")
+            return {'default': ['pudu', 'gas']}
+
+        return customer_robot_types
 
     def update_robot_work_locations_and_mappings(self) -> bool:
         """
@@ -61,58 +99,51 @@ class WorkLocationService:
         try:
             logger.info("🗺️ Updating robot work locations and map floor mappings (dynamic multi-type)...")
 
-            # Get active robot types from database
-            active_robot_types = self.config.resolver.get_active_robot_types()
+            # Determine customers and robot types from config/env (align with main pipeline)
+            customer_robot_types = self._get_customers_and_robot_types()
+            api_calls = [
+                (customer_name, robot_type)
+                for customer_name, robot_types in customer_robot_types.items()
+                for robot_type in robot_types
+            ]
 
-            # Determine which robot types to call based on substring matching
-            api_robot_types = []
-            has_pudu = False
-            has_gas = False
+            if not api_calls:
+                logger.warning("No customer robot types resolved - defaulting to pudu+gas for default customer")
+                api_calls = [('default', 'pudu'), ('default', 'gas')]
 
-            for robot_type in active_robot_types:
-                robot_type_lower = robot_type.lower()
+            logger.info(f"🔄 Fetching work location data for customers/types: {customer_robot_types}")
 
-                # Check for Pudu robots
-                if 'pudu' in robot_type_lower and not has_pudu:
-                    api_robot_types.append('pudu')
-                    has_pudu = True
-                    logger.info(f"Detected Pudu robot type: {robot_type}")
-
-                # Check for Gas/Gausium robots
-                if any(keyword in robot_type_lower for keyword in ['gausium', 'gas', 'gs']) and not has_gas:
-                    api_robot_types.append('gas')
-                    has_gas = True
-                    logger.info(f"Detected Gas/Gausium robot type: {robot_type}")
-
-            if not api_robot_types:
-                logger.warning("No active robot types found in database - defaulting to both types")
-                api_robot_types = ['pudu', 'gas']
-
-            logger.info(f"🔄 Fetching work location data for robot types: {api_robot_types}")
-
-            # Fetch data from all robot types in parallel
+            # Fetch data from all customer/robot_type combinations in parallel
             all_work_location_data = []
             all_mapping_data = []
 
-            # Use ThreadPoolExecutor to get data from all robot types simultaneously
-            with concurrent.futures.ThreadPoolExecutor(max_workers=len(api_robot_types), thread_name_prefix="work_location_worker") as executor:
-                # Submit API calls for all robot types
-                future_to_type = {}
-                for robot_type in api_robot_types:
-                    future = executor.submit(get_robot_work_location_and_mapping_data, robot_type=robot_type)
-                    future_to_type[future] = robot_type
-                    logger.debug(f"📡 Submitted work location API call for {robot_type}")
+            # Use ThreadPoolExecutor to get data from all customer/robot-type pairs simultaneously
+            max_workers = max(len(api_calls), 1)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="work_location_worker") as executor:
+                # Submit API calls for all robot types scoped to each customer
+                future_to_context = {}
+                for customer_name, robot_type in api_calls:
+                    future = executor.submit(
+                        get_robot_work_location_and_mapping_data,
+                        robot_type=robot_type,
+                        customer_name=customer_name
+                    )
+                    future_to_context[future] = (customer_name, robot_type)
+                    logger.debug(f"📡 Submitted work location API call for {customer_name}.{robot_type}")
 
                 # Collect results as they complete
-                for future in concurrent.futures.as_completed(future_to_type, timeout=30):
-                    robot_type = future_to_type[future]
+                for future in concurrent.futures.as_completed(future_to_context, timeout=60):
+                    customer_name, robot_type = future_to_context[future]
                     try:
                         work_location_data, mapping_data = future.result()
                         all_work_location_data.append(work_location_data)
                         all_mapping_data.append(mapping_data)
-                        logger.info(f"✅ Completed work location API call for {robot_type}: {len(work_location_data)} work locations, {len(mapping_data)} mappings")
+                        logger.info(
+                            f"✅ Completed work location API call for {customer_name} ({robot_type}): "
+                            f"{len(work_location_data)} work locations, {len(mapping_data)} mappings"
+                        )
                     except Exception as e:
-                        logger.error(f"❌ Work location API call failed for {robot_type}: {e}")
+                        logger.error(f"❌ Work location API call failed for {customer_name} ({robot_type}): {e}")
                         # Add empty DataFrames as fallback
                         all_work_location_data.append(pd.DataFrame())
                         all_mapping_data.append(pd.DataFrame())
@@ -137,6 +168,12 @@ class WorkLocationService:
             else:
                 logger.info("No map floor mapping data to update")
 
+            # Also backfill floor info table
+            if self.run_backfill:
+                backfill_success = self._backfill_floor_info_from_tasks()
+                success &= backfill_success
+            else:
+                logger.info("Floor info backfill is disabled, skipping...")
             return success
 
         except Exception as e:
@@ -914,6 +951,94 @@ class WorkLocationService:
 
         except Exception as e:
             logger.error(f"Error updating map floor mappings in {table.database_name}.{table.table_name}: {e}")
+
+    def _backfill_floor_info_from_tasks(self) -> bool:
+        """
+        Insert missing floor info rows based on map_name/building_id in robot task tables.
+
+        Mirrors provided SQL and runs per database where both robot_task and floor_info
+        tables are configured for the relevant robots.
+        """
+        try:
+            # Use ALL configured table mappings (not only robots_with_mappings) to ensure every DB is covered
+            floor_configs = self.config.get_all_table_configs('floor_info')
+            task_configs = self.config.get_all_table_configs('robot_task')
+            management_configs = self.config.get_all_table_configs('robot_management')
+
+            if not floor_configs or not task_configs or not management_configs:
+                logger.info("No floor/task/management table configs available for backfill")
+                return True
+
+            task_by_db = {cfg['database']: cfg for cfg in task_configs}
+            management_by_db = {cfg['database']: cfg for cfg in management_configs}
+
+            success_ops = 0
+            for floor_cfg in floor_configs:
+                db_name = floor_cfg['database']
+                task_cfg = task_by_db.get(db_name)
+                management_cfg = management_by_db.get(db_name)
+                if not task_cfg or not management_cfg:
+                    logger.debug(f"Skipping floor backfill for {db_name}: no robot_task config")
+                    continue
+
+                try:
+                    floor_table = RDSTable(
+                        connection_config="credentials.yaml",
+                        database_name=db_name,
+                        table_name=floor_cfg['table_name'],
+                        fields=floor_cfg.get('fields'),
+                        primary_keys=floor_cfg['primary_keys'],
+                        reuse_connection=True
+                    )
+
+                    # Build SQL using the configured table names within the same database
+                    sql = f"""
+                        INSERT INTO {floor_cfg['table_name']}
+                          (robot_map_name, floor_number, floor_name, building_id)
+                        SELECT DISTINCT
+                          t.map_name AS robot_map_name,
+                          CASE
+                            WHEN t.map_name REGEXP '^-?[0-9]+#'
+                              THEN CAST(SUBSTRING_INDEX(t.map_name, '#', 1) AS SIGNED)
+                            ELSE 1
+                          END AS floor_number,
+                          CASE
+                            WHEN t.map_name REGEXP '^-?[0-9]+#'
+                              THEN CONCAT('f_', CAST(SUBSTRING_INDEX(t.map_name, '#', 1) AS SIGNED))
+                            ELSE 'floor_unknown'
+                          END AS floor_name,
+                          m.location_id AS building_id
+                        FROM {task_cfg['table_name']} t
+                        JOIN {management_cfg['table_name']} m
+                          ON m.robot_sn = t.robot_sn
+                        WHERE t.map_name IS NOT NULL
+                          AND TRIM(t.map_name) <> ''
+                          AND m.location_id IS NOT NULL
+                          AND NOT EXISTS (
+                            SELECT 1
+                            FROM {floor_cfg['table_name']} f
+                            WHERE LOWER(TRIM(f.robot_map_name)) = LOWER(TRIM(t.map_name))
+                              AND f.building_id = m.location_id
+                          );
+                    """
+
+                    floor_table.cursor.execute(sql)
+                    floor_table.cursor.connection.commit()
+                    success_ops += 1
+                    logger.info(f"✅ Backfilled floor info in {db_name}.{floor_cfg['table_name']} from {task_cfg['table_name']}")
+
+                    floor_table.close()
+                except Exception as e:
+                    logger.error(f"❌ Failed floor info backfill for {db_name}: {e}")
+                    continue
+
+            if success_ops == 0:
+                logger.info("Floor info backfill: no applicable databases found")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error during floor info backfill: {e}")
+            return False
 
     def _filter_mappings_for_database(self, resolved_mappings: pd.DataFrame, work_location_data: pd.DataFrame, target_robots: List[str]) -> pd.DataFrame:
         """

@@ -11,6 +11,10 @@ REGION=${1:-us-east-2}
 ROLE_NAME="pudu-robot-work-location-lambda-role"
 PYTHON_VERSION="3.9"
 
+# Customer configuration for work location service
+# Updated by setup_lambda.sh (sed); override manually if needed.
+ROBOT_LOCATION_CUSTOMERS="university_of_florida"
+
 # Docker/ECR Configuration
 ECR_REPO_NAME="pudu-robot-work-location"
 IMAGE_TAG="latest"
@@ -44,6 +48,16 @@ fi
 
 ECR_URI="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${ECR_REPO_NAME}:${IMAGE_TAG}"
 echo "📦 ECR URI: $ECR_URI"
+
+# Prepare environment variables as JSON file to ensure comma-separated values are preserved
+cat > /tmp/work_location_env.json << EOF
+{
+  "Variables": {
+    "ROBOT_API_CUSTOMERS": "${ROBOT_LOCATION_CUSTOMERS}",
+    "ROBOT_LOCATION_CUSTOMERS": "${ROBOT_LOCATION_CUSTOMERS}"
+  }
+}
+EOF
 
 # Step 3: Build and push Docker image
 echo "🐳 Building Docker image..."
@@ -256,6 +270,7 @@ echo "✅ S3 permissions configured for archival"
 
 # Step 6: Deploy Lambda function with container image
 echo "🔧 Deploying Lambda function with container image..."
+echo "👥 Work location customers: $ROBOT_LOCATION_CUSTOMERS"
 
 if aws lambda get-function --function-name $FUNCTION_NAME --region $REGION >/dev/null 2>&1; then
     echo "Checking existing function package type..."
@@ -287,6 +302,7 @@ if aws lambda get-function --function-name $FUNCTION_NAME --region $REGION >/dev
             --package-type Image \
             --timeout 300 \
             --memory-size 1024 \
+            --environment file:///tmp/work_location_env.json \
             --description "Pudu Robot Work Location Service with 30-day Archival (Container)" \
             --region $REGION || {
             echo "❌ Lambda creation failed"
@@ -310,6 +326,7 @@ if aws lambda get-function --function-name $FUNCTION_NAME --region $REGION >/dev
             --function-name $FUNCTION_NAME \
             --timeout 300 \
             --memory-size 1024 \
+            --environment file:///tmp/work_location_env.json \
             --region $REGION
     fi
 else
@@ -380,3 +397,4 @@ echo "🗺️ Your work location service now runs every minute with 30-day data 
 # Cleanup temporary files
 rm -f requirements_work_location.txt
 rm -f Dockerfile.work_location
+rm -f /tmp/work_location_env.json

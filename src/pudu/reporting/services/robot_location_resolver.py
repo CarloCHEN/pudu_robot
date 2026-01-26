@@ -183,12 +183,19 @@ class RobotLocationResolver:
         return normalized
 
     def _get_buildings_by_location(self, location_criteria: Dict[str, List[str]]) -> List[str]:
-        """Get building IDs that match location criteria - for multiple selections and case-insensitive matching"""
+        """Get building IDs that match location criteria - multiple selections + case-insensitive matching (MySQL-safe)."""
         try:
-            # Get building info table configurations
             building_configs = self.config.get_all_table_configs('location')
 
-            all_buildings = []
+            def esc(s: str) -> str:
+                return s.replace("'", "''")
+
+            def upper_list(values: List[str]) -> str:
+                # Returns "'A','B','C'" with values uppercased and escaped
+                return ", ".join([f"'{esc(v).upper()}'" for v in values if v is not None and str(v).strip() != ""])
+
+            all_buildings: List[str] = []
+
             for config in building_configs:
                 try:
                     table = RDSTable(
@@ -200,64 +207,55 @@ class RobotLocationResolver:
                         reuse_connection=reuse_connection
                     )
 
-                    # Build WHERE clause based on provided criteria
                     where_conditions = []
 
-                    # Handle multiple countries (case-insensitive)
-                    if location_criteria.get('countries'):
-                        countries = location_criteria['countries']
+                    # Countries
+                    countries = location_criteria.get('countries') or []
+                    if countries:
                         if len(countries) == 1:
-                            where_conditions.append(f"UPPER(country) = UPPER('{countries[0]}')")
+                            where_conditions.append(f"UPPER(country) = '{esc(countries[0]).upper()}'")
                         else:
-                            # Escape single quotes and build case-insensitive IN clause
-                            country_list = "', '".join([c.replace("'", "''") for c in countries])
-                            where_conditions.append(f"UPPER(country) IN (UPPER('{country_list}'))")
+                            where_conditions.append(f"UPPER(country) IN ({upper_list(countries)})")
 
-                    # Handle multiple states (case-insensitive)
-                    if location_criteria.get('states'):
-                        states = location_criteria['states']
+                    # States
+                    states = location_criteria.get('states') or []
+                    if states:
                         if len(states) == 1:
-                            where_conditions.append(f"UPPER(state) = UPPER('{states[0]}')")
+                            where_conditions.append(f"UPPER(state) = '{esc(states[0]).upper()}'")
                         else:
-                            # Escape single quotes and build case-insensitive IN clause
-                            state_list = "', '".join([s.replace("'", "''") for s in states])
-                            where_conditions.append(f"UPPER(state) IN (UPPER('{state_list}'))")
+                            where_conditions.append(f"UPPER(state) IN ({upper_list(states)})")
 
-                    # Handle multiple cities (case-insensitive)
-                    if location_criteria.get('cities'):
-                        cities = location_criteria['cities']
+                    # Cities
+                    cities = location_criteria.get('cities') or []
+                    if cities:
                         if len(cities) == 1:
-                            where_conditions.append(f"UPPER(city) = UPPER('{cities[0]}')")
+                            where_conditions.append(f"UPPER(city) = '{esc(cities[0]).upper()}'")
                         else:
-                            # Escape single quotes and build case-insensitive IN clause
-                            city_list = "', '".join([c.replace("'", "''") for c in cities])
-                            where_conditions.append(f"UPPER(city) IN (UPPER('{city_list}'))")
+                            where_conditions.append(f"UPPER(city) IN ({upper_list(cities)})")
 
-                    # Handle multiple buildings (case-insensitive partial matching)
-                    if location_criteria.get('buildings'):
-                        buildings = location_criteria['buildings']
+                    # Building names (partial match OR exact match, case-insensitive)
+                    buildings = location_criteria.get('buildings') or []
+                    if buildings:
                         building_conditions = []
-                        for building in buildings:
-                            # Escape single quotes for SQL safety
-                            escaped_building = building.replace("'", "''")
+                        for b in buildings:
+                            b_u = esc(b).upper()
                             building_conditions.append(
-                                f"(UPPER(building_name) LIKE UPPER('%{escaped_building}%') OR UPPER(building_name) = UPPER('{escaped_building}'))"
+                                f"(UPPER(building_name) LIKE '%{b_u}%' OR UPPER(building_name) = '{b_u}')"
                             )
                         where_conditions.append(f"({' OR '.join(building_conditions)})")
 
                     where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
 
                     query = f"""
-                        SELECT building_id, building_name, city, state, country
+                        SELECT building_id
                         FROM {table.table_name}
                         WHERE {where_clause}
                     """
 
                     result_df = table.execute_query(query)
                     if not result_df.empty:
-                        building_ids = result_df['building_id'].tolist()
-                        all_buildings.extend(building_ids)
-                        logger.info(f"Found {len(building_ids)} buildings in {config['database']}")
+                        all_buildings.extend(result_df['building_id'].tolist())
+                        logger.info(f"Found {len(result_df)} buildings in {config['database']}")
 
                     table.close()
 
@@ -265,7 +263,6 @@ class RobotLocationResolver:
                     logger.error(f"Error querying buildings from {config['database']}: {e}")
                     continue
 
-            # Remove duplicates
             unique_buildings = list(set(all_buildings))
             logger.info(f"Total unique buildings found: {len(unique_buildings)}")
             return unique_buildings

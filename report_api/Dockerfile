@@ -1,17 +1,20 @@
-FROM mcr.microsoft.com/playwright:v1.48.0-jammy
+FROM mcr.microsoft.com/playwright:v1.49.0-jammy
 
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+# Install system dependencies with retry logic and gpg fix
+RUN apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    apt-get update --allow-insecure-repositories && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends --allow-unauthenticated \
     python3 \
     python3-pip \
     gcc \
     g++ \
     gettext-base \
     ca-certificates \
-    gnupg \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better Docker layer caching

@@ -444,21 +444,23 @@ curl -X POST http://monitor-report-api-alb-1071100458.us-east-1.elb.amazonaws.co
   }'
 
 # Single robot by serial number with PDF output
-curl -X POST http://monitor-report-api-alb-1071100458.us-east-1.elb.amazonaws.com/api/reports/generate \
+curl -X POST http://monitor-report-api-alb-2063783635.us-east-2.elb.amazonaws.com/api/reports/generate \
   -H "Content-Type: application/json" \
   -d '{
-    "database_name": "UF2",
+    "database_name": "cps",
     "mainKey": 1,
     "form_data": {
       "service": "robot-management",
       "robot": {
-        "serialNumber": ["811135422060216"]
+        "serialNumber": ["GS401-6220-M6R-8000"]
       },
       "contentCategories": ["charging-performance", "cleaning-performance", "resource-utilization", "financial-performance"],
-      "reportName": "UF Single Robot PDF Report",
-      "outputFormat": "pdf",
-      "timeRange": "last-7-days",
-      "detailLevel": "detailed"
+      "reportName": "Lincoln Park High School Report",
+      "outputFormat": "html",
+      "timeRange": "custom",
+      "customStartDate": "2026-01-01",
+      "customEndDate": "2026-01-14",
+      "detailLevel": "in-depth"
     }
   }'
 

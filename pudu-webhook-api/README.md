@@ -408,7 +408,7 @@ curl -X POST http://3.237.78.106:8000/api/pudu/webhook \
   }'
 
 # Test Gas endpoint
-curl "https://webhook-east1.com/api/webhook/health"
+curl https://webhook-east1.com/api/webhook/health
 
 curl --location "https://webhook-east1.com/api/webhook" \
 --header 'accept: */*' \
@@ -429,8 +429,8 @@ curl --location "https://webhook-east1.com/api/webhook" \
       "planId": "233123123-d9c7-4d74-a047-d6ca461faaaa",
       "taskInstanceId": "893cbadf-3bb1-45be-b7ef-d590d54fAAAA",
       "displayName": "ceshi2",
-      "startTime": 1762978297,
-      "endTime": 1762978400,
+      "startTime": 1714124784000,
+      "endTime": 1714124890000,
       "robot": "S2153",
       "robotSerialNumber": "GS442-6130-82R-6000",
       "operator": "admin",

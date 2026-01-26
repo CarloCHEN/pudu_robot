@@ -29,24 +29,20 @@ SEVERITY_LEVELS = {
 
 STATUS_TAGS = {
     # Task-specific tags
-    'completed': 'completed',      # ✅ Green - Task completed
-    'failed': 'failed',           # ❌ Red - Task failed
-    'uncompleted': 'uncompleted', # 🚫 Orange - Task not completed as planned
-    'in_progress': 'in_progress', # ⏳ Blue - Task currently running
-    'scheduled': 'scheduled',     # 💤 Gray - Upcoming task
+    'done': 'done',
+    'uncompleted': 'uncompleted',
+    'in_progress': 'in_progress',
+    'scheduled': 'scheduled',
 
-    # Event/Status tags (same icons, different semantics)
-    'normal': 'normal',       # ✅ Green - Event resolved or status normal
-    'abnormal': 'abnormal',            # ❌ Red - Error occurred or abnormal status
-    'active': 'active',          # ⏳ Blue - Process active or ongoing
-    'inactive': 'inactive',      # 🚫 Orange - Process inactive or stopped
-    'pending': 'pending',        # 💤 Gray - Pending or waiting
+    # Event tags
+    'critical': 'critical',
+    'error': 'error',
 
     # Robot state tags
-    'warning': 'warning',         # ⚠️ Yellow - Battery low, performance warning
-    'charging': 'charging',       # 🔌 Purple - Robot in charging state
-    'offline': 'offline',         # 📴 Red - Robot went offline
-    'online': 'online'           # 📶 Green - Robot came online
+    'warning': 'warning',
+    'charging': 'charging',
+    'offline': 'offline',
+    'online': 'online'
 }
 
 def should_skip_notification(data_type: str, change_info: Dict) -> bool:
@@ -56,7 +52,17 @@ def should_skip_notification(data_type: str, change_info: Dict) -> bool:
     old_values = change_info.get('old_values', {})
     new_values = change_info.get('new_values', {})
 
+    # new task or task status update
     if data_type == 'robot_task':
+        # skip all in progress tasks
+        current_status = new_values.get('status', 0)
+        if isinstance(current_status, int):
+            status_name = TASK_STATUS_MAPPING.get(current_status, 'Unknown')
+        else:
+            status_name = current_status
+        status_name = status_name.lower()
+        if status_name == "in progress":
+            return True
         # Skip non-status updates
         if change_type == 'update':
             if 'status' not in changed_fields:
@@ -66,79 +72,59 @@ def should_skip_notification(data_type: str, change_info: Dict) -> bool:
         #     return True
         return False
 
+    # new charging record or charging status update
     elif data_type == 'robot_charging':
         # Skip all charging updates
         if change_type == 'update':
             return True
-        return False  # Don't skip new charging records
+        return True  # Skip new charging records
 
+    # low battery level
     elif data_type == 'robot_status':
         # TIME-SERIES DATA: Every record is 'new_record' since id is auto-increment
-        # We need to check the actual status/battery values to decide on notifications
-        if change_type == 'new_record':
-            # Check for critical conditions that warrant notifications
-            status = new_values.get('status', 'Unknown').lower()
-            battery_level = new_values.get('battery_level')
+        status = new_values.get('status', 'Unknown').lower()
+        battery_level = new_values.get('battery_level')
 
-            # # NOTIFY if robot goes offline
-            # if status == 'offline':
-            #     return False  # Don't skip - send notification
+        # NOTIFY if battery is critically low (< 5%)
+        # if battery_level is not None:
+        #     try:
+        #         battery_level = float(battery_level)
+        #         if battery_level < 5:
+        #             return False  # Don't skip - send notification
+        #     except (ValueError, TypeError):
+        #         pass
 
-            # NOTIFY if battery is critically low (< 5%)
-            if battery_level is not None:
-                try:
-                    battery_level = float(battery_level)
-                    if battery_level < 5:
-                        return False  # Don't skip - send notification
-                except (ValueError, TypeError):
-                    pass
+        # # NOTIFY if robot goes offline
+        # if status == 'offline':
+        #     return False  # Don't skip - send notification
 
-            # SKIP all other routine status records
-            return True
-
-        # This block will likely never execute for time-series data, but keep for safety
-        elif change_type == 'update':
-            if 'battery_level' in changed_fields:
-                try:
-                    new_battery = new_values.get('battery_level', 100)
-                    if isinstance(new_battery, (int, float)):
-                        return new_battery >= 20  # Skip if battery is >= 20%
-                except:
-                    pass
-            return True  # Skip all other updates
-
-        return True  # Skip by default
+        # SKIP all other routine status records
+        return True
 
     elif data_type == 'location':
         # Skip all location notifications for now
         return True
 
     elif data_type == 'robot_events':
-        # Do not skip all fatal and error events
-        if change_type == 'new_record':
-            try:
-                event_level = new_values.get('event_level', 'info').lower()
-                if event_level in ['fatal', 'error']:
-                    return False
-            except:
-                pass
+        # skip all robot events now
         return True
+        # # Do not skip all fatal and error events
+        # if change_type == 'new_record':
+        #     try:
+        #         event_level = new_values.get('event_level', 'info').lower()
+        #         if event_level in ['fatal', 'error']:
+        #             return False
+        #     except:
+        #         pass
+        # return True
 
     # Skip other data types by default
     return True
 
 def get_severity_and_status_for_robot_status(old_values: dict, new_values: dict, changed_fields: list) -> Tuple[str, str]:
     """Determine severity and status for robot status changes"""
-    if 'status' in changed_fields:
-        new_status = new_values.get('status', '').lower()
-        if 'online' in new_status:
-            return SEVERITY_LEVELS['success'], STATUS_TAGS['online']
-        elif 'offline' in new_status:
-            return SEVERITY_LEVELS['error'], STATUS_TAGS['offline']
-        else:
-            return SEVERITY_LEVELS['event'], STATUS_TAGS['active']
-
-    elif 'battery_level' in changed_fields:
+    # low battery level
+    if 'battery_level' in changed_fields:
         try:
             new_battery = new_values.get('battery_level', 100)
             if isinstance(new_battery, (int, float)):
@@ -149,14 +135,21 @@ def get_severity_and_status_for_robot_status(old_values: dict, new_values: dict,
                 elif new_battery < 20:
                     return SEVERITY_LEVELS['warning'], STATUS_TAGS['warning']
                 else:
-                    return SEVERITY_LEVELS['success'], STATUS_TAGS['normal']
+                    return None, None
         except:
             pass
-        return SEVERITY_LEVELS['event'], STATUS_TAGS['normal']
-
+        return None, None
+    # if 'status' in changed_fields:
+    #     new_status = new_values.get('status', '').lower()
+    #     if 'online' in new_status:
+    #         return SEVERITY_LEVELS['success'], STATUS_TAGS['online']
+    #     elif 'offline' in new_status:
+    #         return SEVERITY_LEVELS['error'], STATUS_TAGS['offline']
+    #     else:
+    #         return None, None
     else:
         # Other status updates (position, tank levels, etc.)
-        return SEVERITY_LEVELS['event'], STATUS_TAGS['normal']
+        return None, None
 
 def get_severity_and_status_for_task(change_type: str, old_values: dict, new_values: dict, changed_fields: list) -> Tuple[str, str]:
     """Determine severity and status for task changes"""
@@ -166,53 +159,36 @@ def get_severity_and_status_for_task(change_type: str, old_values: dict, new_val
         status_name = TASK_STATUS_MAPPING.get(current_status, 'Unknown')
     else:
         status_name = current_status
+    status_name = status_name.lower()
 
     # Determine severity and status based on current task status
-    if status_name == "Task Ended":
-        return SEVERITY_LEVELS['success'], STATUS_TAGS['completed']
-    elif status_name in ["Task Abnormal", "Task Interrupted"]:
-        return SEVERITY_LEVELS['error'], STATUS_TAGS['failed']
-    elif status_name == "Task Cancelled":
-        return SEVERITY_LEVELS['warning'], STATUS_TAGS['uncompleted']
-    elif status_name == "Task Suspended":
-        return SEVERITY_LEVELS['warning'], STATUS_TAGS['warning']
-    elif status_name == "In Progress":
+    if status_name == "task ended":
+        return SEVERITY_LEVELS['success'], STATUS_TAGS['done']
+    elif status_name in ["task abnormal", "task interrupted", "task cancelled", "task suspended"]:
+        return SEVERITY_LEVELS['fatal'], STATUS_TAGS['uncompleted']
+    elif status_name == "in progress":
         return SEVERITY_LEVELS['event'], STATUS_TAGS['in_progress']
-    elif status_name == "Not Started":
+    elif status_name == "not started":
         return SEVERITY_LEVELS['event'], STATUS_TAGS['scheduled']
     else:
-        return SEVERITY_LEVELS['event'], STATUS_TAGS['active']
+        return None, None
 
 def get_severity_and_status_for_charging(change_type: str, old_values: dict, new_values: dict, changed_fields: list) -> Tuple[str, str]:
     """Determine severity and status for charging changes"""
     if change_type == 'new_record':
         return SEVERITY_LEVELS['event'], STATUS_TAGS['charging']
-
-    elif 'final_power' in changed_fields or 'power_gain' in changed_fields:
-        try:
-            final_power = new_values.get('final_power', 0)
-            if isinstance(final_power, (int, float)) and final_power >= 90:
-                return SEVERITY_LEVELS['success'], STATUS_TAGS['normal']
-            else:
-                return SEVERITY_LEVELS['event'], STATUS_TAGS['charging']
-        except:
-            return SEVERITY_LEVELS['event'], STATUS_TAGS['charging']
-
     else:
-        return SEVERITY_LEVELS['event'], STATUS_TAGS['active']
+        return None, None
 
 def get_severity_and_status_for_events(change_type: str, new_values: dict) -> Tuple[str, str]:
     """Determine severity and status for robot events"""
     event_level = new_values.get('event_level', 'event').lower()
-
-    if event_level == 'error':
-        return SEVERITY_LEVELS['error'], STATUS_TAGS['abnormal']
-    elif event_level == 'warning':
-        return SEVERITY_LEVELS['warning'], STATUS_TAGS['warning']
-    elif event_level == 'fatal':
-        return SEVERITY_LEVELS['fatal'], STATUS_TAGS['abnormal']
+    if event_level == 'fatal':
+        return SEVERITY_LEVELS['fatal'], STATUS_TAGS['critical']
+    elif event_level == 'error':
+        return SEVERITY_LEVELS['error'], STATUS_TAGS['error']
     else:  # event or other
-        return SEVERITY_LEVELS['event'], STATUS_TAGS['normal']
+        return None, None
 
 def get_severity_and_status_for_location(change_type: str, changed_fields: list) -> Tuple[str, str]:
     """Determine severity and status for location changes"""
@@ -256,9 +232,15 @@ def send_change_based_notifications(notification_service: NotificationService, d
 
             # Generate notification content for this specific record
             title, content = generate_individual_notification_content(data_type, change_info, time_range)
+            if title is None or content is None:
+                logger.info(f"Title or content is None for {unique_id}, skipping notification")
+                continue
 
             # Get severity and status based on data type and change details
             severity, status = get_severity_and_status_for_change(data_type, change_info)
+            if severity is None or status is None:
+                logger.error(f"Severity or status is None for {unique_id}, skipping notification")
+                continue
 
             # Format title with appropriate icons
             # icon_manager = get_icon_manager()
@@ -325,10 +307,13 @@ def generate_individual_notification_content(data_type: str, change_info: Dict, 
                 status = new_values.get('status', 'Unknown').lower()
                 battery = new_values.get('battery_level', 'N/A')
                 robot_name = new_values.get('robot_name', f'SN: {robot_sn}')
-                title = f"Robot {status}"
-                content = f"Robot {robot_name} is now {status} with {battery}% battery."
+                # title = f"Robot {status}"
+                # content = f"Robot {robot_name} is now {status} with {battery}% battery."
+                status_changed_fields = ['battery_level']
+                title, content = generate_status_change_content(robot_sn, status_changed_fields, old_values, new_values)
             else:  # update
-                return generate_status_change_content(robot_sn, changed_fields, old_values, new_values)
+                title, content = None, None
+            return title, content
 
         elif data_type == 'robot_task':
             # Primary keys: ["robot_sn", "task_name", "start_time"]
@@ -377,6 +362,8 @@ def generate_individual_notification_content(data_type: str, change_info: Dict, 
                     title = f"Task ({task_name}) Updated"
                     content = f"Robot {robot_name}'s task - {task_name} has been updated."
 
+            return title, content
+
         elif data_type == 'robot_charging':
             # Primary keys: ["robot_sn", "start_time", "end_time"]
             robot_name = new_values.get('robot_name', f'SN: {robot_sn}')
@@ -386,18 +373,9 @@ def generate_individual_notification_content(data_type: str, change_info: Dict, 
                 title = f"Robot Charging"
                 content = f"Robot {robot_name} has been charged with {final_power} power."
             else:  # update - do not send notification now
-                if 'final_power' in changed_fields or 'power_gain' in changed_fields:
-                    final_power = new_values.get('final_power', 'N/A')
-                    title = f"Robot Charging"
-                    if not isinstance(final_power, (int, float)):
-                        final_power_value = int(final_power.replace('%', ''))
-                    if final_power_value >= 90:
-                        content = f"Robot {robot_name} has completed charging with {final_power} power."
-                    else:
-                        content = f"Robot {robot_name} is charging with {final_power} power."
-                else:
-                    title = f"Robot Charging"
-                    content = f"Robot {robot_name} charging status updated."
+                title, content = None, None
+
+            return title, content
 
         elif data_type == 'robot_events':
             # Primary keys: ["robot_sn", "event_id"]
@@ -407,43 +385,27 @@ def generate_individual_notification_content(data_type: str, change_info: Dict, 
             time_info = f"{new_values.get('upload_time', 'Unknown Time')}"
 
             title = f"Robot Incident: {event_type}"
-            if event_level == 'error':
-                content = f"Robot {robot_name} has a new error - {event_type} at {time_info}."
-            elif event_level == 'warning':
-                content = f"Robot {robot_name} has a new warning - {event_type} at {time_info}."
-            elif event_level == 'fatal':
+
+            if event_level == 'fatal':
                 content = f"Robot {robot_name} has a new critical event - {event_type} at {time_info}."
+            elif event_level == 'error':
+                content = f"Robot {robot_name} has a new error - {event_type} at {time_info}."
             else:
-                content = f"Robot {robot_name} has a new info event - {event_type} at {time_info}."
+                title, content = None, None
+
+            return title, content
 
         elif data_type == 'location':
-            # do not send notification now
-            # Primary keys: ["location_id"]
-            location_name = new_values.get('location_name', 'Unknown Location')
-
-            if change_type == 'new_record':
-                title = f"New Location Added"
-                content = f"A new location - {location_name} has been added to the system."
-            else:  # update
-                title = f"Location Updated"
-                content = f"Location - {location_name} has been updated."
-
+            title, content = None, None
+            return title, content
         else:
-            # Generic handling for other data types - do not send notification now
-            robot_name = new_values.get('robot_name', f'SN: {robot_sn}')
-            if change_type == 'new_record':
-                title = f"New {data_type.replace('_', ' ').title()}"
-                content = f"Robot {robot_name} has a new {data_type} record created."
-            else:
-                title = f"{data_type.replace('_', ' ').title()} Updated"
-                content = f"Robot: {robot_name}; {data_type} record updated."
+            title, content = None, None
+            return title, content
 
     except Exception as e:
         logger.warning(f"Error generating notification content for {data_type}: {e}")
         # Fallback
-        robot_name = new_values.get('robot_name', f'Robot SN: {robot_sn}')
-        title = f"{data_type.replace('_', ' ').title()}"
-        content = f"Robot: {robot_name}; {data_type} updated."
+        title, content = None, None
 
     return title, content
 

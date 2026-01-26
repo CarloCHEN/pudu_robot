@@ -210,8 +210,8 @@ async def generate_report_async(request_id: str, database_name: str, form_data: 
 
             # Reinitialize services for target region
             # Initialize region-specific services
-            report_generator = ReportGenerator(config_path=config_path)
-            
+            report_generator = ReportGenerator(report_config, config_path=config_path)
+
             # Validate configuration
             validation_errors = report_config.validate()
             if validation_errors:
@@ -223,7 +223,7 @@ async def generate_report_async(request_id: str, database_name: str, form_data: 
                 })
                 # Update database status to failed
                 if mainKey:
-                    await update_report_status_in_db(mainKey, database_name, status="failed", target_region=target_region)
+                    await update_report_status_in_db(mainKey, database_name, status="processing", target_region=target_region)
                 return
 
             # Check if PDF generation is requested and available
@@ -242,7 +242,7 @@ async def generate_report_async(request_id: str, database_name: str, form_data: 
 
             if output_format == 'pdf':
                 # Generate PDF report
-                generation_result = report_generator.generate_report(report_config)
+                generation_result = report_generator.generate_report()
 
                 if generation_result['success']:
                     # For PDF, we need to convert HTML to PDF content
@@ -257,7 +257,7 @@ async def generate_report_async(request_id: str, database_name: str, form_data: 
                         generation_result['error'] = f"PDF conversion failed: {e}"
             else:
                 # Generate HTML report (default)
-                generation_result = report_generator.generate_report(report_config)
+                generation_result = report_generator.generate_report()
                 if generation_result['success']:
                     generation_result['report_content'] = generation_result['report_html'].encode('utf-8')
                     generation_result['content_type'] = 'text/html'
@@ -271,7 +271,7 @@ async def generate_report_async(request_id: str, database_name: str, form_data: 
                 })
                 # Update database status to failed
                 if mainKey:
-                    await update_report_status_in_db(mainKey, database_name, status="failed", target_region=target_region)
+                    await update_report_status_in_db(mainKey, database_name, status="processing", target_region=target_region)
                 return
 
         # Deliver report (back to current region's S3)
@@ -322,7 +322,7 @@ async def generate_report_async(request_id: str, database_name: str, form_data: 
             })
             # Update database status to failed
             if mainKey:
-                await update_report_status_in_db(mainKey, database_name, status="failed", target_region=target_region)
+                await update_report_status_in_db(mainKey, database_name, status="processing", target_region=target_region)
 
     except Exception as e:
         logger.error(f"Error generating report for request {request_id}: {e}")
@@ -333,7 +333,7 @@ async def generate_report_async(request_id: str, database_name: str, form_data: 
         })
         # Update database status to failed
         if mainKey:
-            await update_report_status_in_db(mainKey, database_name, status="failed", target_region=target_region)
+            await update_report_status_in_db(mainKey, database_name, status="processing", target_region=target_region)
 
 @app.post("/api/reports/generate", response_model=ReportGenerationResponse)
 async def generate_report(request: ReportGenerationRequest, background_tasks: BackgroundTasks):
@@ -352,7 +352,13 @@ async def generate_report(request: ReportGenerationRequest, background_tasks: Ba
         actual_format = requested_format
         fallback_message = ""
 
-        temp_generator = ReportGenerator(config_path=config_path)
+        # Get requested_time_range
+        if request.form_data.get('timeRange') == 'custom':
+            requested_time_range = request.form_data.get('customStartDate') + ' - ' + request.form_data.get('customEndDate')
+        else:
+            requested_time_range = request.form_data.get('timeRange')
+
+        temp_generator = ReportGenerator(report_config=ReportConfig(form_data=request.form_data, database_name=request.database_name), config_path=config_path)
         if requested_format == 'PDF' and not temp_generator.pdf_enabled:
             actual_format = 'HTML'
             fallback_message = " (PDF requested but not available - defaulting to HTML)"
@@ -382,7 +388,7 @@ async def generate_report(request: ReportGenerationRequest, background_tasks: Ba
             target_region  # for cross-region database operations
         )
 
-        logger.info(f"Queued {actual_format} report generation for project {request.database_name}, request {request_id}, mainKey: {request.mainKey}, target region: {target_region}")
+        logger.info(f"Queued {actual_format} report generation (time range: {requested_time_range}) for project {request.database_name}, request {request_id}, mainKey: {request.mainKey}, target region: {target_region}")
 
         return ReportGenerationResponse(
             success=True,
@@ -423,18 +429,12 @@ async def get_report_status(request_id: str):
 @app.get("/api/reports/health")
 async def health_check():
     """Health check endpoint"""
-    temp_generator = ReportGenerator(config_path=config_path)
-    pdf_status = "available" if (temp_generator and temp_generator.pdf_enabled) else "unavailable"
-    temp_generator.close()
     return {
         "success": True,
         "service": "Robot Management Cross-Region Report API",
         "timestamp": datetime.now().isoformat(),
         "version": "2.0.0",
         "aws_region": os.getenv('AWS_REGION', 'us-east-2'),
-        "pdf_enabled": temp_generator.pdf_enabled if temp_generator else False,
-        "pdf_status": pdf_status,
-        "supported_formats": ["html"] + (["pdf"] if (temp_generator and temp_generator.pdf_enabled) else []),
         "cross_region_support": True  # for cross-region database operations
     }
 

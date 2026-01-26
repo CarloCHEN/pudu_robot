@@ -28,19 +28,13 @@ if __name__ == "__main__":
         'service': 'robot-management',
         'contentCategories': ['charging-performance', 'cleaning-performance', 'resource-utilization', 'financial-performance'],
         'timeRange': 'custom',
-        "location": {
-            "country": "us",
-            "state": "fl",
-            "city": "gainesville"
-        },
         "robot": {
-            "serialNumbers": ["811135422060216", "811135422060228"]
+            "serialNumber": ["GS401-6220-M6R-8000"]
         },
-        'outputFormat': 'html',
-        'reportName': 'University of Florida Report',
-        'timeRange': 'last-30-days',
-        # 'customStartDate': '2025-10-15',
-        # 'customEndDate': '2025-10-22',
+        "reportName": "Lincoln Park High School Report",
+        'outputFormat': 'pdf',
+        'customStartDate': '2026-01-01',
+        'customEndDate': '2026-01-15',
         'detailLevel': 'in-depth',
         'delivery': 'in-app',
         'schedule': 'immediate'

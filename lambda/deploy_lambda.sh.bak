@@ -7,7 +7,7 @@ set -e
 
 # Configuration
 FUNCTION_NAME="pudu-robot-pipeline"
-REGION=${1:-us-east-2} # this means us-east-2 by default - can be us-east-1 if us-east-1 is passed as an argument
+REGION=${1:-us-east-1} # this means us-east-2 by default - can be us-east-1 if us-east-1 is passed as an argument
 ROLE_NAME="pudu-robot-lambda-role"
 PYTHON_VERSION="3.9"
 
@@ -22,8 +22,11 @@ ICONS_CONFIG_PATH="icons.yaml"
 NOTIFICATION_API_HOST="alb-streamnexus-demo-775802511.us-east-1.elb.amazonaws.com"
 NOTIFICATION_API_ENDPOINT="/notification-api/robot/notification/send"
 
+# ROBOT_API_CUSTOMERS
+ROBOT_API_CUSTOMERS="SiteIQ,Sparc,university_of_florida,KBS"
+
 # SNS Configuration - CHANGE THIS EMAIL TO YOUR ACTUAL EMAIL
-NOTIFICATION_EMAIL="jiaxu.chen@foxxusa.com"  # ⚠️ CHANGE THIS TO YOUR EMAIL
+NOTIFICATION_EMAIL="jiaxu.chen@siteiqtechnologies.com"  # ⚠️ CHANGE THIS TO YOUR EMAIL
 
 # SNS Topic Name (only one topic needed)
 SUPPORT_TOPIC_NAME="pudu-robot-support-tickets"
@@ -408,8 +411,18 @@ echo "✅ S3 permissions configured for transform buckets"
 # Step 7: Deploy Lambda function with container image
 echo "🔧 Deploying Lambda function with container image..."
 
-# Prepare environment variables
-ENV_VARS="Variables={SUPPORT_TICKET_SNS_TOPIC_ARN=${SUPPORT_TOPIC_ARN},NOTIFICATION_API_HOST=${NOTIFICATION_API_HOST},NOTIFICATION_API_ENDPOINT=${NOTIFICATION_API_ENDPOINT},ICONS_CONFIG_PATH=${ICONS_CONFIG_PATH}}"
+# Prepare environment variables as JSON file to handle comma-separated values
+cat > /tmp/lambda_env.json << EOF
+{
+  "Variables": {
+    "SUPPORT_TICKET_SNS_TOPIC_ARN": "${SUPPORT_TOPIC_ARN}",
+    "ROBOT_API_CUSTOMERS": "${ROBOT_API_CUSTOMERS}",
+    "NOTIFICATION_API_HOST": "${NOTIFICATION_API_HOST}",
+    "NOTIFICATION_API_ENDPOINT": "${NOTIFICATION_API_ENDPOINT}",
+    "ICONS_CONFIG_PATH": "${ICONS_CONFIG_PATH}"
+  }
+}
+EOF
 
 if aws lambda get-function --function-name $FUNCTION_NAME --region $REGION >/dev/null 2>&1; then
     echo "Checking existing function package type..."
@@ -441,7 +454,7 @@ if aws lambda get-function --function-name $FUNCTION_NAME --region $REGION >/dev
             --package-type Image \
             --timeout 900 \
             --memory-size 2048 \
-            --environment "$ENV_VARS" \
+            --environment file:///tmp/lambda_env.json \
             --description "Pudu Robot Data Pipeline with Support Ticket Monitoring (Container)" \
             --region $REGION || {
             echo "❌ Lambda creation failed"
@@ -465,7 +478,7 @@ if aws lambda get-function --function-name $FUNCTION_NAME --region $REGION >/dev
             --function-name $FUNCTION_NAME \
             --timeout 900 \
             --memory-size 2048 \
-            --environment "$ENV_VARS" \
+            --environment file:///tmp/lambda_env.json \
             --region $REGION
     fi
 else
@@ -477,7 +490,7 @@ else
         --package-type Image \
         --timeout 900 \
         --memory-size 2048 \
-        --environment "$ENV_VARS" \
+        --environment file:///tmp/lambda_env.json \
         --description "Pudu Robot Data Pipeline with Support Ticket Monitoring (Container)" \
         --region $REGION || {
         echo "❌ Lambda creation failed"
@@ -547,3 +560,4 @@ echo "🎫 Your containerized pipeline now monitors support tickets and sends no
 
 # Cleanup temporary files
 rm -f requirements_container.txt
+rm -f /tmp/lambda_env.json

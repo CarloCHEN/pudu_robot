@@ -1,0 +1,20 @@
+{
+    "serviceName": "monitor-report-api-service",
+    "taskDefinition": "arn:aws:ecs:us-east-2:908027373537:task-definition/monitor-report-api-task:6",
+    "desiredCount": 1,
+    "launchType": "FARGATE",
+    "networkConfiguration": {
+        "awsvpcConfiguration": {
+            "subnets": ["subnet-0c10a0428c3f233f6","subnet-0f4446bd3a11f729f","subnet-035639db011af6ca6"],
+            "securityGroups": ["sg-0e8bc9fe215afb966"],
+            "assignPublicIp": "ENABLED"
+        }
+    },
+    "loadBalancers": [
+        {
+            "targetGroupArn": "arn:aws:elasticloadbalancing:us-east-2:908027373537:targetgroup/monitor-report-api-targets/b72334d78e2bd516",
+            "containerName": "monitor-report-api",
+            "containerPort": 8000
+        }
+    ]
+}

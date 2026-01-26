@@ -1015,10 +1015,10 @@ class PuduRobotAPI:
         self.api_app_secret = api_app_secret or 'k2fmGdhz6mhqcl79eWot9f2kqoqosC2q0cm6csM1'
 
     # Wrap all existing functions to pass credentials
-    def get_list_stores(self, limit=None, offset=None):
+    def get_list_stores(self, limit=100, offset=None):
         return get_list_stores(limit, offset, self.api_app_key, self.api_app_secret)
 
-    def get_list_robots(self, shop_id=None, limit=None, offset=None):
+    def get_list_robots(self, shop_id=None, limit=100, offset=None):
         return get_list_robots(shop_id, limit, offset, self.api_app_key, self.api_app_secret)
 
     def get_robot_details(self, sn):

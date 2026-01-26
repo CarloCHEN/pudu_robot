@@ -104,12 +104,23 @@ aws --version
 
 ⚠️ **Important**: This script is designed for AWS CLI v1.18.x. For v2.x, modifications are needed.
 
+### Optional: Set up AWS region
+
+```bash
+# From project root directory
+chmod +x lambda/*.sh
+./lambda/setup_lambda.sh us-east-1
+```
+
 ### Step 2: Deploy the Pipeline
 
 ```bash
 # From project root directory
 chmod +x lambda/*.sh
 ./lambda/deploy_to_region.sh us-east-1
+./lambda/deploy_lambda.sh us-east-1 (must first do ./lambda/setup_lambda.sh us-east-1 )
+./lambda/deploy_work_location_lambda.sh us-east-1 (must first do ./lambda/setup_lambda.sh us-east-1 )
+
 ```
 
 ### Step 3: Verify Deployment

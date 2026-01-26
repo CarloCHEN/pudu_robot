@@ -350,7 +350,7 @@ class DatabaseDataService:
                 logger.info(f"Total task records: {len(combined_df)}")
                 return combined_df
 
-            logger.warning("No cleaning tasks data found")
+            logger.warning(f"No cleaning tasks data found for {start_date} to {end_date}")
             return pd.DataFrame()
 
         except Exception as e:
@@ -536,7 +536,7 @@ class DatabaseDataService:
                 logger.info(f"Total operation history records: {len(combined_df)}")
                 return combined_df
 
-            logger.warning("No operation history data found")
+            logger.warning(f"No operation history data found for {start_date} to {end_date}")
             return pd.DataFrame()
 
         except Exception as e:
@@ -1025,17 +1025,28 @@ class DatabaseDataService:
                 logger.warning("Robot facility map not cached, falling back to basic calculation")
                 robot_facility_map = self.metrics_calculator.set_robot_facility_map(robot_locations)
 
-            # Add facility column to tasks
+            # Add facility column to tasks (guard missing robot_sn)
             tasks_with_facility = tasks_data.copy()
-            tasks_with_facility['facility'] = tasks_with_facility['robot_sn'].map(
-                robot_facility_map
-            )
+            if 'robot_sn' in tasks_with_facility.columns:
+                tasks_with_facility['facility'] = tasks_with_facility['robot_sn'].map(
+                    robot_facility_map
+                )
+            else:
+                logger.warning("tasks_data missing robot_sn; facility mapping skipped for tasks")
+                tasks_with_facility['facility'] = np.nan
 
-            # Add facility column to charging
+            # Add facility column to charging (guard missing robot_sn)
             charging_with_facility = charging_data.copy()
-            charging_with_facility['facility'] = charging_with_facility['robot_sn'].map(
-                robot_facility_map
-            )
+            if 'robot_sn' in charging_with_facility.columns:
+                charging_with_facility['facility'] = charging_with_facility['robot_sn'].map(
+                    robot_facility_map
+                )
+            else:
+                if charging_with_facility.empty:
+                    logger.info("No charging data; skipping facility charging mapping")
+                else:
+                    logger.warning("charging_data missing robot_sn; skipping facility charging mapping")
+                charging_with_facility['facility'] = np.nan
 
             # Initialize result dictionaries
             facility_performance = {}
@@ -1050,138 +1061,146 @@ class DatabaseDataService:
                 if pd.isna(building_name):
                     continue
 
-                # Get cached metrics (already calculated in pre-calculation phase)
-                total_tasks = len(facility_tasks)
-                status_counts = self.metrics_calculator.get_cached_status_counts(facility_tasks)
-                running_hours = self.metrics_calculator.get_cached_duration_sum(facility_tasks)
+                try:
+                    # Get cached metrics (already calculated in pre-calculation phase)
+                    total_tasks = len(facility_tasks)
+                    status_counts = self.metrics_calculator.get_cached_status_counts(facility_tasks)
+                    running_hours = self.metrics_calculator.get_cached_duration_sum(facility_tasks)
 
-                # Area calculations - vectorized
-                actual_area_sqm = facility_tasks['actual_area'].fillna(0).sum() if 'actual_area' in facility_tasks.columns else 0
-                planned_area_sqm = facility_tasks['plan_area'].fillna(0).sum() if 'plan_area' in facility_tasks.columns else 0
-                actual_area_sqft = actual_area_sqm * 10.764
-                planned_area_sqft = planned_area_sqm * 10.764
+                    # Area calculations - vectorized with coercion
+                    actual_area_sqm = pd.to_numeric(facility_tasks.get('actual_area', 0), errors='coerce').fillna(0).sum()
+                    planned_area_sqm = pd.to_numeric(facility_tasks.get('plan_area', 0), errors='coerce').fillna(0).sum()
+                    actual_area_sqft = actual_area_sqm * 10.764
+                    planned_area_sqft = planned_area_sqm * 10.764
 
-                # Resource consumption - vectorized
-                energy = facility_tasks['consumption'].fillna(0).sum() if 'consumption' in facility_tasks.columns else 0
-                water = facility_tasks['water_consumption'].fillna(0).sum() if 'water_consumption' in facility_tasks.columns else 0
+                    # Resource consumption - vectorized with coercion
+                    energy = pd.to_numeric(facility_tasks.get('consumption', 0), errors='coerce').fillna(0).sum()
+                    water = pd.to_numeric(facility_tasks.get('water_consumption', 0), errors='coerce').fillna(0).sum()
 
-                # Efficiency calculations
-                coverage_efficiency = (actual_area_sqm / planned_area_sqm * 100) if planned_area_sqm > 0 else 0
-                completion_rate = (status_counts['completed'] / total_tasks * 100) if total_tasks > 0 else 0
-                power_efficiency = actual_area_sqft / energy if energy > 0 else 0
-                water_efficiency = actual_area_sqft / water if water > 0 else 0
-                time_efficiency = actual_area_sqft / running_hours if running_hours > 0 else 0
+                    # Efficiency calculations
+                    coverage_efficiency = (actual_area_sqm / planned_area_sqm * 100) if planned_area_sqm > 0 else 0
+                    completion_rate = (status_counts['completed'] / total_tasks * 100) if total_tasks > 0 else 0
+                    power_efficiency = actual_area_sqft / energy if energy > 0 else 0
+                    water_efficiency = actual_area_sqft / water if water > 0 else 0
+                    time_efficiency = actual_area_sqft / running_hours if running_hours > 0 else 0
 
-                # Average duration - vectorized
-                durations = pd.to_numeric(facility_tasks['duration'], errors='coerce').dropna()
-                avg_duration = (durations.mean() / 60) if len(durations) > 0 else 0
+                    # Average duration - vectorized
+                    durations = pd.to_numeric(facility_tasks.get('duration', 0), errors='coerce').dropna()
+                    avg_duration = (durations.mean() / 60) if len(durations) > 0 else 0
 
-                # Primary mode
-                primary_mode = "Mixed"
-                if 'mode' in facility_tasks.columns:
-                    mode_counts = facility_tasks['mode'].value_counts()
-                    if not mode_counts.empty:
-                        primary_mode = mode_counts.index[0]
+                    # Primary mode
+                    primary_mode = "Mixed"
+                    if 'mode' in facility_tasks.columns:
+                        mode_counts = facility_tasks['mode'].value_counts()
+                        if not mode_counts.empty:
+                            primary_mode = mode_counts.index[0]
 
-                # Days with tasks - use cached calculation
-                facility_days = self.metrics_calculator.get_cached_days_with_tasks(facility_tasks)
-                period_length = self.metrics_calculator._calculate_period_length(start_date, end_date)
+                    # Days with tasks - use cached calculation
+                    facility_days = self.metrics_calculator.get_cached_days_with_tasks(facility_tasks)
+                    period_length = self.metrics_calculator._calculate_period_length(start_date, end_date)
 
-                # DELEGATED TO CALCULATOR: Coverage by day
-                coverage_by_day = self.metrics_calculator.calculate_facility_coverage_by_day(
-                    tasks_data, robot_locations, building_name, start_date, end_date
-                )
+                    # DELEGATED TO CALCULATOR: Coverage by day
+                    coverage_by_day = self.metrics_calculator.calculate_facility_coverage_by_day(
+                        tasks_data, robot_locations, building_name, start_date, end_date
+                    )
 
-                robot_count = len(robot_locations[robot_locations['building_name'] == building_name])
+                    robot_count = len(robot_locations[robot_locations['building_name'] == building_name])
 
-                # Populate all facility metrics dictionaries
-                facility_performance[building_name] = {
-                    'total_tasks': total_tasks,
-                    'completed_tasks': status_counts['completed'],
-                    'completion_rate': round(completion_rate, 1),
-                    'area_cleaned': round(actual_area_sqft, 0),
-                    'planned_area': round(planned_area_sqft, 0),
-                    'coverage_efficiency': round(coverage_efficiency, 1),
-                    'running_hours': round(running_hours, 1),
-                    'power_efficiency': round(power_efficiency, 0),
-                    'robot_count': robot_count
-                }
+                    # Populate all facility metrics dictionaries
+                    facility_performance[building_name] = {
+                        'total_tasks': total_tasks,
+                        'completed_tasks': status_counts['completed'],
+                        'completion_rate': round(completion_rate, 1),
+                        'area_cleaned': round(actual_area_sqft, 0),
+                        'planned_area': round(planned_area_sqft, 0),
+                        'coverage_efficiency': round(coverage_efficiency, 1),
+                        'running_hours': round(running_hours, 1),
+                        'power_efficiency': round(power_efficiency, 0),
+                        'robot_count': robot_count
+                    }
 
-                facility_efficiency[building_name] = {
-                    'water_efficiency': round(water_efficiency, 1),
-                    'time_efficiency': round(time_efficiency, 1),
-                    'total_area_cleaned': round(actual_area_sqft, 0),
-                    'total_time_hours': round(running_hours, 1),
-                    'days_with_tasks': facility_days,
-                    'period_length': period_length,
-                    'days_ratio': f"{facility_days}/{period_length}"
-                }
+                    facility_efficiency[building_name] = {
+                        'water_efficiency': round(water_efficiency, 1),
+                        'time_efficiency': round(time_efficiency, 1),
+                        'total_area_cleaned': round(actual_area_sqft, 0),
+                        'total_time_hours': round(running_hours, 1),
+                        'days_with_tasks': facility_days,
+                        'period_length': period_length,
+                        'days_ratio': f"{facility_days}/{period_length}"
+                    }
 
-                facility_task_metrics[building_name] = {
-                    'total_tasks': total_tasks,
-                    'completed_tasks': status_counts['completed'],
-                    'completion_rate': completion_rate,
-                    'avg_duration_minutes': round(avg_duration, 1),
-                    'primary_mode': primary_mode,
-                    'task_count_by_mode': facility_tasks['mode'].value_counts().to_dict() if 'mode' in facility_tasks.columns else {}
-                }
+                    facility_task_metrics[building_name] = {
+                        'total_tasks': total_tasks,
+                        'completed_tasks': status_counts['completed'],
+                        'completion_rate': completion_rate,
+                        'avg_duration_minutes': round(avg_duration, 1),
+                        'primary_mode': primary_mode,
+                        'task_count_by_mode': facility_tasks['mode'].value_counts().to_dict() if 'mode' in facility_tasks.columns else {}
+                    }
 
-                facility_resource_metrics[building_name] = {
-                    'energy_consumption_kwh': round(energy, 1),
-                    'water_consumption_floz': round(water, 0)
-                }
+                    facility_resource_metrics[building_name] = {
+                        'energy_consumption_kwh': round(energy, 1),
+                        'water_consumption_floz': round(water, 0)
+                    }
 
-                facility_breakdown[building_name] = {
-                    'total_tasks': total_tasks,
-                    'completed_tasks': status_counts['completed'],
-                    'cancelled_tasks': status_counts['cancelled'],
-                    'completion_rate': round(completion_rate, 1),
-                    'area_cleaned': round(actual_area_sqm, 0),
-                    'planned_area': round(planned_area_sqm, 0),
-                    'coverage_efficiency': round(coverage_efficiency, 1),
-                    'running_hours': round(running_hours, 1),
-                    'energy_consumption': round(energy, 1),
-                    'water_consumption': round(water, 1),
-                    'power_efficiency': round(power_efficiency, 0),
-                    'robot_count': robot_count,
-                    'primary_mode': primary_mode,
-                    'avg_task_duration': round(avg_duration, 1),
-                    'cancellation_rate': round((status_counts['cancelled'] / total_tasks * 100), 1) if total_tasks > 0 else 0,
-                    'highest_coverage_day': coverage_by_day['highest_coverage_day'],
-                    'lowest_coverage_day': coverage_by_day['lowest_coverage_day']
-                }
+                    facility_breakdown[building_name] = {
+                        'total_tasks': total_tasks,
+                        'completed_tasks': status_counts['completed'],
+                        'cancelled_tasks': status_counts['cancelled'],
+                        'completion_rate': round(completion_rate, 1),
+                        'area_cleaned': round(actual_area_sqm, 0),
+                        'planned_area': round(planned_area_sqm, 0),
+                        'coverage_efficiency': round(coverage_efficiency, 1),
+                        'running_hours': round(running_hours, 1),
+                        'energy_consumption': round(energy, 1),
+                        'water_consumption': round(water, 1),
+                        'power_efficiency': round(power_efficiency, 0),
+                        'robot_count': robot_count,
+                        'primary_mode': primary_mode,
+                        'avg_task_duration': round(avg_duration, 1),
+                        'cancellation_rate': round((status_counts['cancelled'] / total_tasks * 100), 1) if total_tasks > 0 else 0,
+                        'highest_coverage_day': coverage_by_day['highest_coverage_day'],
+                        'lowest_coverage_day': coverage_by_day['lowest_coverage_day']
+                    }
+                except Exception as e:
+                    logger.error(f"Facility task metrics failed for {building_name}: {e}", exc_info=True)
+                    continue
 
             # Process charging data - single groupby
             for building_name, facility_charging in charging_with_facility.groupby('facility'):
                 if pd.isna(building_name):
                     continue
 
-                total_sessions = len(facility_charging)
+                try:
+                    total_sessions = len(facility_charging)
 
-                # Vectorized duration parsing
-                durations = facility_charging['duration'].apply(
-                    self.metrics_calculator._parse_duration_str_to_minutes
-                ).tolist()
-                durations = [d for d in durations if d > 0]
+                    # Vectorized duration parsing
+                    durations = facility_charging.get('duration', pd.Series([], dtype=object)).apply(
+                        self.metrics_calculator._parse_duration_str_to_minutes
+                    ).tolist()
+                    durations = [d for d in durations if d > 0]
 
-                # Vectorized power gain parsing
-                power_gain_series = facility_charging['power_gain'].astype(str).str.replace(
-                    '+', ''
-                ).str.replace('%', '').str.strip()
-                power_gains = pd.to_numeric(power_gain_series, errors='coerce').dropna().tolist()
+                    # Vectorized power gain parsing
+                    power_gain_series = facility_charging.get('power_gain', pd.Series([], dtype=object)).astype(str).str.replace(
+                        '+', ''
+                    ).str.replace('%', '').str.strip()
+                    power_gains = pd.to_numeric(power_gain_series, errors='coerce').dropna().tolist()
 
-                avg_duration = np.mean(durations) if durations else 0
-                median_duration = np.median(durations) if durations else 0
-                avg_power_gain = np.mean(power_gains) if power_gains else 0
-                median_power_gain = np.median(power_gains) if power_gains else 0
+                    avg_duration = np.mean(durations) if durations else 0
+                    median_duration = np.median(durations) if durations else 0
+                    avg_power_gain = np.mean(power_gains) if power_gains else 0
+                    median_power_gain = np.median(power_gains) if power_gains else 0
 
-                facility_charging_metrics[building_name] = {
-                    'total_sessions': total_sessions,
-                    'avg_duration_minutes': round(avg_duration, 1),
-                    'median_duration_minutes': round(median_duration, 1),
-                    'avg_power_gain_percent': round(avg_power_gain, 1),
-                    'median_power_gain_percent': round(median_power_gain, 1)
-                }
+                    facility_charging_metrics[building_name] = {
+                        'total_sessions': total_sessions,
+                        'avg_duration_minutes': round(avg_duration, 1),
+                        'median_duration_minutes': round(median_duration, 1),
+                        'avg_power_gain_percent': round(avg_power_gain, 1),
+                        'median_power_gain_percent': round(median_power_gain, 1)
+                    }
+                except Exception as e:
+                    logger.error(f"Facility charging metrics failed for {building_name}: {e}", exc_info=True)
+                    continue
 
             logger.info(f"Batch calculated metrics for {len(facility_performance)} facilities")
 
