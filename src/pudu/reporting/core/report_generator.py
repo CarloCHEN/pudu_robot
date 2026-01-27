@@ -20,7 +20,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Any
 import pandas as pd
 from pudu.configs.database_config_loader import DynamicDatabaseConfig
-from pudu.services.robot_database_resolver import RobotDatabaseResolver
+from pudu.rds.rdsTable import RDSTable
 from ..templates.robot_html_template import RobotPerformanceTemplate
 from ..templates.robot_pdf_template import RobotPDFTemplate
 from ..services.database_data_service import DatabaseDataService
@@ -44,8 +44,8 @@ class ReportGenerator:
         self.config_path = config_path
         self.output_dir = output_dir
         self.config = DynamicDatabaseConfig(config_path)
-        self.resolver = RobotDatabaseResolver(self.config.main_database_name)
         self.chart_formatter = ChartDataFormatter()
+        self.connection_config = "credentials.yaml"
 
         # Store report configuration
         self.report_config = report_config
@@ -54,6 +54,7 @@ class ReportGenerator:
         # This service now uses parallel fetching and delegates to optimized calculator
         self.data_service = DatabaseDataService(
             self.config,
+            self.report_config.database_name,
             self.report_config.get_date_range()[0],
             self.report_config.get_date_range()[1]
         )
@@ -394,9 +395,6 @@ class ReportGenerator:
 
             # Filter robots based on configuration
             target_robots = self._resolve_target_robots()
-            if not target_robots:
-                logger.warning(f"No robots found for project {self.report_config.database_name} with given criteria")
-                target_robots = self._get_all_customer_robots(self.report_config.database_name)
 
             logger.info(f"Targeting {len(target_robots)} robots for report generation")
 
@@ -502,54 +500,225 @@ class ReportGenerator:
                 }
             }
 
-    def _resolve_target_robots(self) -> List[str]:
-        """Resolve target robots based on configuration - Enhanced for multiple selections"""
+    def _extract_location_criteria(self) -> Dict[str, List[str]]:
+        """Extract and normalize location criteria from config"""
+        location = self.report_config.location
+
+        return {
+            'countries': location.get('countries', []),
+            'states': location.get('states', []),
+            'cities': location.get('cities', []),
+            'buildings': location.get('buildings', [])
+        }
+
+    def _build_location_condition(self, location_criteria: Dict[str, List[str]]) -> str:
+        """
+        Build SQL condition for location filtering using JOIN with pro_building_info
+        """
         try:
-            from ..services.robot_location_resolver import RobotLocationResolver
-            location_resolver = RobotLocationResolver(self.config)
+            def esc(s: str) -> str:
+                return s.replace("'", "''")
 
-            # Extract robot criteria
-            robot_names = self.report_config.robot.get('names', [])
-            robot_sns = self.report_config.robot.get('serialNumbers', [])
+            def upper_list(values: List[str]) -> str:
+                return ", ".join([f"'{esc(v).upper()}'" for v in values if v and str(v).strip()])
 
-            # Extract location criteria
-            location_criteria = {}
-            if self.report_config.location.get('countries'):
-                location_criteria['countries'] = self.report_config.location['countries']
-            if self.report_config.location.get('states'):
-                location_criteria['states'] = self.report_config.location['states']
-            if self.report_config.location.get('cities'):
-                location_criteria['cities'] = self.report_config.location['cities']
-            if self.report_config.location.get('buildings'):
-                location_criteria['buildings'] = self.report_config.location['buildings']
+            # Extract criteria
+            countries = location_criteria.get('countries', [])
+            states = location_criteria.get('states', [])
+            cities = location_criteria.get('cities', [])
+            buildings = location_criteria.get('buildings', [])
 
-            # Use the new combined resolver method
-            robots = location_resolver.resolve_robots_combined(
-                location_criteria=location_criteria if location_criteria else None,
-                robot_names=robot_names if robot_names else None,
-                robot_sns=robot_sns if robot_sns else None
+            building_conditions = []
+
+            # Countries
+            if countries:
+                if len(countries) == 1:
+                    building_conditions.append(f"UPPER(b.country) = '{esc(countries[0]).upper()}'")
+                else:
+                    building_conditions.append(f"UPPER(b.country) IN ({upper_list(countries)})")
+
+            # States
+            if states:
+                if len(states) == 1:
+                    building_conditions.append(f"UPPER(b.state) = '{esc(states[0]).upper()}'")
+                else:
+                    building_conditions.append(f"UPPER(b.state) IN ({upper_list(states)})")
+
+            # Cities
+            if cities:
+                if len(cities) == 1:
+                    building_conditions.append(f"UPPER(b.city) = '{esc(cities[0]).upper()}'")
+                else:
+                    building_conditions.append(f"UPPER(b.city) IN ({upper_list(cities)})")
+
+            # Buildings (partial match OR exact match)
+            if buildings:
+                bldg_conditions = []
+                for bldg in buildings:
+                    bldg_u = esc(bldg).upper()
+                    bldg_conditions.append(
+                        f"(UPPER(b.building_name) LIKE '%{bldg_u}%' OR UPPER(b.building_name) = '{bldg_u}')"
+                    )
+                building_conditions.append(f"({' OR '.join(bldg_conditions)})")
+
+            if not building_conditions:
+                return ""
+
+            # Build subquery that joins with building info
+            building_where = " AND ".join(building_conditions)
+
+            location_condition = f"""
+                location_id IN (
+                    SELECT building_id
+                    FROM pro_building_info b
+                    WHERE {building_where}
+                )
+            """
+
+            return location_condition
+
+        except Exception as e:
+            logger.error(f"Error building location condition: {e}")
+            return ""
+
+    def _get_all_robots_from_database(self, database_name: str) -> List[str]:
+        """Get all robots from specific project database"""
+        try:
+            table = RDSTable(
+                connection_config=self.connection_config,
+                database_name=database_name,
+                table_name="mnt_robots_management",
+                fields=None,
+                primary_keys=["robot_sn"],
+                reuse_connection=False
             )
 
-            if robots:
-                logger.info(f"Resolved {len(robots)} robots using combined criteria")
-                return robots
-            else:
-                logger.warning("No robots found with specified criteria")
-                logger.info("Falling back to all project robots")
-                return self._get_all_customer_robots(self.report_config.database_name)
+            query = """
+                SELECT DISTINCT robot_sn
+                FROM mnt_robots_management
+                WHERE robot_sn IS NOT NULL
+            """
 
-        except Exception as e:
-            logger.error(f"Error resolving target robots: {e}")
+            result_df = table.execute_query(query)
+            table.close()
+
+            if not result_df.empty:
+                robots = result_df['robot_sn'].tolist()
+                logger.info(f"Found {len(robots)} total robots in {database_name}")
+                return robots
+
             return []
 
-    def _get_all_customer_robots(self, database_name: str) -> List[str]:
-        """Get all robots belonging to a database_name"""
+        except Exception as e:
+            logger.error(f"Error getting all robots from {database_name}: {e}")
+            return []
+
+    def _query_robots_from_project_db(self, database_name: str,
+                                       robot_names: List[str] = None,
+                                       location_criteria: Dict[str, List[str]] = None) -> List[str]:
+        """
+        OPTIMIZED: Single query to get robots from project database
+        Combines name-based and location-based resolution in ONE query
+        """
         try:
-            all_robot_mapping = self.resolver.get_robot_database_mapping()
-            return list(all_robot_mapping.keys())
+            # Create connection to project database
+            table = RDSTable(
+                connection_config=self.connection_config,
+                database_name=database_name,
+                table_name="mnt_robots_management",
+                fields=None,
+                primary_keys=["robot_sn"],
+                reuse_connection=False
+            )
+
+            where_conditions = []
+
+            # 1. Robot name conditions (if provided)
+            if robot_names:
+                # Batch name matching in single condition
+                name_conditions = []
+                for name in robot_names:
+                    escaped_name = name.replace("'", "''")
+                    name_conditions.append(f"robot_name LIKE '%{escaped_name}%'")
+
+                where_conditions.append(f"({' OR '.join(name_conditions)})")
+                logger.info(f"Added name filter for {len(robot_names)} names")
+
+            # 2. Location conditions (if provided)
+            elif location_criteria and any(location_criteria.values()):
+                location_condition = self._build_location_condition(location_criteria)
+                if location_condition:
+                    where_conditions.append(location_condition)
+                    logger.info(f"Added location filter: {location_criteria}")
+
+            # Build final query
+            if where_conditions:
+                where_clause = " AND ".join(where_conditions)
+                query = f"""
+                    SELECT DISTINCT robot_sn
+                    FROM mnt_robots_management
+                    WHERE {where_clause}
+                    AND robot_sn IS NOT NULL
+                """
+            else:
+                # No filters - get all robots from this database
+                query = """
+                    SELECT DISTINCT robot_sn
+                    FROM mnt_robots_management
+                    WHERE robot_sn IS NOT NULL
+                """
+
+            logger.info(f"Executing robot resolution query on {database_name}")
+            result_df = table.execute_query(query)
+            table.close()
+
+            if not result_df.empty:
+                robots = result_df['robot_sn'].tolist()
+                return robots
+
+            return []
 
         except Exception as e:
-            logger.error(f"Error getting project robots: {e}")
+            logger.error(f"Error querying robots from {database_name}: {e}")
+            return []
+
+    def _resolve_target_robots(self) -> List[str]:
+        """
+        OPTIMIZED: Resolve target robots using database_name directly
+        Eliminates need for resolver services - queries project database directly
+        """
+        try:
+            database_name = self.report_config.database_name
+
+            # Extract criteria from config
+            robot_sns = self.report_config.robot.get('serialNumbers', [])
+            robot_names = self.report_config.robot.get('names', [])
+            location_criteria = self._extract_location_criteria()
+
+            logger.info(f"Resolving robots in database: {database_name}")
+
+            # If robot SNs are directly provided, use them immediately
+            if robot_sns:
+                logger.info(f"Using {len(robot_sns)} directly provided robot SNs")
+                return robot_sns
+
+            # Otherwise, query the project database
+            resolved_robots = self._query_robots_from_project_db(
+                database_name,
+                robot_names,
+                location_criteria
+            )
+
+            if resolved_robots:
+                logger.info(f"Resolved {len(resolved_robots)} robots from {database_name}")
+                return resolved_robots
+            else:
+                logger.warning(f"No robots found in {database_name} with given criteria")
+                # Fallback: get all robots from this database
+                return self._get_all_robots_from_database(database_name)
+
+        except Exception as e:
+            logger.error(f"Error resolving target robots: {e}", exc_info=True)
             return []
 
     def _generate_comprehensive_report_content(self, comprehensive_metrics: Dict[str, Any], start_date: str,
@@ -623,9 +792,7 @@ class ReportGenerator:
         try:
             # Clear calculator caches on close
             self.data_service.metrics_calculator.clear_all_caches()
-
             self.config.close()
-            self.resolver.close()
             logger.info("ReportGenerator resources cleaned up")
         except Exception as e:
             logger.warning(f"Error during cleanup: {e}")

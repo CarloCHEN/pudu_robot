@@ -691,7 +691,7 @@ class RobotPDFTemplate:
         robot_health_scores = content.get('robot_health_scores', {})
 
         if individual_robots:
-            for robot in individual_robots[:10]:
+            for robot in individual_robots:
                 robot_id = robot.get('robot_id', 'Unknown')
 
                 # Get health data if available
@@ -738,7 +738,7 @@ class RobotPDFTemplate:
         roi_breakdown_rows = ""
         robot_roi_breakdown = cost_data.get('robot_roi_breakdown', {})
         if robot_roi_breakdown:
-            for robot_sn, roi_data in list(robot_roi_breakdown.items())[:10]:  # Top 10 robots
+            for robot_sn, roi_data in list(robot_roi_breakdown.items()):  # Top 10 robots
                 roi_breakdown_rows += f'''
                 <tr>
                     <td>{robot_sn}</td>
@@ -1528,7 +1528,7 @@ class RobotPDFTemplate:
         """
 
         # Process each robot (up to 5 for PDF)
-        for robot in individual_robots[:5]:
+        for robot in individual_robots:
             robot_id = robot.get('robot_id', 'Unknown')
             robot_name = robot.get('robot_name', robot_id)
             health_data = valid_health_scores.get(robot_id, {})

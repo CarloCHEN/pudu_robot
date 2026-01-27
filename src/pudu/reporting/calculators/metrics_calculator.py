@@ -2201,7 +2201,7 @@ class PerformanceMetricsCalculator:
     # ROI & COST ANALYSIS METRICS (UNCHANGED but included for completeness)
     # ============================================================================
 
-    def calculate_roi_metrics(self, all_time_tasks: pd.DataFrame, target_robots: List[str],
+    def calculate_roi_metrics(self, all_time_tasks: pd.DataFrame, target_robots: List[str], 
                              current_period_end: str, monthly_lease_price: float = 1500.0) -> Dict[str, Any]:
         """Calculate ROI metrics using all-time task data"""
         try:

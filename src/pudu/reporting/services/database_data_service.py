@@ -38,10 +38,11 @@ class DatabaseDataService:
     FIXED: Enhanced service with proper connection management for parallel execution
     """
 
-    def __init__(self, config: DynamicDatabaseConfig, start_date: str, end_date: str):
+    def __init__(self, config: DynamicDatabaseConfig, database_name: str, start_date: str, end_date: str):
         """Initialize with database configuration and calculator"""
         self.config = config
         self.connection_config = "credentials.yaml"
+        self.database_name = database_name
         self.metrics_calculator = PerformanceMetricsCalculator(start_date, end_date)
 
         # Thread pool for parallel operations
@@ -69,7 +70,7 @@ class DatabaseDataService:
                     table_name=table_name,
                     fields=fields,
                     primary_keys=primary_keys,
-                    reuse_connection=False
+                    reuse_connection=reuse_connection
                 )
                 return table
             except Exception as e:
@@ -162,29 +163,29 @@ class DatabaseDataService:
 
             # 1. Robot status
             logger.info("Fetching robot status...")
-            report_data['robot_status'] = self.fetch_robot_status_data(target_robots)
+            report_data['robot_status'] = self.fetch_robot_status_data(target_robots, self.database_name)
 
             # 2. Location data
             logger.info("Fetching location data...")
-            report_data['robot_locations'] = self.fetch_location_data(target_robots)
+            report_data['robot_locations'] = self.fetch_location_data(target_robots, self.database_name, report_data['robot_status'])
 
             # 3. Cleaning tasks
             logger.info("Fetching cleaning tasks...")
             report_data['cleaning_tasks'] = self.fetch_cleaning_tasks_data(
-                target_robots, start_date, end_date
+                target_robots, self.database_name, start_date, end_date
             )
 
             # 4. Charging data
             logger.info("Fetching charging data...")
             report_data['charging_tasks'] = self.fetch_charging_data(
-                target_robots, start_date, end_date
+                target_robots, self.database_name, start_date, end_date
             )
 
             # 5. Events (if requested)
             if 'event-analysis' in content_categories:
                 logger.info("Fetching events...")
                 report_data['events'] = self.fetch_events_data(
-                    target_robots, start_date, end_date
+                    target_robots, self.database_name, start_date, end_date
                 )
             else:
                 report_data['events'] = pd.DataFrame()
@@ -192,12 +193,12 @@ class DatabaseDataService:
             # 6. Operation history
             logger.info("Fetching operation history...")
             report_data['operation_history'] = self.fetch_operation_history_data(
-                target_robots, start_date, end_date
+                target_robots, self.database_name, start_date, end_date
             )
 
             # 7. Performance targets
             logger.info("Fetching performance targets...")
-            report_data['performance_targets'] = self.fetch_performance_targets(target_robots)
+            report_data['performance_targets'] = self.fetch_performance_targets(target_robots, self.database_name)
 
             logger.info(f"Sequential data fetching completed: {list(report_data.keys())}")
             return report_data
@@ -218,339 +219,343 @@ class DatabaseDataService:
     # FIXED: Data Fetching Methods with Proper Connection Management
     # ============================================================================
 
-    def fetch_robot_status_data(self, target_robots: List[str]) -> pd.DataFrame:
-        """Fetch current robot status data with proper error handling"""
-        logger.info(f"Fetching robot status for {len(target_robots)} robots")
+    def fetch_robot_status_data(self, target_robots: List[str], database_name: str,
+                           end_date: str = None) -> pd.DataFrame:
+        """
+        OPTIMIZED: Fetch current robot status data directly from known database.
+
+        Args:
+            target_robots: List of robot serial numbers
+            database_name: Project database name (from report_config)
+            end_date: Optional end date filter (UTC format). If None, gets latest records.
+
+        Returns:
+            DataFrame with latest status for each robot
+        """
+        if not target_robots:
+            logger.warning("No target robots provided for status fetch")
+            return pd.DataFrame()
+
+        logger.info(f"Fetching robot status for {len(target_robots)} robots from {database_name}")
 
         try:
-            table_configs = self.config.get_table_configs_for_robots('robot_status', target_robots)
+            # OPTIMIZED: Single connection to known database
+            table = self._create_table_with_retry(
+                connection_config=self.connection_config,
+                database_name=database_name,
+                table_name='mnt_robot_operation_history',
+                fields=None,
+                primary_keys=['robot_sn', 'timestamp_utc']
+            )
 
-            all_data = []
-            for table_config in table_configs:
-                try:
-                    db_robots = table_config.get('robot_sns', [])
-                    if not db_robots:
-                        continue
+            if not table:
+                logger.error(f"Failed to create connection for {database_name}")
+                return pd.DataFrame()
 
-                    # Create connection with retry
-                    table = self._create_table_with_retry(
-                        connection_config=self.connection_config,
-                        database_name=table_config['database'],
-                        table_name=table_config['table_name'],
-                        fields=table_config.get('fields'),
-                        primary_keys=table_config['primary_keys']
-                    )
+            # Get all required columns
+            columns = self.get_required_columns('robot_status')
+            columns_str = ', '.join(columns)
+            robot_list = "', '".join(target_robots)
 
-                    if not table:
-                        logger.warning(f"Failed to create connection for {table_config['database']}")
-                        continue
+            # Build date filter if provided
+            date_filter = f"AND t.timestamp_utc <= '{end_date}'" if end_date else ""
 
-                    # Get all required columns
-                    columns = self.get_required_columns('robot_status')
-                    columns_str = ', '.join(columns)
+            # OPTIMIZED: Single query for all robots with latest record per robot
+            query = f"""
+                SELECT {columns_str}
+                FROM (
+                    SELECT DISTINCT
+                        mrm.robot_sn, mrm.robot_type, mrm.robot_name, mrm.location_id,
+                        t.water_level, t.sewage_level, t.battery_level, t.status,
+                        t.battery_soh, t.timestamp_utc,
+                        ROW_NUMBER() OVER (PARTITION BY mrm.robot_sn ORDER BY t.timestamp_utc DESC) as rn
+                    FROM {table.table_name} t
+                    INNER JOIN mnt_robots_management mrm ON t.robot_sn = mrm.robot_sn
+                    WHERE mrm.robot_sn IN ('{robot_list}')
+                    {date_filter}
+                ) ranked
+                WHERE rn = 1
+            """
 
-                    robot_list = "', '".join(db_robots)
-                    query = f"""
-                        SELECT {columns_str}
-                        FROM (
-                            SELECT DISTINCT
-                                mrm.robot_sn, mrm.robot_type, mrm.robot_name, mrm.location_id,
-                                t.water_level, t.sewage_level, t.battery_level, t.status,
-                                t.battery_soh, t.timestamp_utc,
-                                ROW_NUMBER() OVER (PARTITION BY mrm.robot_sn ORDER BY t.timestamp_utc DESC) as rn
-                            FROM {table.table_name} t
-                            INNER JOIN mnt_robots_management mrm ON t.robot_sn = mrm.robot_sn
-                            WHERE mrm.robot_sn IN ('{robot_list}')
-                        ) ranked
-                        WHERE rn = 1
-                    """
+            # Execute with retry
+            result_df = self._execute_query_with_retry(table, query)
 
-                    # Execute with retry
-                    result_df = self._execute_query_with_retry(table, query)
+            # Always close connection
+            table.close()
 
-                    if not result_df.empty:
-                        all_data.append(result_df)
-                        logger.info(f"Retrieved {len(result_df)} robot status records from {table_config['database']}")
+            if result_df.empty:
+                logger.warning(f"No robot status data found in {database_name}")
+                return pd.DataFrame()
 
-                    # Always close connection
-                    table.close()
-
-                except Exception as e:
-                    logger.error(f"Error fetching robot status from {table_config.get('database', 'unknown')}: {e}")
-                    continue
-
-            # Combine and deduplicate
-            if all_data:
-                combined_df = pd.concat(all_data, ignore_index=True)
-                # Deduplicate by robot_sn, keeping most recent
-                combined_df = combined_df.drop_duplicates(subset=['robot_sn'], keep='first')
-                logger.info(f"Total robot status records: {len(combined_df)}")
-                return combined_df
-
-            logger.warning("No robot status data found")
-            return pd.DataFrame()
+            logger.info(f"✓ Retrieved status for {len(result_df)} robots from {database_name}")
+            return result_df
 
         except Exception as e:
-            logger.error(f"Error in fetch_robot_status_data: {e}")
+            logger.error(f"Error fetching robot status from {database_name}: {e}")
             return pd.DataFrame()
 
-    def fetch_cleaning_tasks_data(self, target_robots: List[str],
-                                  start_date: str, end_date: str) -> pd.DataFrame:
-        """Fetch historical cleaning tasks data with proper error handling"""
-        logger.info(f"Fetching tasks for {len(target_robots)} robots from {start_date} to {end_date}")
+    def fetch_cleaning_tasks_data(self, target_robots: List[str], database_name: str,
+                              start_date: str, end_date: str) -> pd.DataFrame:
+        """
+        OPTIMIZED: Fetch historical cleaning tasks data directly from known database.
+
+        Args:
+            target_robots: List of robot serial numbers
+            database_name: Project database name (from report_config)
+            start_date: Start date filter (UTC format)
+            end_date: End date filter (UTC format)
+
+        Returns:
+            DataFrame with task records
+        """
+        if not target_robots:
+            logger.warning("No target robots provided for tasks fetch")
+            return pd.DataFrame()
+
+        logger.info(f"Fetching tasks for {len(target_robots)} robots from {database_name} ({start_date} to {end_date})")
 
         try:
-            table_configs = self.config.get_table_configs_for_robots('robot_task', target_robots)
+            # OPTIMIZED: Single connection to known database
+            table = self._create_table_with_retry(
+                connection_config=self.connection_config,
+                database_name=database_name,
+                table_name='mnt_robots_task',
+                fields=None,
+                primary_keys=['robot_sn', 'task_name', 'start_time']
+            )
 
-            all_data = []
-            for table_config in table_configs:
-                try:
-                    db_robots = table_config.get('robot_sns', [])
-                    if not db_robots:
-                        continue
+            if not table:
+                logger.error(f"Failed to create connection for {database_name}")
+                return pd.DataFrame()
 
-                    table = self._create_table_with_retry(
-                        connection_config=self.connection_config,
-                        database_name=table_config['database'],
-                        table_name=table_config['table_name'],
-                        fields=table_config.get('fields'),
-                        primary_keys=table_config['primary_keys']
-                    )
+            columns = self.get_required_columns('robot_task')
+            columns_str = ', '.join(columns)
+            robot_list = "', '".join(target_robots)
 
-                    if not table:
-                        continue
+            # OPTIMIZED: Single query for all robots
+            query = f"""
+                SELECT {columns_str}
+                FROM {table.table_name}
+                WHERE robot_sn IN ('{robot_list}')
+                AND start_time >= '{start_date}'
+                AND start_time <= '{end_date}'
+                ORDER BY start_time DESC
+            """
 
-                    columns = self.get_required_columns('robot_task')
-                    columns_str = ', '.join(columns)
+            result_df = self._execute_query_with_retry(table, query)
+            table.close()
 
-                    robot_list = "', '".join(db_robots)
-                    query = f"""
-                        SELECT {columns_str}
-                        FROM {table.table_name}
-                        WHERE robot_sn IN ('{robot_list}')
-                        AND start_time >= '{start_date}'
-                        AND start_time <= '{end_date}'
-                        ORDER BY start_time DESC
-                    """
+            if result_df.empty:
+                logger.warning(f"No cleaning tasks data found in {database_name} for {start_date} to {end_date}")
+                return pd.DataFrame()
 
-                    result_df = self._execute_query_with_retry(table, query)
-
-                    if not result_df.empty:
-                        all_data.append(result_df)
-                        logger.info(f"Retrieved {len(result_df)} task records from {table_config['database']}")
-
-                    table.close()
-
-                except Exception as e:
-                    logger.error(f"Error fetching tasks from {table_config.get('database', 'unknown')}: {e}")
-                    continue
-
-            if all_data:
-                combined_df = pd.concat(all_data, ignore_index=True)
-                logger.info(f"Total task records: {len(combined_df)}")
-                return combined_df
-
-            logger.warning(f"No cleaning tasks data found for {start_date} to {end_date}")
-            return pd.DataFrame()
+            logger.info(f"✓ Retrieved {len(result_df)} task records from {database_name}")
+            return result_df
 
         except Exception as e:
-            logger.error(f"Error in fetch_cleaning_tasks_data: {e}")
+            logger.error(f"Error fetching tasks from {database_name}: {e}")
             return pd.DataFrame()
 
-    def fetch_charging_data(self, target_robots: List[str],
-                           start_date: str, end_date: str) -> pd.DataFrame:
-        """Fetch historical charging sessions data with proper error handling"""
-        logger.info(f"Fetching charging data for {len(target_robots)} robots")
+    def fetch_charging_data(self, target_robots: List[str], database_name: str,
+                       start_date: str, end_date: str) -> pd.DataFrame:
+        """
+        OPTIMIZED: Fetch historical charging sessions data directly from known database.
+
+        Args:
+            target_robots: List of robot serial numbers
+            database_name: Project database name (from report_config)
+            start_date: Start date filter (UTC format)
+            end_date: End date filter (UTC format)
+
+        Returns:
+            DataFrame with charging records
+        """
+        if not target_robots:
+            logger.warning("No target robots provided for charging fetch")
+            return pd.DataFrame()
+
+        logger.info(f"Fetching charging data for {len(target_robots)} robots from {database_name}")
 
         try:
-            table_configs = self.config.get_table_configs_for_robots('robot_charging', target_robots)
+            # OPTIMIZED: Single connection to known database
+            table = self._create_table_with_retry(
+                connection_config=self.connection_config,
+                database_name=database_name,
+                table_name='mnt_robots_charging_sessions',
+                fields=None,
+                primary_keys=['robot_sn', 'start_time', 'end_time']
+            )
 
-            all_data = []
-            for table_config in table_configs:
-                try:
-                    db_robots = table_config.get('robot_sns', [])
-                    if not db_robots:
-                        continue
+            if not table:
+                logger.error(f"Failed to create connection for {database_name}")
+                return pd.DataFrame()
 
-                    table = self._create_table_with_retry(
-                        connection_config=self.connection_config,
-                        database_name=table_config['database'],
-                        table_name=table_config['table_name'],
-                        fields=table_config.get('fields'),
-                        primary_keys=table_config['primary_keys']
-                    )
+            columns = self.get_required_columns('robot_charging')
+            columns_str = ', '.join(columns)
+            robot_list = "', '".join(target_robots)
 
-                    if not table:
-                        continue
+            # OPTIMIZED: Single query for all robots
+            query = f"""
+                SELECT {columns_str}
+                FROM {table.table_name}
+                WHERE robot_sn IN ('{robot_list}')
+                AND start_time >= '{start_date}'
+                AND start_time <= '{end_date}'
+                ORDER BY start_time DESC
+            """
 
-                    columns = self.get_required_columns('robot_charging')
-                    columns_str = ', '.join(columns)
+            result_df = self._execute_query_with_retry(table, query)
+            table.close()
 
-                    robot_list = "', '".join(db_robots)
-                    query = f"""
-                        SELECT {columns_str}
-                        FROM {table.table_name}
-                        WHERE robot_sn IN ('{robot_list}')
-                        AND start_time >= '{start_date}'
-                        AND start_time <= '{end_date}'
-                        ORDER BY start_time DESC
-                    """
+            if result_df.empty:
+                logger.warning(f"No charging data found in {database_name} for {start_date} to {end_date}")
+                return pd.DataFrame()
 
-                    result_df = self._execute_query_with_retry(table, query)
-
-                    if not result_df.empty:
-                        all_data.append(result_df)
-                        logger.info(f"Retrieved {len(result_df)} charging records from {table_config['database']}")
-
-                    table.close()
-
-                except Exception as e:
-                    logger.error(f"Error fetching charging data from {table_config.get('database', 'unknown')}: {e}")
-                    continue
-
-            if all_data:
-                combined_df = pd.concat(all_data, ignore_index=True)
-                logger.info(f"Total charging records: {len(combined_df)}")
-                return combined_df
-
-            logger.warning(f"No charging data found for {start_date} to {end_date}")
-            return pd.DataFrame()
+            logger.info(f"✓ Retrieved {len(result_df)} charging records from {database_name}")
+            return result_df
 
         except Exception as e:
-            logger.error(f"Error in fetch_charging_data: {e}")
+            logger.error(f"Error fetching charging data from {database_name}: {e}")
             return pd.DataFrame()
 
-    def fetch_events_data(self, target_robots: List[str],
-                         start_date: str, end_date: str) -> pd.DataFrame:
-        """Fetch historical robot events data with proper error handling"""
-        logger.info(f"Fetching events for {len(target_robots)} robots")
+    def fetch_events_data(self, target_robots: List[str], database_name: str,
+                     start_date: str, end_date: str) -> pd.DataFrame:
+        """
+        OPTIMIZED: Fetch historical robot events data directly from known database.
+
+        Args:
+            target_robots: List of robot serial numbers
+            database_name: Project database name (from report_config)
+            start_date: Start date filter (UTC format)
+            end_date: End date filter (UTC format)
+
+        Returns:
+            DataFrame with event records
+        """
+        if not target_robots:
+            logger.warning("No target robots provided for events fetch")
+            return pd.DataFrame()
+
+        logger.info(f"Fetching events for {len(target_robots)} robots from {database_name}")
 
         try:
-            table_configs = self.config.get_table_configs_for_robots('robot_events', target_robots)
+            # OPTIMIZED: Single connection to known database
+            table = self._create_table_with_retry(
+                connection_config=self.connection_config,
+                database_name=database_name,
+                table_name='mnt_robot_events',
+                fields=None,
+                primary_keys=['robot_sn', 'event_id']
+            )
 
-            all_data = []
-            for table_config in table_configs:
-                try:
-                    db_robots = table_config.get('robot_sns', [])
-                    if not db_robots:
-                        continue
+            if not table:
+                logger.error(f"Failed to create connection for {database_name}")
+                return pd.DataFrame()
 
-                    table = self._create_table_with_retry(
-                        connection_config=self.connection_config,
-                        database_name=table_config['database'],
-                        table_name=table_config['table_name'],
-                        fields=table_config.get('fields'),
-                        primary_keys=table_config['primary_keys']
-                    )
+            columns = self.get_required_columns('robot_events')
+            columns_str = ', '.join(columns)
+            robot_list = "', '".join(target_robots)
 
-                    if not table:
-                        continue
+            # OPTIMIZED: Single query for all robots
+            query = f"""
+                SELECT {columns_str}
+                FROM {table.table_name}
+                WHERE robot_sn IN ('{robot_list}')
+                AND task_time >= '{start_date}'
+                AND task_time <= '{end_date}'
+                ORDER BY task_time DESC
+            """
 
-                    columns = self.get_required_columns('robot_events')
-                    columns_str = ', '.join(columns)
+            result_df = self._execute_query_with_retry(table, query)
+            table.close()
 
-                    robot_list = "', '".join(db_robots)
-                    query = f"""
-                        SELECT {columns_str}
-                        FROM {table.table_name}
-                        WHERE robot_sn IN ('{robot_list}')
-                        AND task_time >= '{start_date}'
-                        AND task_time <= '{end_date}'
-                        ORDER BY task_time DESC
-                    """
+            if result_df.empty:
+                logger.warning(f"No events data found in {database_name}")
+                return pd.DataFrame()
 
-                    result_df = self._execute_query_with_retry(table, query)
-
-                    if not result_df.empty:
-                        all_data.append(result_df)
-                        logger.info(f"Retrieved {len(result_df)} event records from {table_config['database']}")
-
-                    table.close()
-
-                except Exception as e:
-                    logger.error(f"Error fetching events from {table_config.get('database', 'unknown')}: {e}")
-                    continue
-
-            if all_data:
-                combined_df = pd.concat(all_data, ignore_index=True)
-                logger.info(f"Total event records: {len(combined_df)}")
-                return combined_df
-
-            logger.warning("No events data found")
-            return pd.DataFrame()
+            logger.info(f"✓ Retrieved {len(result_df)} event records from {database_name}")
+            return result_df
 
         except Exception as e:
-            logger.error(f"Error in fetch_events_data: {e}")
+            logger.error(f"Error fetching events from {database_name}: {e}")
             return pd.DataFrame()
 
-    def fetch_operation_history_data(self, target_robots: List[str],
-                                    start_date: str, end_date: str) -> pd.DataFrame:
-        """Fetch robot operation history data with proper error handling"""
-        logger.info(f"Fetching operation history for {len(target_robots)} robots")
+    def fetch_operation_history_data(self, target_robots: List[str], database_name: str,
+                                start_date: str, end_date: str) -> pd.DataFrame:
+        """
+        OPTIMIZED: Fetch robot operation history data directly from known database.
+
+        Args:
+            target_robots: List of robot serial numbers
+            database_name: Project database name (from report_config)
+            start_date: Start date filter (UTC format)
+            end_date: End date filter (UTC format)
+
+        Returns:
+            DataFrame with operation history records
+        """
+        if not target_robots:
+            logger.warning("No target robots provided for operation history fetch")
+            return pd.DataFrame()
+
+        logger.info(f"Fetching operation history for {len(target_robots)} robots from {database_name}")
 
         try:
-            table_configs = self.config.get_table_configs_for_robots('robot_status', target_robots)
+            # OPTIMIZED: Single connection to known database
+            table = self._create_table_with_retry(
+                connection_config=self.connection_config,
+                database_name=database_name,
+                table_name='mnt_robot_operation_history',
+                fields=None,
+                primary_keys=['robot_sn', 'timestamp_utc']
+            )
 
-            all_data = []
-            for table_config in table_configs:
-                try:
-                    db_robots = table_config.get('robot_sns', [])
-                    if not db_robots:
-                        continue
+            if not table:
+                logger.error(f"Failed to create connection for {database_name}")
+                return pd.DataFrame()
 
-                    table = self._create_table_with_retry(
-                        connection_config=self.connection_config,
-                        database_name=table_config['database'],
-                        table_name=table_config['table_name'],
-                        fields=table_config.get('fields'),
-                        primary_keys=table_config['primary_keys']
-                    )
+            robot_list = "', '".join(target_robots)
 
-                    if not table:
-                        continue
+            # OPTIMIZED: Single query for all robots
+            query = f"""
+                SELECT robot_sn, status, timestamp_utc, battery_soh
+                FROM {table.table_name}
+                WHERE robot_sn IN ('{robot_list}')
+                AND timestamp_utc >= '{start_date}'
+                AND timestamp_utc <= '{end_date}'
+                ORDER BY robot_sn, timestamp_utc
+            """
 
-                    robot_list = "', '".join(db_robots)
-                    query = f"""
-                        SELECT robot_sn, status, timestamp_utc, battery_soh
-                        FROM {table.table_name}
-                        WHERE robot_sn IN ('{robot_list}')
-                        AND timestamp_utc >= '{start_date}'
-                        AND timestamp_utc <= '{end_date}'
-                        ORDER BY robot_sn, timestamp_utc
-                    """
+            result_df = self._execute_query_with_retry(table, query)
+            table.close()
 
-                    result_df = self._execute_query_with_retry(table, query)
+            if result_df.empty:
+                logger.warning(f"No operation history data found in {database_name} for {start_date} to {end_date}")
+                return pd.DataFrame()
 
-                    if not result_df.empty:
-                        all_data.append(result_df)
-                        logger.info(f"Retrieved {len(result_df)} operation history records from {table_config['database']}")
-
-                    table.close()
-
-                except Exception as e:
-                    logger.error(f"Error fetching operation history from {table_config.get('database', 'unknown')}: {e}")
-                    continue
-
-            if all_data:
-                combined_df = pd.concat(all_data, ignore_index=True)
-                logger.info(f"Total operation history records: {len(combined_df)}")
-                return combined_df
-
-            logger.warning(f"No operation history data found for {start_date} to {end_date}")
-            return pd.DataFrame()
+            logger.info(f"✓ Retrieved {len(result_df)} operation history records from {database_name}")
+            return result_df
 
         except Exception as e:
-            logger.error(f"Error in fetch_operation_history_data: {e}")
+            logger.error(f"Error fetching operation history from {database_name}: {e}")
             return pd.DataFrame()
 
-    def fetch_location_data(self, target_robots: List[str]) -> pd.DataFrame:
-        """Fetch location/building information for robots with proper error handling"""
-        logger.info(f"Fetching location data for {len(target_robots)} robots")
+    def fetch_location_data(self, target_robots: List[str], database_name: str,
+                       robot_status: pd.DataFrame) -> pd.DataFrame:
+        """
+        OPTIMIZED: Fetch location/building information directly from known database.
+
+        Args:
+            target_robots: List of robot serial numbers
+            database_name: Project database name (from report_config)
+            robot_status: DataFrame containing robot status with location_id
+
+        Returns:
+            DataFrame with robot and location information merged
+        """
+        logger.info(f"Fetching location data for {len(target_robots)} robots from {database_name}")
 
         try:
-            # Fetch robot status with location_id
-            robot_status = self.fetch_robot_status_data(target_robots)
-
             if robot_status.empty or 'location_id' not in robot_status.columns:
                 logger.warning("No location data in robot status")
                 return pd.DataFrame()
@@ -562,208 +567,176 @@ class DatabaseDataService:
                 logger.warning("No location IDs found")
                 return pd.DataFrame()
 
-            # Fetch building information
-            building_configs = self.config.get_all_table_configs('location')
-
-            all_locations = []
-            for config in building_configs:
-                try:
-                    table = self._create_table_with_retry(
-                        connection_config=self.connection_config,
-                        database_name=config['database'],
-                        table_name=config['table_name'],
-                        fields=config.get('fields'),
-                        primary_keys=config['primary_keys']
-                    )
-
-                    if not table:
-                        continue
-
-                    columns = self.get_required_columns('location')
-                    columns_str = ', '.join(columns)
-
-                    location_list = "', '".join(location_ids)
-                    query = f"""
-                        SELECT {columns_str}
-                        FROM {table.table_name}
-                        WHERE building_id IN ('{location_list}')
-                    """
-
-                    result_df = self._execute_query_with_retry(table, query)
-
-                    if not result_df.empty:
-                        all_locations.append(result_df)
-                        logger.info(f"Retrieved {len(result_df)} location records")
-
-                    table.close()
-
-                except Exception as e:
-                    logger.error(f"Error fetching location data: {e}")
-                    continue
-
-            # Combine and merge
-            if all_locations:
-                locations_df = pd.concat(all_locations, ignore_index=True).drop_duplicates()
-
-                # Merge with robot status
-                robot_locations = robot_status.merge(
-                    locations_df,
-                    left_on='location_id',
-                    right_on='building_id',
-                    how='left'
-                )
-
-                robot_locations = robot_locations.drop_duplicates(subset=['robot_sn'], keep='first')
-
-                logger.info(f"Mapped {len(robot_locations)} robots to locations")
-                return robot_locations
-
-            logger.warning("No location data found")
-            return pd.DataFrame()
-
-        except Exception as e:
-            logger.error(f"Error fetching location data: {e}")
-            return pd.DataFrame()
-
-    def fetch_all_time_tasks_for_roi(self, target_robots: List[str],
-                                    end_date: str) -> pd.DataFrame:
-        """Fetch minimal task data for ROI calculation with proper error handling"""
-        logger.info(f"Fetching all-time tasks for ROI ({len(target_robots)} robots)")
-
-        try:
-            table_configs = self.config.get_table_configs_for_robots('robot_task', target_robots)
-
-            all_data = []
-            for table_config in table_configs:
-                try:
-                    db_robots = table_config.get('robot_sns', [])
-                    if not db_robots:
-                        continue
-
-                    table = self._create_table_with_retry(
-                        connection_config=self.connection_config,
-                        database_name=table_config['database'],
-                        table_name=table_config['table_name'],
-                        fields=table_config.get('fields'),
-                        primary_keys=table_config['primary_keys']
-                    )
-
-                    if not table:
-                        continue
-
-                    robot_list = "', '".join(db_robots)
-                    query = f"""
-                        SELECT robot_sn, actual_area, consumption, water_consumption,
-                               start_time, status, efficiency
-                        FROM {table.table_name}
-                        WHERE robot_sn IN ('{robot_list}')
-                        AND start_time <= '{end_date}'
-                        AND actual_area IS NOT NULL
-                        AND actual_area > 0
-                        ORDER BY robot_sn, start_time ASC
-                    """
-
-                    result_df = self._execute_query_with_retry(table, query)
-
-                    if not result_df.empty:
-                        all_data.append(result_df)
-                        logger.info(f"Retrieved {len(result_df)} ROI task records from {table_config['database']}")
-
-                    table.close()
-
-                except Exception as e:
-                    logger.error(f"Error fetching ROI tasks from {table_config.get('database', 'unknown')}: {e}")
-                    continue
-
-            if all_data:
-                combined_df = pd.concat(all_data, ignore_index=True)
-                logger.info(f"Total ROI task records: {len(combined_df)}")
-                return combined_df
-
-            logger.warning("No ROI task data found")
-            return pd.DataFrame()
-
-        except Exception as e:
-            logger.error(f"Error in fetch_all_time_tasks_for_roi: {e}")
-            return pd.DataFrame()
-
-    def fetch_performance_targets(self, target_robots: List[str]) -> pd.DataFrame:
-        """
-        Fetch performance targets for maps used by target robots
-
-        Returns DataFrame with columns:
-        - map_name: str
-        - target_efficiency: float
-        - target_area_value: float (sqft)
-        - target_area_percentage: float
-        - area_storage_type: str ('value' or 'percentage')
-        - target_duration: int (seconds)
-        """
-        try:
-            table_configs = self.config.get_table_configs_for_robots(
-                'robot_performance_targets_setting',
-                target_robots
+            # OPTIMIZED: Single connection to known database
+            table = self._create_table_with_retry(
+                connection_config=self.connection_config,
+                database_name=database_name,
+                table_name='pro_building_info',
+                fields=None,
+                primary_keys=['building_id']
             )
 
-            if not table_configs:
-                logger.warning("No performance targets table configuration found")
+            if not table:
+                logger.error(f"Failed to create connection for {database_name}")
                 return pd.DataFrame()
 
-            all_targets = []
+            columns = self.get_required_columns('location')
+            columns_str = ', '.join(columns)
+            location_list = "', '".join(location_ids)
 
-            for table_config in table_configs:
-                db_robots = table_config.get('robot_sns', [])
-                if not db_robots:
-                    continue
+            # OPTIMIZED: Single query for all locations
+            query = f"""
+                SELECT {columns_str}
+                FROM {table.table_name}
+                WHERE building_id IN ('{location_list}')
+            """
 
-                table = self._create_table_with_retry(
-                    connection_config=self.connection_config,
-                    database_name=table_config['database'],
-                    table_name=table_config['table_name'],
-                    fields=table_config.get('fields'),
-                    primary_keys=table_config['primary_keys']
-                )
+            result_df = self._execute_query_with_retry(table, query)
+            table.close()
 
-                if not table:
-                    continue
-
-                database_name = table_config['database']
-                table_name = table_config['table_name']
-
-                # Query all targets (no date filter - targets are static)
-                query = f"""
-                    SELECT
-                        map_name,
-                        target_efficiency,
-                        target_area_value,
-                        target_area_percentage,
-                        area_storage_type,
-                        target_duration
-                    FROM {database_name}.{table_name}
-                    WHERE map_name IS NOT NULL
-                """
-
-                result = self._execute_query_with_retry(table, query)
-
-                if not result.empty:
-                    df = pd.DataFrame(result, columns=[
-                        'map_name', 'target_efficiency', 'target_area_value',
-                        'target_area_percentage', 'area_storage_type', 'target_duration'
-                    ])
-                    all_targets.append(df)
-                    logger.info(f"Fetched {len(df)} performance targets from {database_name}.{table_name}")
-
-            if all_targets:
-                combined_targets = pd.concat(all_targets, ignore_index=True)
-                # Remove duplicates (keep first)
-                combined_targets = combined_targets.drop_duplicates(subset=['map_name'], keep='first')
-                logger.info(f"Total unique performance targets: {len(combined_targets)}")
-                return combined_targets
-            else:
+            if result_df.empty:
+                logger.warning(f"No location data found in {database_name}")
                 return pd.DataFrame()
+
+            # Merge with robot status
+            robot_locations = robot_status.merge(
+                result_df,
+                left_on='location_id',
+                right_on='building_id',
+                how='left'
+            )
+
+            robot_locations = robot_locations.drop_duplicates(subset=['robot_sn'], keep='first')
+
+            logger.info(f"✓ Mapped {len(robot_locations)} robots to locations from {database_name}")
+            return robot_locations
 
         except Exception as e:
-            logger.error(f"Error fetching performance targets: {e}")
+            logger.error(f"Error fetching location data from {database_name}: {e}")
+            return pd.DataFrame()
+
+    def fetch_all_time_tasks_for_roi(self, target_robots: List[str], database_name: str,
+                                     end_date: str) -> pd.DataFrame:
+        """
+        OPTIMIZED: Fetch minimal task data for ROI calculation directly from known database.
+
+        Args:
+            target_robots: List of robot serial numbers
+            database_name: Project database name (from report_config)
+            end_date: End date filter (UTC format)
+
+        Returns:
+            DataFrame with minimal task data for ROI calculation
+        """
+        if not target_robots:
+            logger.warning("No target robots provided for ROI tasks fetch")
+            return pd.DataFrame()
+
+        logger.info(f"Fetching all-time tasks for ROI ({len(target_robots)} robots) from {database_name}")
+
+        try:
+            # OPTIMIZED: Single connection to known database
+            table = self._create_table_with_retry(
+                connection_config=self.connection_config,
+                database_name=database_name,
+                table_name='mnt_robots_task',
+                fields=None,
+                primary_keys=['robot_sn', 'start_time']
+            )
+
+            if not table:
+                logger.error(f"Failed to create connection for {database_name}")
+                return pd.DataFrame()
+
+            robot_list = "', '".join(target_robots)
+
+            # OPTIMIZED: Single query for all robots
+            query = f"""
+                SELECT robot_sn, actual_area, consumption, water_consumption,
+                       start_time, status, efficiency
+                FROM {table.table_name}
+                WHERE robot_sn IN ('{robot_list}')
+                AND start_time <= '{end_date}'
+                AND actual_area IS NOT NULL
+                AND actual_area > 0
+                ORDER BY robot_sn, start_time ASC
+            """
+
+            result_df = self._execute_query_with_retry(table, query)
+            table.close()
+
+            if result_df.empty:
+                logger.warning(f"No ROI task data found in {database_name}")
+                return pd.DataFrame()
+
+            logger.info(f"✓ Retrieved {len(result_df)} ROI task records from {database_name}")
+            return result_df
+
+        except Exception as e:
+            logger.error(f"Error fetching ROI tasks from {database_name}: {e}")
+            return pd.DataFrame()
+
+    def fetch_performance_targets(self, target_robots: List[str], database_name: str) -> pd.DataFrame:
+        """
+        OPTIMIZED: Fetch performance targets directly from known database.
+
+        Args:
+            target_robots: List of robot serial numbers
+            database_name: Project database name (from report_config)
+
+        Returns:
+            DataFrame with columns:
+            - map_name: str
+            - target_efficiency: float
+            - target_area_value: float (sqft)
+            - target_area_percentage: float
+            - area_storage_type: str ('value' or 'percentage')
+            - target_duration: int (seconds)
+        """
+        logger.info(f"Fetching performance targets from {database_name}")
+
+        try:
+            # OPTIMIZED: Single connection to known database
+            table = self._create_table_with_retry(
+                connection_config=self.connection_config,
+                database_name=database_name,
+                table_name='mnt_robot_performance_targets_setting',
+                fields=None,
+                primary_keys=['map_name']
+            )
+
+            if not table:
+                logger.error(f"Failed to create connection for {database_name}")
+                return pd.DataFrame()
+
+            # OPTIMIZED: Single query for all targets (no date filter - targets are static)
+            query = f"""
+                SELECT
+                    map_name,
+                    target_efficiency,
+                    target_area_value,
+                    target_area_percentage,
+                    area_storage_type,
+                    target_duration
+                FROM {table.table_name}
+                WHERE map_name IS NOT NULL
+            """
+
+            result_df = self._execute_query_with_retry(table, query)
+            table.close()
+
+            if result_df.empty:
+                logger.warning(f"No performance targets found in {database_name}")
+                return pd.DataFrame()
+
+            # Remove duplicates (keep first)
+            result_df = result_df.drop_duplicates(subset=['map_name'], keep='first')
+
+            logger.info(f"✓ Fetched {len(result_df)} performance targets from {database_name}")
+            return result_df
+
+        except Exception as e:
+            logger.error(f"Error fetching performance targets from {database_name}: {e}")
             return pd.DataFrame()
 
     # ============================================================================
@@ -1282,7 +1255,7 @@ class DatabaseDataService:
                 logger.info(f"Calculating ROI for {len(target_robots)} robots")
 
                 # Fetch all-time task data for ROI
-                all_time_tasks = self.fetch_all_time_tasks_for_roi(target_robots, current_end)
+                all_time_tasks = self.fetch_all_time_tasks_for_roi(target_robots, self.database_name, current_end)
 
                 # Calculate current and previous ROI
                 roi_metrics = self.metrics_calculator.calculate_roi_metrics(

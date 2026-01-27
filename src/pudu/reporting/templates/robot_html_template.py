@@ -1038,7 +1038,7 @@ class RobotPerformanceTemplate:
         if individual_robots:
             robot_health_scores = content.get('robot_health_scores', {})
 
-            for robot in individual_robots[:10]:
+            for robot in individual_robots:
                 # Extract all values first
                 robot_id = robot.get('robot_id', 'Unknown')
                 location = robot.get('location', 'Unknown Location')
@@ -1883,7 +1883,7 @@ class RobotPerformanceTemplate:
                 """
 
                 # Combine health scores with individual robot data
-                for robot in individual_robots[:5]:  # Top 5 robots
+                for robot in individual_robots:
                     robot_id = robot.get('robot_id', 'Unknown')
                     robot_name = robot.get('robot_name', robot_id)
                     health_data = robot_health_scores.get(robot_id, {})
