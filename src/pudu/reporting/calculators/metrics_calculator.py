@@ -15,37 +15,52 @@ import pandas as pd
 from datetime import datetime, timedelta
 import numpy as np
 from functools import lru_cache, wraps
+import threading
 
 logger = logging.getLogger(__name__)
 
-
 def cache_by_dataframe_id(func):
     """
-    Decorator to cache function results based on DataFrame id and other args.
-    Eliminates redundant calculations on the same DataFrame.
+    Thread-safe decorator to cache function results based on DataFrame id + thread ID.
     """
     cache = {}
+    lock = threading.Lock()
 
     @wraps(func)
     def wrapper(self, df: pd.DataFrame, *args, **kwargs):
         if df.empty:
             return func(self, df, *args, **kwargs)
 
-        # Create cache key from DataFrame id and other arguments
-        cache_key = (id(df), args, tuple(sorted(kwargs.items())))
+        # Include thread ID in cache key to prevent cross-thread collisions
+        cache_key = (
+            id(df),
+            threading.get_ident(),
+            args,
+            tuple(sorted(kwargs.items()))
+        )
 
-        if cache_key in cache:
-            logger.debug(f"Cache hit for {func.__name__}")
-            return cache[cache_key]
+        # Thread-safe read
+        with lock:
+            if cache_key in cache:
+                logger.debug(f"Cache hit for {func.__name__} (thread {threading.get_ident()})")
+                return cache[cache_key]
 
+        # Calculate outside lock (expensive operation)
         result = func(self, df, *args, **kwargs)
-        cache[cache_key] = result
+
+        # Thread-safe write
+        with lock:
+            cache[cache_key] = result
+
         return result
 
-    # Add cache clearing method
-    wrapper.clear_cache = lambda: cache.clear()
-    return wrapper
+    # Thread-safe clear
+    def clear_cache():
+        with lock:
+            cache.clear()
 
+    wrapper.clear_cache = clear_cache
+    return wrapper
 
 class PerformanceMetricsCalculator:
     """
@@ -56,29 +71,41 @@ class PerformanceMetricsCalculator:
     """
 
     def __init__(self, start_date: str, end_date: str):
-        """Initialize the metrics calculator with caching"""
+        """Initialize the metrics calculator with thread-safe caching"""
+        # Simple caches with their own locks
         self._duration_cache = {}
+        self._duration_lock = threading.Lock()
+
         self._date_cache = {}
+        self._date_lock = threading.Lock()
+
         self.period_length = self._calculate_period_length(start_date, end_date)
 
-        # NEW: Batch calculation cache - stores pre-calculated shared metrics
-        self._batch_cache = {
-            'task_status_counts': {},  # Cache task status counts by df_id
-            'task_durations': {},      # Cache task duration sums by df_id
-            'robot_facility_map': None, # Cache robot-facility mapping
-            'days_with_tasks': {}      # Cache days calculation by df_id
-        }
-
-    def clear_all_caches(self):
-        """Clear all caches - call this between report generations"""
-        self._duration_cache.clear()
-        self._date_cache.clear()
+        # Batch calculation cache with single lock
         self._batch_cache = {
             'task_status_counts': {},
             'task_durations': {},
             'robot_facility_map': None,
             'days_with_tasks': {}
         }
+        self._batch_lock = threading.Lock()
+
+    def clear_all_caches(self):
+        """Clear all caches - thread-safe"""
+        with self._duration_lock:
+            self._duration_cache.clear()
+
+        with self._date_lock:
+            self._date_cache.clear()
+
+        with self._batch_lock:
+            self._batch_cache = {
+                'task_status_counts': {},
+                'task_durations': {},
+                'robot_facility_map': None,
+                'days_with_tasks': {}
+            }
+
         logger.info("All calculation caches cleared")
 
     # ============================================================================
@@ -87,16 +114,15 @@ class PerformanceMetricsCalculator:
 
     def precalculate_task_metrics(self, tasks_df: pd.DataFrame) -> Dict[str, Any]:
         """
-        NEW: Pre-calculate all commonly used task metrics in one pass.
-        Call this once, then use get_cached_* methods to retrieve.
-
-        Returns: Dictionary with all pre-calculated metrics for reuse
+        Thread-safe pre-calculation of task metrics.
         """
-        df_id = id(tasks_df)
+        df_id = (id(tasks_df), threading.get_ident())
 
-        if df_id in self._batch_cache['task_status_counts']:
-            logger.debug("Task metrics already pre-calculated")
-            return self._batch_cache['task_status_counts'][df_id]
+        # Thread-safe read check
+        with self._batch_lock:
+            if df_id in self._batch_cache['task_status_counts']:
+                logger.debug("Task metrics already pre-calculated")
+                return self._batch_cache['task_status_counts'][df_id]
 
         if tasks_df.empty:
             empty_result = {
@@ -105,12 +131,14 @@ class PerformanceMetricsCalculator:
                 'total_tasks': 0,
                 'days_with_tasks': 0
             }
-            self._batch_cache['task_status_counts'][df_id] = empty_result
+            # Thread-safe write
+            with self._batch_lock:
+                self._batch_cache['task_status_counts'][df_id] = empty_result
             return empty_result
 
         logger.info(f"Pre-calculating task metrics for {len(tasks_df)} tasks")
 
-        # Calculate all metrics in one pass
+        # Calculate outside lock (expensive)
         result = {
             'status_counts': self._count_tasks_by_status(tasks_df),
             'total_duration_hours': self._sum_task_durations(tasks_df),
@@ -118,99 +146,130 @@ class PerformanceMetricsCalculator:
             'days_with_tasks': self.calculate_days_with_tasks(tasks_df)
         }
 
-        # Store in cache
-        self._batch_cache['task_status_counts'][df_id] = result
-        self._batch_cache['task_durations'][df_id] = result['total_duration_hours']
-        self._batch_cache['days_with_tasks'][df_id] = result['days_with_tasks']
+        # Thread-safe write
+        with self._batch_lock:
+            self._batch_cache['task_status_counts'][df_id] = result
+            self._batch_cache['task_durations'][df_id] = result['total_duration_hours']
+            self._batch_cache['days_with_tasks'][df_id] = result['days_with_tasks']
 
         logger.info("Task metrics pre-calculated and cached")
         return result
 
     def get_cached_status_counts(self, tasks_df: pd.DataFrame) -> Dict[str, int]:
-        """Get cached status counts or calculate if not cached"""
-        df_id = id(tasks_df)
-        if df_id in self._batch_cache['task_status_counts']:
+        """Get cached status counts or calculate if not cached - THREAD-SAFE"""
+        df_id = (id(tasks_df), threading.get_ident())
+
+        # Thread-safe read
+        with self._batch_lock:
+            if df_id in self._batch_cache['task_status_counts']:
+                return self._batch_cache['task_status_counts'][df_id]['status_counts']
+
+        # Not cached, calculate and cache
+        self.precalculate_task_metrics(tasks_df)
+
+        # Thread-safe read after calculation
+        with self._batch_lock:
             return self._batch_cache['task_status_counts'][df_id]['status_counts']
 
+    def get_cached_duration_sum(self, tasks_df: pd.DataFrame) -> float:
+        """Get cached duration sum or calculate if not cached - THREAD-SAFE"""
+        df_id = (id(tasks_df), threading.get_ident())
+
+        # Thread-safe read
+        with self._batch_lock:
+            if df_id in self._batch_cache['task_durations']:
+                return self._batch_cache['task_durations'][df_id]
+
         # Not cached, calculate and cache
         self.precalculate_task_metrics(tasks_df)
-        return self._batch_cache['task_status_counts'][df_id]['status_counts']
 
-    def get_cached_duration_sum(self, tasks_df: pd.DataFrame) -> float:
-        """Get cached duration sum or calculate if not cached"""
-        df_id = id(tasks_df)
-        if df_id in self._batch_cache['task_durations']:
+        # Thread-safe read after calculation
+        with self._batch_lock:
             return self._batch_cache['task_durations'][df_id]
 
-        # Not cached, calculate and cache
-        self.precalculate_task_metrics(tasks_df)
-        return self._batch_cache['task_durations'][df_id]
-
     def get_cached_days_with_tasks(self, tasks_df: pd.DataFrame) -> int:
-        """Get cached days with tasks or calculate if not cached.
-        Be defensive: return 0 instead of raising if cache is missing."""
+        """Get cached days with tasks or calculate if not cached - THREAD-SAFE"""
         try:
             if tasks_df is None:
                 return 0
 
-            df_id = id(tasks_df)
-            if df_id in self._batch_cache['days_with_tasks']:
-                return self._batch_cache['days_with_tasks'][df_id]
+            df_id = (id(tasks_df), threading.get_ident())
+
+            # Thread-safe read
+            with self._batch_lock:
+                if df_id in self._batch_cache['days_with_tasks']:
+                    return self._batch_cache['days_with_tasks'][df_id]
 
             # Not cached, calculate and cache
             self.precalculate_task_metrics(tasks_df)
-            return self._batch_cache['days_with_tasks'].get(df_id, 0)
+
+            # Thread-safe read after calculation
+            with self._batch_lock:
+                return self._batch_cache['days_with_tasks'].get(df_id, 0)
         except Exception as e:
             logger.error(f"Error getting cached days_with_tasks: {e}")
             return 0
 
     def set_robot_facility_map(self, robot_locations: pd.DataFrame) -> Dict[str, str]:
-        """
-        NEW: Cache robot-facility mapping to avoid recreating it multiple times.
-        Call this once at the start with robot_locations data.
-        """
-        if self._batch_cache['robot_facility_map'] is not None:
-            return self._batch_cache['robot_facility_map']
+        """Cache robot-facility mapping - THREAD-SAFE"""
+        # Thread-safe read check
+        with self._batch_lock:
+            if self._batch_cache['robot_facility_map'] is not None:
+                return self._batch_cache['robot_facility_map']
 
         if robot_locations.empty:
-            self._batch_cache['robot_facility_map'] = {}
+            with self._batch_lock:
+                self._batch_cache['robot_facility_map'] = {}
             return {}
 
+        # Calculate outside lock
         robot_facility_map = dict(zip(
             robot_locations['robot_sn'],
             robot_locations['building_name']
         ))
 
-        self._batch_cache['robot_facility_map'] = robot_facility_map
+        # Thread-safe write
+        with self._batch_lock:
+            self._batch_cache['robot_facility_map'] = robot_facility_map
+
         logger.info(f"Cached robot-facility mapping for {len(robot_facility_map)} robots")
         return robot_facility_map
 
     def get_robot_facility_map(self) -> Dict[str, str]:
-        """Get cached robot-facility mapping"""
-        if self._batch_cache['robot_facility_map'] is None:
-            logger.warning("Robot facility map not set, returning empty dict")
-            return {}
-        return self._batch_cache['robot_facility_map']
+        """Get cached robot-facility mapping - THREAD-SAFE"""
+        with self._batch_lock:
+            if self._batch_cache['robot_facility_map'] is None:
+                logger.warning("Robot facility map not set, returning empty dict")
+                return {}
+            return self._batch_cache['robot_facility_map']
 
     # ============================================================================
     # HELPER METHODS - Centralized parsing and validation (UNCHANGED)
     # ============================================================================
 
     def _parse_duration_to_hours(self, duration: float) -> float:
-        """Parse duration to hours - handles seconds from database. CACHED."""
-        if pd.isna(duration):
-            return 0.0
+         """Parse duration to hours - THREAD-SAFE CACHED."""
+         if pd.isna(duration):
+             return 0.0
 
-        cache_key = str(duration)
-        if cache_key in self._duration_cache:
-            return self._duration_cache[cache_key]
+         cache_key = str(duration)
 
-        try:
-            hours = float(duration) / 3600
-            self._duration_cache[cache_key] = hours
-            return hours
-        except (ValueError, AttributeError):
-            return 0.0
+         # Thread-safe read
+         with self._duration_lock:
+             if cache_key in self._duration_cache:
+                 return self._duration_cache[cache_key]
+
+         # Calculate outside lock
+         try:
+             hours = float(duration) / 3600
+         except (ValueError, AttributeError):
+             hours = 0.0
+
+         # Thread-safe write
+         with self._duration_lock:
+             self._duration_cache[cache_key] = hours
+
+         return hours
 
     def _parse_duration_str_to_minutes(self, duration_str: str) -> float:
         """Parse duration string like '0h 04min' to minutes"""
@@ -291,9 +350,9 @@ class PerformanceMetricsCalculator:
         status_lower = tasks_df['status'].str.lower()
 
         return {
-            'completed': len(tasks_df[status_lower.str.contains('end|complet|finish|manual', na=False)]),
+            'completed': len(tasks_df[status_lower.str.contains('end|complet|finish', na=False)]),
             'cancelled': len(tasks_df[status_lower.str.contains('cancel', na=False)]),
-            'interrupted': len(tasks_df[status_lower.str.contains('interrupt|abort', na=False)]),
+            'interrupted': len(tasks_df[status_lower.str.contains('interrupt|abort|manual', na=False)]),
             'suspended': len(tasks_df[status_lower.str.contains('suspend', na=False)]),
             'abnormal': len(tasks_df[status_lower.str.contains('abnorm', na=False)])
         }
@@ -323,21 +382,27 @@ class PerformanceMetricsCalculator:
     # CORE METRICS - Fleet & Robot Performance (OPTIMIZED with caching)
     # ============================================================================
 
-    def calculate_uptime_downtime_metrics(self, operation_history: pd.DataFrame,
-                                         tasks_data: pd.DataFrame,
-                                         charging_data: pd.DataFrame,
-                                         robot_sn: str,
-                                         period_length: int) -> Dict[str, Any]:
+    def calculate_uptime_downtime_metrics(self, operation_metrics: pd.DataFrame,
+                                     tasks_data: pd.DataFrame,
+                                     charging_data: pd.DataFrame,
+                                     robot_sn: str,
+                                     period_length: int) -> Dict[str, Any]:
         """
-        Calculate uptime, downtime, idle, working, and charging time for a robot
+        OPTIMIZED: Calculate uptime/downtime using pre-aggregated operation metrics.
 
-        FIXED: When operation_history is missing, assume 100% uptime (robot was fully operational)
+        Args:
+            operation_metrics: DataFrame with columns:
+                - robot_sn
+                - total_records
+                - online_records
+                - avg_battery_soh
+                - latest_status
         """
         try:
-            # Filter for this robot
-            robot_history = operation_history[
-                operation_history['robot_sn'] == robot_sn
-            ] if not operation_history.empty else pd.DataFrame()
+            # Filter for this robot from aggregated data
+            robot_metrics = operation_metrics[
+                operation_metrics['robot_sn'] == robot_sn
+            ] if not operation_metrics.empty else pd.DataFrame()
 
             robot_tasks = tasks_data[
                 tasks_data['robot_sn'] == robot_sn
@@ -347,7 +412,6 @@ class PerformanceMetricsCalculator:
                 charging_data['robot_sn'] == robot_sn
             ] if not charging_data.empty else pd.DataFrame()
 
-            # Calculate total period hours
             total_period_hours = period_length * 24 if period_length > 0 else 24
 
             # Initialize metrics
@@ -355,44 +419,35 @@ class PerformanceMetricsCalculator:
             downtime_hours = 0.0
             working_hours = 0.0
             charging_hours = 0.0
-            idle_hours = 0.0
 
-            # Handle missing operation_history
-            if robot_history.empty:
-                # assume robot was fully operational (100% uptime)
-                logger.info(f"No operation history for {robot_sn}, assuming 100% uptime")
+            # OPTIMIZED: Use pre-aggregated counts instead of DataFrame operations
+            if robot_metrics.empty:
+                # No operation data - assume 100% uptime
+                logger.info(f"No operation metrics for {robot_sn}, assuming 100% uptime")
                 uptime_hours = total_period_hours
                 downtime_hours = 0.0
             else:
-                # Calculate uptime/downtime from operation history
-                if 'status' in robot_history.columns:
-                    # Count online vs offline status entries
-                    online_records = len(robot_history[robot_history['status'].str.lower() == 'online'])
-                    total_records = len(robot_history)
+                # Extract pre-calculated aggregations
+                total_records = robot_metrics.iloc[0]['total_records']
+                online_records = robot_metrics.iloc[0]['online_records']
 
-                    # Estimate hours based on status records
-                    uptime_hours = (online_records / total_records * total_period_hours) if total_records > 0 else total_period_hours
-                    downtime_hours = total_period_hours - uptime_hours
-                else:
-                    # No status column - assume fully operational
-                    logger.warning(f"Operation history for {robot_sn} missing 'status' column, assuming 100% uptime")
-                    uptime_hours = total_period_hours
-                    downtime_hours = 0.0
+                # Calculate uptime ratio from aggregated counts
+                uptime_hours = (online_records / total_records * total_period_hours) if total_records > 0 else total_period_hours
+                downtime_hours = total_period_hours - uptime_hours
 
-            # Calculate working hours from tasks
+            # Calculate working hours from tasks (unchanged)
             if not robot_tasks.empty and 'duration' in robot_tasks.columns:
-                working_hours = pd.to_numeric(robot_tasks['duration'], errors='coerce').fillna(0).sum() / 3600
+                working_hours = pd.to_numeric(
+                    robot_tasks['duration'], errors='coerce'
+                ).fillna(0).sum() / 3600
 
-            # Calculate charging hours from charging data
+            # Calculate charging hours (unchanged)
             if not robot_charging.empty and 'duration' in robot_charging.columns:
-                # Parse duration strings to minutes, then convert to hours
                 def parse_duration(duration_str):
                     try:
                         if pd.isna(duration_str):
                             return 0
-                        # Handle formats like "1h 30m" or "45m" or numeric (seconds)
                         if isinstance(duration_str, (int, float)):
-                            # Assume it's in seconds
                             return duration_str / 3600
 
                         duration_str = str(duration_str).lower()
@@ -410,14 +465,11 @@ class PerformanceMetricsCalculator:
 
                 charging_hours = robot_charging['duration'].apply(parse_duration).sum()
 
-            # Calculate idle hours (uptime - working - charging)
-            # Idle = robot was on but not working or charging
+            # Calculate idle hours
             idle_hours = max(0, uptime_hours - working_hours - charging_hours)
 
-            # Sanity check: if working + charging > uptime, adjust
+            # Sanity check
             if working_hours + charging_hours > uptime_hours:
-                logger.warning(f"Robot {robot_sn}: working+charging ({working_hours + charging_hours:.1f}h) > uptime ({uptime_hours:.1f}h), adjusting")
-                # Increase uptime to match actual usage
                 uptime_hours = working_hours + charging_hours
                 downtime_hours = max(0, total_period_hours - uptime_hours)
                 idle_hours = 0
@@ -427,13 +479,7 @@ class PerformanceMetricsCalculator:
             working_ratio = (working_hours / total_period_hours * 100) if total_period_hours > 0 else 0.0
             charging_ratio = (charging_hours / total_period_hours * 100) if total_period_hours > 0 else 0.0
             idle_ratio = (idle_hours / total_period_hours * 100) if total_period_hours > 0 else 0.0
-
-            # CRITICAL FIX: Calculate utilization score properly
-            # Utilization = working time / uptime (how much of available time was spent working)
             utilization_score = (working_hours / uptime_hours * 100) if uptime_hours > 0 else 0.0
-
-            logger.debug(f"Robot {robot_sn} uptime metrics: uptime={uptime_hours:.1f}h, working={working_hours:.1f}h, "
-                        f"charging={charging_hours:.1f}h, idle={idle_hours:.1f}h, utilization={utilization_score:.1f}%")
 
             return {
                 'uptime_hours': round(uptime_hours, 1),
@@ -449,7 +495,7 @@ class PerformanceMetricsCalculator:
             }
 
         except Exception as e:
-            logger.error(f"Error calculating uptime/downtime for {robot_sn}: {e}", exc_info=True)
+            logger.error(f"Error calculating uptime for {robot_sn}: {e}", exc_info=True)
 
             # Fallback: assume 100% uptime, calculate what we can
             total_period_hours = period_length * 24 if period_length > 0 else 24
@@ -1061,7 +1107,7 @@ class PerformanceMetricsCalculator:
     # MOVED FROM DATABASE_DATA_SERVICE: Robot Health Scores
     # ============================================================================
 
-    def calculate_robot_health_scores(self, operation_history: pd.DataFrame,
+    def calculate_robot_health_scores(self, operation_metrics: pd.DataFrame,
                                     tasks_data: pd.DataFrame,
                                     target_robots: List[str]) -> Dict[str, Dict[str, Any]]:
         """
@@ -1076,24 +1122,24 @@ class PerformanceMetricsCalculator:
 
             for robot_sn in target_robots:
                 # Filter data for this robot
-                robot_history = operation_history[
-                    operation_history['robot_sn'] == robot_sn
-                ] if not operation_history.empty else pd.DataFrame()
+                robot_op_metrics = operation_metrics[
+                    operation_metrics['robot_sn'] == robot_sn
+                ] if not operation_metrics.empty else pd.DataFrame()
 
                 robot_tasks = tasks_data[
                     tasks_data['robot_sn'] == robot_sn
                 ] if not tasks_data.empty else pd.DataFrame()
 
-                if robot_history.empty and robot_tasks.empty:
+                if robot_op_metrics.empty and robot_tasks.empty:
                     logger.warning(f"No data available for robot {robot_sn}, skipping health score")
                     health_scores[robot_sn] = {}
                     continue
 
                 # === AVAILABILITY SCORE ===
-                if not robot_history.empty and 'status' in robot_history.columns:
-                    online_count = len(robot_history[robot_history['status'].str.lower() == 'online'])
-                    total_count = len(robot_history)
-                    availability_score = (online_count / total_count * 100) if total_count > 0 else 100.0
+                if not robot_op_metrics.empty:
+                    total_records = robot_op_metrics.iloc[0]['total_records']
+                    online_records = robot_op_metrics.iloc[0]['online_records']
+                    availability_score = (online_records / total_records * 100) if total_records > 0 else 100.0
                 else:
                     availability_score = 100.0
 
@@ -1129,18 +1175,13 @@ class PerformanceMetricsCalculator:
 
                 # === BATTERY SOH SCORE ===
                 battery_soh_score = None
-                if not robot_history.empty and 'battery_soh' in robot_history.columns and not robot_history['battery_soh'].isna().all():
-                    battery_soh = robot_history['battery_soh'].dropna()
-                    if not battery_soh.empty:
-                        try:
-                            soh_values = battery_soh.astype(str).str.replace(
-                                '+', ''
-                            ).str.replace('%', '').str.strip()
-                            soh_numeric = pd.to_numeric(soh_values, errors='coerce').dropna()
-                            if not soh_numeric.empty:
-                                battery_soh_score = soh_numeric.mean()
-                        except Exception as e:
-                            logger.warning(f"Error parsing battery SOH for {robot_sn}: {e}")
+                if not robot_op_metrics.empty:
+                    # SQL already converted string to numeric
+                    avg_battery_soh = robot_op_metrics.iloc[0].get('avg_battery_soh_numeric')
+
+                    if pd.notna(avg_battery_soh) and avg_battery_soh > 0:
+                        battery_soh_score = float(avg_battery_soh)
+                        logger.debug(f"Robot {robot_sn} battery SOH: {battery_soh_score:.1f}%")
 
                 # === MODE PERFORMANCE SCORE ===
                 mode_performance_score = None
@@ -1957,10 +1998,10 @@ class PerformanceMetricsCalculator:
     # ============================================================================
 
     def calculate_individual_robot_performance(self, tasks_data: pd.DataFrame,
-                                           charging_data: pd.DataFrame,
-                                           robot_status: pd.DataFrame,
-                                           operation_history: pd.DataFrame = None,
-                                           period_length: int = 0) -> List[Dict[str, Any]]:
+                                               charging_data: pd.DataFrame,
+                                               robot_status: pd.DataFrame,
+                                               operation_metrics: pd.DataFrame = None,
+                                               period_length: int = 0) -> List[Dict[str, Any]]:
         """
         Calculate detailed performance for individual robots
         FIXED: Proper error handling and empty data handling
@@ -2009,7 +2050,7 @@ class PerformanceMetricsCalculator:
                         # Calculate uptime/downtime even without tasks
                         try:
                             uptime_metrics = self.calculate_uptime_downtime_metrics(
-                                operation_history if operation_history is not None else pd.DataFrame(),
+                                operation_metrics if operation_metrics is not None else pd.DataFrame(),
                                 robot_tasks,  # Empty, but still pass it
                                 robot_charging,
                                 robot_sn,
@@ -2070,7 +2111,7 @@ class PerformanceMetricsCalculator:
                     except Exception as e:
                         logger.warning(f"Cache miss for robot {robot_sn} status counts: {e}")
                         # Fallback: count manually
-                        completed_tasks = len(robot_tasks[robot_tasks['status'].str.lower().str.contains('complet', na=False)])
+                        completed_tasks = len(robot_tasks[robot_tasks['status'].str.lower().str.contains('end|complet|finish', na=False)])
 
                     try:
                         running_hours = self.get_cached_duration_sum(robot_tasks)
@@ -2113,7 +2154,7 @@ class PerformanceMetricsCalculator:
                     # Calculate uptime metrics
                     try:
                         uptime_metrics = self.calculate_uptime_downtime_metrics(
-                            operation_history if operation_history is not None else pd.DataFrame(),
+                            operation_metrics if operation_metrics is not None else pd.DataFrame(),
                             robot_tasks,
                             robot_charging,
                             robot_sn,
@@ -2201,7 +2242,7 @@ class PerformanceMetricsCalculator:
     # ROI & COST ANALYSIS METRICS (UNCHANGED but included for completeness)
     # ============================================================================
 
-    def calculate_roi_metrics(self, all_time_tasks: pd.DataFrame, target_robots: List[str], 
+    def calculate_roi_metrics(self, all_time_tasks: pd.DataFrame, target_robots: List[str],
                              current_period_end: str, monthly_lease_price: float = 1500.0) -> Dict[str, Any]:
         """Calculate ROI metrics using all-time task data"""
         try:
