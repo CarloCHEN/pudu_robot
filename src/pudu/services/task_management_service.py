@@ -32,14 +32,14 @@ class TaskManagementService:
         """
         all_changes = {}
 
-        # 1. Process robots with ongoing tasks (upsert) - track changes for notifications
+        # 1. Cleanup robots without ongoing tasks - no change tracking needed
+        if robots_needing_cleanup:
+            TaskManagementService._cleanup_ongoing_tasks_for_robots(table, robots_needing_cleanup)
+
+        # 2. Process robots with ongoing tasks (upsert) - track changes for notifications
         if ongoing_tasks_data:
             upsert_changes = TaskManagementService._upsert_ongoing_tasks(table, ongoing_tasks_data)
             all_changes.update(upsert_changes)
-
-        # 2. Cleanup robots without ongoing tasks - no change tracking needed
-        if robots_needing_cleanup:
-            TaskManagementService._cleanup_ongoing_tasks_for_robots(table, robots_needing_cleanup)
 
         return all_changes
 

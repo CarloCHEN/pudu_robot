@@ -6,29 +6,32 @@ from .icon_manager import get_icon_manager
 
 logger = logging.getLogger(__name__)
 
-# Severity and status mappings
+# Severity and status tag mappings based on template document
 SEVERITY_LEVELS = {
-    'fatal': 'fatal',
-    'error': 'error',
-    'warning': 'warning',
-    'event': 'event',
-    'success': 'success',
-    'neutral': 'neutral'
+    'fatal': 'fatal',    # Red - Immediate attention required
+    'error': 'error',    # Orange - Task failed or serious problem
+    'warning': 'warning', # Yellow - Moderate issue or degraded state
+    'event': 'event',      # Blue - Informational or neutral event
+    'success': 'success', # Green - Positive/normal outcome
+    'neutral': 'neutral'  # Gray - Scheduled or inactive items
 }
 
 STATUS_TAGS = {
-    'completed': 'completed',
-    'failed': 'failed',
+    # Task-specific tags
+    'done': 'done',
+    'uncompleted': 'uncompleted',
+    'in_progress': 'in_progress',
+    'scheduled': 'scheduled',
+
+    # Event tags
+    'critical': 'critical',
+    'error': 'error',
+
+    # Robot state tags
     'warning': 'warning',
     'charging': 'charging',
     'offline': 'offline',
-    'online': 'online',
-    'normal': 'normal',
-    'abnormal': 'abnormal',
-    'active': 'active',
-    'in_progress': 'in_progress',
-    'uncompleted': 'uncompleted',
-    'scheduled': 'scheduled',
+    'online': 'online'
 }
 
 def should_skip_notification(callback_type: str, change_info: Dict) -> bool:
@@ -43,10 +46,11 @@ def should_skip_notification(callback_type: str, change_info: Dict) -> bool:
 
     # Skip power updates unless battery is low
     if callback_type == 'power_event':
-        power_level = new_values.get('battery_level', 100)
-        if isinstance(power_level, (int, float)) and power_level < 5:
-            return False  # Do not skip if battery < 5%
         return True
+        # power_level = new_values.get('battery_level', 100)
+        # if isinstance(power_level, (int, float)) and power_level < 5:
+        #     return False  # Do not skip if battery < 5%
+        # return True
 
     # Skip status updates that are just position changes
     if callback_type == 'status_event':
@@ -58,9 +62,9 @@ def should_skip_notification(callback_type: str, change_info: Dict) -> bool:
 
     # Handle error events
     if callback_type == 'error_event':
-        error_level = new_values.get('event_level', 'info')
-        if error_level in ['fatal', 'error']:  # do not skip fatal and error events
-            return False
+        # error_level = new_values.get('event_level', 'info').lower()
+        # if error_level in ['fatal', 'error']:  # do not skip fatal and error events
+        #     return False
         return True
 
     # Handle task report events
@@ -71,7 +75,6 @@ def should_skip_notification(callback_type: str, change_info: Dict) -> bool:
         if 'status' in changed_fields:
             return False
         return True  # Skip other task updates (progress, etc.)
-
     return False
 
 def send_change_based_notifications(
@@ -110,7 +113,9 @@ def send_change_based_notifications(
                 "database_name": database_name,
                 "table_name": table_name,
                 "related_biz_id": database_key,
-                "related_biz_type": callback_type
+                "related_biz_type": callback_type,
+                "change_type": change_info.get('change_type', 'unknown'),
+                "changed_fields": change_info.get('changed_fields', [])
             }
 
             # Skip notifications for certain types of changes
@@ -123,6 +128,9 @@ def send_change_based_notifications(
 
             # Get severity and status
             severity, status = get_severity_and_status(callback_type, change_info)
+            if severity is None or status is None:
+                logger.error(f"Severity or status is None for {unique_id}, skipping notification")
+                continue
 
             # Format title with icons
             # icon_manager = get_icon_manager()
@@ -239,20 +247,18 @@ def get_severity_and_status(callback_type: str, change_info: Dict) -> Tuple[str,
             elif 'offline' in status:
                 return SEVERITY_LEVELS['error'], STATUS_TAGS['offline']
             else:
-                return SEVERITY_LEVELS['event'], STATUS_TAGS['active']
+                return None, None
         else:
-            return SEVERITY_LEVELS['event'], STATUS_TAGS['normal']
+            return None, None
 
     elif callback_type == 'error_event':
         error_level = new_values.get('event_level', 'info').lower()
         if error_level == 'fatal':
-            return SEVERITY_LEVELS['fatal'], STATUS_TAGS['abnormal']
+            return SEVERITY_LEVELS['fatal'], STATUS_TAGS['critical']
         elif error_level == 'error':
-            return SEVERITY_LEVELS['error'], STATUS_TAGS['abnormal']
-        elif error_level == 'warning':
-            return SEVERITY_LEVELS['warning'], STATUS_TAGS['warning']
+            return SEVERITY_LEVELS['error'], STATUS_TAGS['error']
         else:
-            return SEVERITY_LEVELS['event'], STATUS_TAGS['normal']
+            return None, None
 
     elif callback_type == 'power_event':
         power_level = new_values.get('battery_level', 100)
@@ -264,23 +270,23 @@ def get_severity_and_status(callback_type: str, change_info: Dict) -> Tuple[str,
             elif power_level < 20:
                 return SEVERITY_LEVELS['warning'], STATUS_TAGS['warning']
             else:
-                return SEVERITY_LEVELS['success'], STATUS_TAGS['normal']
+                return None, None
         else:
-            return SEVERITY_LEVELS['event'], STATUS_TAGS['normal']
+            return None, None
 
     elif callback_type == 'report_event':
         # For gas, task report severity/status based on task status
-        task_status = new_values.get('status', 'unknown')
+        task_status = new_values.get('status', 'unknown').lower()
 
-        if task_status == 'Task Ended':
-            return SEVERITY_LEVELS['success'], STATUS_TAGS['completed']
-        elif task_status in ['Task Failed', 'Task Abnormal']:
-            return SEVERITY_LEVELS['error'], STATUS_TAGS['failed']
+        if task_status == 'task ended':
+            return SEVERITY_LEVELS['success'], STATUS_TAGS['done']
+        elif task_status in ['task failed', 'task abnormal', 'manual']:
+            return SEVERITY_LEVELS['fatal'], STATUS_TAGS['uncompleted']
         else:
-            return SEVERITY_LEVELS['event'], STATUS_TAGS['active']
+            return None, None
 
     else:
-        return SEVERITY_LEVELS['event'], STATUS_TAGS['normal']
+        return None, None
 
 def convert_technical_string(text: str) -> str:
     """Convert technical strings to human-readable format"""

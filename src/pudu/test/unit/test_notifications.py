@@ -165,7 +165,7 @@ class TestNotifications:
                 "new_values": event,
                 "primary_key_values": {
                     "robot_sn": event['robot_sn'],
-                    "event_id": event.get('error_id', 'unknown')
+                    "error_id": event.get('error_id', 'unknown')
                 }
             }
 

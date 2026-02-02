@@ -93,8 +93,8 @@ class DatabaseWriter:
         """Transform callback status data to database format"""
         db_data = {
             "robot_sn": robot_sn,
-            "status": status_data.get("status", ""),
-            "update_time": datetime.fromtimestamp(status_data.get("timestamp", int(time.time()))).strftime('%Y-%m-%d %H:%M:%S')
+            "status": status_data.get("status", "").capitalize(),
+            "timestamp_utc": datetime.fromtimestamp(status_data.get("timestamp", int(time.time()))).strftime('%Y-%m-%d %H:%M:%S')
         }
         # Remove None values
         return {k: v for k, v in db_data.items() if v is not None}

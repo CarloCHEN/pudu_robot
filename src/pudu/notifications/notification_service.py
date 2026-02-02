@@ -55,7 +55,7 @@ class NotificationService:
             status: Notification status tag (completed, failed, warning, in_progress, etc.)
         """
         try:
-            # Use HTTP connection (change to HTTPSConnection if you move to HTTPS)
+            # Use HTTP connection (change to HTTPSConnection if move to HTTPS)
             conn = http.client.HTTPSConnection(self.api_host)
 
             # Build data - include status if provided
@@ -94,7 +94,7 @@ class NotificationService:
     def test_connection(self) -> bool:
         """Test if the notification service is reachable"""
         try:
-            conn = http.client.HTTPSConnection(self.api_host)
+            conn = http.client.HTTPConnection(self.api_host)
             # Try a simple HEAD request to test connectivity
             conn.request("HEAD", "/")
             res = conn.getresponse()

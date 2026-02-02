@@ -72,6 +72,11 @@ def should_skip_notification(data_type: str, change_info: Dict) -> bool:
         #     return True
         return False
 
+    elif data_type == 'robot_ongoing_task':
+        # if change_type == 'update':
+        #     return True
+        return True # Skip new ongoing task records
+
     # new charging record or charging status update
     elif data_type == 'robot_charging':
         # Skip all charging updates
@@ -210,7 +215,7 @@ def send_change_based_notifications(notification_service: NotificationService, d
         notification_type = 'robot_location'
     elif data_type in ['robot_status', 'robot_charging', 'robot_events']:
         notification_type = "robot_status"
-    elif data_type in ['robot_task']:
+    elif data_type in ['robot_task', 'robot_ongoing_task']:
         notification_type = "robot_task"
 
     # Send individual notification for each changed record
@@ -223,7 +228,9 @@ def send_change_based_notifications(notification_service: NotificationService, d
                 "database_name": database_name,
                 "table_name": table_name,
                 "related_biz_id": database_key,
-                "related_biz_type": data_type
+                "related_biz_type": data_type,
+                "change_type": change_info.get('change_type', 'unknown'),
+                "changed_fields": change_info.get('changed_fields', [])
             }
 
             if should_skip_notification(data_type, change_info):
@@ -278,7 +285,7 @@ def get_severity_and_status_for_change(data_type: str, change_info: Dict) -> Tup
 
     if data_type == 'robot_status':
         return get_severity_and_status_for_robot_status(old_values, new_values, changed_fields)
-    elif data_type == 'robot_task':
+    elif data_type == 'robot_task' or data_type == 'robot_ongoing_task':
         return get_severity_and_status_for_task(change_type, old_values, new_values, changed_fields)
     elif data_type == 'robot_charging':
         return get_severity_and_status_for_charging(change_type, old_values, new_values, changed_fields)
@@ -315,7 +322,7 @@ def generate_individual_notification_content(data_type: str, change_info: Dict, 
                 title, content = None, None
             return title, content
 
-        elif data_type == 'robot_task':
+        elif data_type == 'robot_task' or data_type == 'robot_ongoing_task':
             # Primary keys: ["robot_sn", "task_name", "start_time"]
             task_name = new_values.get('task_name', 'Unknown Task')
             start_time = new_values.get('start_time', 'Unknown Time')

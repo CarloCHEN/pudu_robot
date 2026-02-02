@@ -33,14 +33,14 @@ field_mappings:
       event_level:
         mapping:
           # Map Gas incident levels to unified levels
-          "H7": "fatal"
-          "H6": "error"
-          "H5": "warning"
-          "H4": "error"
-          "H3": "warning"
-          "H2": "event"
-          "H1": "event"
-          "H0": "event"
+          "H7": "fatal" # severe incident that requires immediate attention
+          "H6": "error" # affect task and users cannot solve it
+          "H5": "warning" # does not affect task but users cannot solve it
+          "H4": "error" # affect task but users solve it
+          "H3": "warning" # does not affect task and users can solve it
+          "H2": "event" # common status updates
+          "H1": "event" # some statistical updates
+          "H0": "event" # common incident updates
       task_time:
         type: timestamp_ms_to_s  # Gas uses milliseconds, DB uses seconds
       event_type:

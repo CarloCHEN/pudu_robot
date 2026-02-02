@@ -32,7 +32,6 @@ class RobotDatabaseResolver:
     def __init__(self, main_database_name: str):
         self.main_database_name = main_database_name
         self.main_db = None
-        self._project_info_cache = {}
         self._connection_pool = {}
         self._last_health_check = 0
         self._health_check_interval = 300  # 5 minutes
@@ -119,13 +118,13 @@ class RobotDatabaseResolver:
     @retry_db_operation(max_retries=3, base_delay=2)
     def get_robot_database_mapping(self, robot_sns: List[str] = None) -> Dict[str, str]:
         """
-        Get mapping of robot_sn to database name
+        Get mapping of robot_sn to database name (real per-tenant database name)
 
         Args:
             robot_sns: List of robot serial numbers to resolve. If None, resolves all robots.
 
         Returns:
-            Dict mapping robot_sn to database_name
+            Dict mapping robot_sn -> database_name
         """
         if not self.main_db:
             logger.info("Initializing database connection...")
@@ -138,24 +137,30 @@ class RobotDatabaseResolver:
             return {}
 
         try:
-            # Build query to get robot to project mapping from ry-vue's mnt_robots_management
+            # NOTE:
+            # - mnt_robots_management is assumed to live in the main DB (e.g. `ry-vue`)
+            # - sys_tenant is also in the same main DB
             base_query = """
-                SELECT mrm.robot_sn, mrm.project_id, ppi.project_name
+                SELECT
+                    mrm.robot_sn,
+                    mrm.tenant_id,
+                    st.database_name
                 FROM mnt_robots_management mrm
-                JOIN pro_project_info ppi ON mrm.project_id = ppi.project_id
-                WHERE mrm.project_id IS NOT NULL
-                AND ppi.project_name IS NOT NULL
+                JOIN sys_tenant st
+                    ON mrm.tenant_id = st.tenant_id
+                WHERE mrm.tenant_id IS NOT NULL
+                  AND st.database_name IS NOT NULL
+                  AND st.database_name <> ''
             """
 
             if robot_sns:
-                # Clean and safely quote each robot_sn
                 clean_robot_sns = []
                 for sn in robot_sns:
                     if sn is None:
                         continue
-                    # ensure it's string and escape single quotes
                     sn_str = str(sn).strip().replace("'", "''")
-                    clean_robot_sns.append(f"'{sn_str}'")
+                    if sn_str:
+                        clean_robot_sns.append(f"'{sn_str}'")
 
                 if clean_robot_sns:
                     robot_list = ", ".join(clean_robot_sns)
@@ -165,27 +170,29 @@ class RobotDatabaseResolver:
             else:
                 query = base_query
 
-            #logger.info(f"Resolving robot database mappings with query: {query}")
             results = self.main_db.query_data(query)
 
-            robot_to_database = {}
+            robot_to_database: Dict[str, str] = {}
+
             for result in results:
                 if isinstance(result, tuple) and len(result) >= 3:
-                    robot_sn, project_id, project_name = result[0], result[1], result[2]
+                    robot_sn, tenant_id, database_name = result[0], result[1], result[2]
                 elif isinstance(result, dict):
-                    robot_sn = result.get('robot_sn')
-                    project_id = result.get('project_id')
-                    project_name = result.get('project_name')
+                    robot_sn = result.get("robot_sn")
+                    tenant_id = result.get("tenant_id")
+                    database_name = result.get("database_name")
                 else:
                     continue
 
-                if robot_sn and project_name:
-                    robot_to_database[robot_sn] = project_name
-                    # Cache project info
-                    if project_id:
-                        self._project_info_cache[project_id] = project_name
+                if robot_sn and database_name:
+                    robot_to_database[str(robot_sn)] = str(database_name)
 
-            #logger.info(f"Resolved {len(robot_to_database)} robot database mappings")
+                    # Cache tenant -> db name (create this cache if you don't have it yet)
+                    if tenant_id is not None:
+                        if not hasattr(self, "_tenant_db_cache"):
+                            self._tenant_db_cache = {}
+                        self._tenant_db_cache[tenant_id] = str(database_name)
+
             return robot_to_database
 
         except Exception as e:
@@ -224,20 +231,20 @@ class RobotDatabaseResolver:
         self._ensure_connection()
 
         try:
-            query = "SELECT DISTINCT project_name FROM pro_project_info"
+            query = "SELECT DISTINCT database_name FROM sys_tenant"
             results = self.main_db.query_data(query)
 
             databases = []
             for result in results:
                 if isinstance(result, tuple):
-                    project_name = result[0]
+                    database_name = result[0]
                 elif isinstance(result, dict):
-                    project_name = result.get('project_name')
+                    database_name = result.get('database_name')
                 else:
                     continue
 
-                if project_name:
-                    databases.append(project_name)
+                if database_name:
+                    databases.append(database_name)
 
             return databases
 

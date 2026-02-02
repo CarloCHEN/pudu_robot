@@ -22,8 +22,8 @@ tables:
   # Robot Status/Pose/Power updates go to management table
   robot_status:
     - database: "project"
-      table_name: "mnt_robots_management"
-      primary_keys: ["robot_sn"]
+      table_name: "mnt_robot_operation_history"
+      primary_keys: ["robot_sn", "timestamp_utc"]
       fields: null
       description: "Robot status table in project database"
 
@@ -45,7 +45,7 @@ tables:
   robot_events:
     - database: "project"
       table_name: "mnt_robot_events"
-      primary_keys: ["robot_sn", "event_id"]
+      primary_keys: ["robot_sn", "error_id"]
       fields: null
       description: "Robot events table in project database"
 

@@ -9,17 +9,17 @@ main_database: "ry-vue"
 notification_needed:
   - "project"
 
-region: "us-east-2"
+region: "us-east-1"
 
 transform_supported_databases:
-  - "university_of_florida"
+  - "foxx_irvine_office"
 
 s3_config:
-  region: "us-east-2"
+  region: "us-east-1"
   buckets:
-    university_of_florida: "pudu-robot-transforms-university-of-florida-889717-us-east-2"
-    nexus_iq_office: "pudu-robot-transforms-nexus-iq-office-144926-us-east-2"
-    foxx_irvine_office: "pudu-robot-transforms-foxx-irvine-office-144924-us-east-2"
+    university_of_florida: "pudu-robot-transforms-university-of-florida-145714-us-east-1"
+    nexus_iq_office: "pudu-robot-transforms-nexus-iq-office-145704-us-east-1"
+    foxx_irvine_office: "pudu-robot-transforms-foxx-irvine-office-845829-us-east-1"
 
 tables:
   # Main Database Tables (ry-vue)

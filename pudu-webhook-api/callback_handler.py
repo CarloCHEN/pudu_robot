@@ -145,7 +145,7 @@ class CallbackHandler:
                 # Ensure required fields for error events
                 error_data = {
                     "robot_sn": cleaned_data.get("robot_sn", robot_sn),
-                    "event_id": cleaned_data.get("event_id", ""),
+                    "event_id": cleaned_data.get("error_id", ""),
                     "error_id": cleaned_data.get("error_id", cleaned_data.get("event_id", "")),
                     "event_level": cleaned_data.get("event_level", ""),
                     "event_type": cleaned_data.get("event_type", ""),

@@ -484,14 +484,14 @@ class App:
         Step 2: Get Enriched Data
 
         Query main database to get all buildings WITH project assignments
-        Join with pro_project_info to get project_name (database name)
+        Join with sys_tenant to get database_name
         Only includes buildings that have been assigned to projects AND those queried from get_location_table()
         Later when buildings are assigned projects in the main database, they will be distributed to project databases automatically
 
 
         Step 3: Process Project Databases
 
-        Group buildings by project_name (target database)
+        Group buildings by database_name (target database)
         For each project database, only process buildings that belong to that project
         Only update existing records - no new inserts since new buildings start unassigned
         Use change detection to avoid unnecessary updates
@@ -517,10 +517,10 @@ class App:
             total_failed += main_failed
             all_changes.update(main_changes)
 
-            # Step 2: Get enriched location data with project_id from main database
+            # Step 2: Get enriched location data with database_name from main database
             enriched_location_data = self._get_enriched_location_data(building_ids=building_ids)
 
-            # Step 3: Route to appropriate project databases based on project_id
+            # Step 3: Route to appropriate project databases based on database_name
             if not enriched_location_data.empty:
                 project_successful, project_failed, project_changes = self._process_project_database_locations(enriched_location_data)
                 total_successful += project_successful
@@ -585,7 +585,7 @@ class App:
             return 0, 1, {}
 
     def _get_enriched_location_data(self, building_ids):
-        """Get location data enriched with project_id and project_name from main database ONLY for those from get_location_table()"""
+        """Get location data enriched with database_name from main database ONLY for those from get_location_table()"""
         try:
             # Get main database configuration
             main_configs = [config for config in self.config.get_all_table_configs('main_building_info')
@@ -609,10 +609,10 @@ class App:
 
             # Query all buildings with project assignments
             query = f"""
-            SELECT b.building_id, b.building_name, b.project_id, p.project_name
+            SELECT b.building_id, b.building_name, s.tenant_id, s.database_name
             FROM {main_table.table_name} b
-            JOIN pro_project_info p ON b.project_id = p.project_id
-            WHERE b.project_id IS NOT NULL AND b.building_id IN ({','.join(building_ids)})
+            JOIN sys_tenant s ON b.tenant_id = s.tenant_id
+            WHERE s.database_name IS NOT NULL AND b.building_id IN ({','.join(building_ids)}) AND s.database_name <> ''
             """
 
             results = main_table.query_data(query)
@@ -620,27 +620,27 @@ class App:
             enriched_data = []
             for result in results:
                 if isinstance(result, tuple) and len(result) >= 4:
-                    building_id, building_name, project_id, project_name = result[0], result[1], result[2], result[3]
+                    building_id, building_name, database_name = result[0], result[1], result[2]
                 elif isinstance(result, dict):
                     building_id = result.get('building_id')
                     building_name = result.get('building_name')
-                    project_id = result.get('project_id')
-                    project_name = result.get('project_name')
+                    tenant_id = result.get('tenant_id') # tenant_id is the primary key of sys_tenant
+                    database_name = result.get('database_name')
                 else:
                     continue
 
-                if building_id and building_name and project_id and project_name:
+                if building_id and building_name and tenant_id and database_name:
                     enriched_data.append({
                         'building_id': building_id,
                         'building_name': building_name,
-                        'project_id': project_id,
-                        'project_name': project_name
+                        'tenant_id': tenant_id,
+                        'database_name': database_name
                     })
 
             main_table.close() # This will NOT actually close the pooled connection
 
             enriched_df = pd.DataFrame(enriched_data)
-            logger.info(f"Retrieved {len(enriched_df)} buildings with project assignments for distribution to project databases")
+            logger.info(f"Retrieved {len(enriched_df)} buildings with database assignments for distribution to project databases")
             return enriched_df
 
         except Exception as e:
@@ -648,72 +648,72 @@ class App:
             return pd.DataFrame()
 
     def _process_project_database_locations(self, enriched_location_data):
-        """Process location data in project databases - only update existing records based on project_id match"""
+        """Process location data in project databases - only update existing records based on database_name match"""
         try:
             successful_inserts = 0
             failed_inserts = 0
             all_changes = {}
 
-            # Group enriched data by project_name (database)
-            grouped_by_project = enriched_location_data.groupby('project_name')
+            # Group enriched data by database_name (database)
+            grouped_by_database = enriched_location_data.groupby('database_name')
 
-            for project_name, project_buildings in grouped_by_project:
+            for database_name, database_buildings in grouped_by_database:
                 try:
-                    logger.info(f"Processing {len(project_buildings)} buildings for project database: {project_name}")
+                    logger.info(f"Processing {len(database_buildings)} buildings for project database: {database_name}")
 
                     # Get table configuration for this project database
-                    project_configs = [config for config in self.config.get_all_table_configs('location')
-                                     if config['database'] == project_name]
+                    location_configs = [config for config in self.config.get_all_table_configs('location')
+                                        if config['database'] == database_name]
 
-                    if not project_configs:
-                        logger.warning(f"No location table configuration found for project database: {project_name}")
+                    if not location_configs:
+                        logger.warning(f"No location table configuration found for project database: {database_name}")
                         # failed_inserts += 1
                         continue
 
-                    project_config = project_configs[0]
+                    location_config = location_configs[0]
 
                     # Initialize project database table
-                    project_table = RDSTable(
+                    location_table = RDSTable(
                         connection_config="credentials.yaml",
-                        database_name=project_config['database'],
-                        table_name=project_config['table_name'],
-                        fields=project_config.get('fields'),
-                        primary_keys=project_config['primary_keys'],
+                        database_name=location_config['database'],
+                        table_name=location_config['table_name'],
+                        fields=location_config.get('fields'),
+                        primary_keys=location_config['primary_keys'],
                         reuse_connection=True
                     )
 
                     # Prepare data for batch processing
-                    project_data_list = []
-                    for _, building_row in project_buildings.iterrows():
-                        project_data_list.append({
+                    database_data_list = []
+                    for _, building_row in database_buildings.iterrows():
+                        database_data_list.append({
                             'building_id': building_row['building_id'],
                             'building_name': building_row['building_name'],
-                            'project_id': building_row['project_id']
+                            'tenant_id': building_row['tenant_id']
                         })
 
                     # Use change detection for this project database
-                    if project_data_list:
-                        changes = detect_data_changes(project_table, project_data_list, project_config['primary_keys'])
+                    if database_data_list:
+                        changes = detect_data_changes(location_table, database_data_list, location_config['primary_keys'])
 
                         if changes:
-                            project_table.batch_insert(project_data_list)
+                            location_table.batch_insert(database_data_list)
                             successful_inserts += 1
-                            logger.info(f"✅ Successfully processed {len(project_data_list)} buildings in project database {project_name}")
+                            logger.info(f"✅ Successfully processed {len(database_data_list)} buildings in project database {database_name}")
 
                             # Track changes for notifications
-                            table_key = tuple([project_config['database'], project_config['table_name']])
+                            table_key = tuple([location_table['database'], location_config['table_name']])
                             all_changes[table_key] = changes
                         else:
-                            logger.info(f"ℹ️ No changes detected for project database {project_name}")
+                            logger.info(f"ℹ️ No changes detected for project database {database_name}")
 
                     # Close project database connection
-                    project_table.close()
+                    location_table.close()
 
                 except Exception as e:
-                    logger.error(f"Error processing project database {project_name}: {e}")
+                    logger.error(f"Error processing project database {database_name}: {e}")
                     failed_inserts += 1
 
-            logger.info(f"Project database location processing: {successful_inserts} successful, {failed_inserts} failed")
+            logger.info(f"Project database location processing: {successful_inserts} successful, {failed_inserts} failed for database: {database_name}")
             return successful_inserts, failed_inserts, all_changes
 
         except Exception as e:
@@ -765,7 +765,7 @@ class App:
 
                     # Separate robots with tasks vs robots needing cleanup
                     table_robots_with_tasks = [robot for robot in target_robots if robot in robots_with_tasks]
-                    table_robots_needing_cleanup = target_robots
+                    table_robots_needing_cleanup = [robot for robot in target_robots if robot not in robots_with_tasks]
 
                     # Process robots with ongoing tasks
                     table_data = None
@@ -1138,7 +1138,7 @@ class App:
                 )
                 pipeline_stats['total_successful_inserts'] += successful
                 pipeline_stats['total_failed_inserts'] += failed
-                self._handle_notifications(changes, 'robot_task', pipeline_stats)
+                self._handle_notifications(changes, 'robot_ongoing_task', pipeline_stats)
             else:
                 logger.info("ℹ️ No ongoing tasks data to process")
 
@@ -1222,11 +1222,11 @@ class App:
             ConnectionManager.close_all_connections()
             self.config.close()
 
-    def _handle_notifications(self, changes: Dict, table_type: str, pipeline_stats: Dict, start_time: str = None, end_time: str = None):
+    def _handle_notifications(self, changes: Dict, data_type: str, pipeline_stats: Dict, start_time: str = None, end_time: str = None):
         """Handle notifications for changes"""
-        logger.info(f"📧 Handling notifications for {table_type} changes...")
+        logger.info(f"📧 Handling notifications for {data_type} changes...")
         if not changes:
-            logger.info(f"No changes detected for {table_type}, skipping notifications")
+            logger.info(f"No changes detected for {data_type}, skipping notifications")
             return
         notification_databases = self.config.get_notification_databases()
         for (database_name, table_name), change_data in changes.items():
@@ -1234,7 +1234,7 @@ class App:
                 try:
                     time_range = f"{start_time} to {end_time}" if start_time and end_time else None
                     notif_success, notif_failed = send_change_based_notifications(
-                        self.notification_service, database_name, table_name, change_data, table_type,
+                        self.notification_service, database_name, table_name, change_data, data_type,
                         time_range=time_range
                     )
                     pipeline_stats['total_successful_notifications'] += notif_success

@@ -19,10 +19,8 @@ import threading
 
 logger = logging.getLogger(__name__)
 
-def cache_by_dataframe_id(func):
-    """
-    Thread-safe decorator to cache function results based on DataFrame id + thread ID.
-    """
+def cache_by_dataframe_id_and_robot(func):
+    """Thread-safe decorator with robot-specific caching"""
     cache = {}
     lock = threading.Lock()
 
@@ -31,35 +29,44 @@ def cache_by_dataframe_id(func):
         if df.empty:
             return func(self, df, *args, **kwargs)
 
-        # Include thread ID in cache key to prevent cross-thread collisions
+        # Extract robot_sn if available
+        robot_sn = None
+        if 'robot_sn' in df.columns and not df.empty:
+            unique_robots = df['robot_sn'].unique()
+            if len(unique_robots) == 1:
+                robot_sn = unique_robots[0]
+            elif len(unique_robots) > 1:
+                # Multiple robots - use SORTED hash for stability
+                robot_sn = tuple(sorted(unique_robots))  # ✓ STABLE!
+
+                # If too many robots (>100), use hash instead to avoid huge tuples
+                if len(unique_robots) > 100:
+                    import hashlib
+                    robots_str = ','.join(sorted(unique_robots))
+                    robot_sn = hashlib.md5(robots_str.encode()).hexdigest()[:16]
+
+        # Include robot_sn in cache key
         cache_key = (
             id(df),
             threading.get_ident(),
+            robot_sn,  # ← NEW: robot context
             args,
             tuple(sorted(kwargs.items()))
         )
 
-        # Thread-safe read
         with lock:
             if cache_key in cache:
-                logger.debug(f"Cache hit for {func.__name__} (thread {threading.get_ident()})")
+                logger.debug(f"Cache hit for {func.__name__} (robot {robot_sn})")
                 return cache[cache_key]
 
-        # Calculate outside lock (expensive operation)
         result = func(self, df, *args, **kwargs)
 
-        # Thread-safe write
         with lock:
             cache[cache_key] = result
 
         return result
 
-    # Thread-safe clear
-    def clear_cache():
-        with lock:
-            cache.clear()
-
-    wrapper.clear_cache = clear_cache
+    wrapper.clear_cache = lambda: cache.clear()
     return wrapper
 
 class PerformanceMetricsCalculator:
@@ -71,7 +78,7 @@ class PerformanceMetricsCalculator:
     """
 
     def __init__(self, start_date: str, end_date: str):
-        """Initialize the metrics calculator with thread-safe caching"""
+        """Initialize the metrics calculator"""
         # Simple caches with their own locks
         self._duration_cache = {}
         self._duration_lock = threading.Lock()
@@ -79,16 +86,47 @@ class PerformanceMetricsCalculator:
         self._date_cache = {}
         self._date_lock = threading.Lock()
 
+        # Robot facility map cache - this is stable and useful
+        self._robot_facility_map = None
+        self._robot_facility_lock = threading.Lock()
+
         self.period_length = self._calculate_period_length(start_date, end_date)
 
-        # Batch calculation cache with single lock
-        self._batch_cache = {
-            'task_status_counts': {},
-            'task_durations': {},
-            'robot_facility_map': None,
-            'days_with_tasks': {}
-        }
-        self._batch_lock = threading.Lock()
+    def _get_cache_key(self, df: pd.DataFrame) -> Tuple:
+        """
+        Generate cache key that's unique per DataFrame content.
+
+        For single-robot DataFrames: Include robot_sn for specificity
+        For multi-robot DataFrames: Use hash of all robot SNs for stability
+        """
+        if df.empty:
+            return (0, threading.get_ident(), 0, ())
+
+        # Extract robot context if available
+        robot_context = None
+        if 'robot_sn' in df.columns:
+            unique_robots = df['robot_sn'].unique()
+
+            if len(unique_robots) == 1:
+                # Single robot - use robot_sn directly
+                robot_context = unique_robots[0]
+            elif len(unique_robots) > 1:
+                # Multiple robots - use SORTED hash for stability
+                robot_context = tuple(sorted(unique_robots))  # ✓ STABLE!
+
+                # If too many robots (>100), use hash instead to avoid huge tuples
+                if len(unique_robots) > 100:
+                    import hashlib
+                    robots_str = ','.join(sorted(unique_robots))
+                    robot_context = hashlib.md5(robots_str.encode()).hexdigest()[:16]
+
+        return (
+            id(df),
+            threading.get_ident(),
+            len(df),
+            tuple(df.columns),
+            robot_context
+        )
 
     def clear_all_caches(self):
         """Clear all caches - thread-safe"""
@@ -98,13 +136,8 @@ class PerformanceMetricsCalculator:
         with self._date_lock:
             self._date_cache.clear()
 
-        with self._batch_lock:
-            self._batch_cache = {
-                'task_status_counts': {},
-                'task_durations': {},
-                'robot_facility_map': None,
-                'days_with_tasks': {}
-            }
+        with self._robot_facility_lock:
+            self._robot_facility_map = None
 
         logger.info("All calculation caches cleared")
 
@@ -114,31 +147,19 @@ class PerformanceMetricsCalculator:
 
     def precalculate_task_metrics(self, tasks_df: pd.DataFrame) -> Dict[str, Any]:
         """
-        Thread-safe pre-calculation of task metrics.
+        Pre-calculation of task metrics - SIMPLIFIED without complex caching.
         """
-        df_id = (id(tasks_df), threading.get_ident())
-
-        # Thread-safe read check
-        with self._batch_lock:
-            if df_id in self._batch_cache['task_status_counts']:
-                logger.debug("Task metrics already pre-calculated")
-                return self._batch_cache['task_status_counts'][df_id]
-
         if tasks_df.empty:
-            empty_result = {
+            return {
                 'status_counts': {'completed': 0, 'cancelled': 0, 'interrupted': 0, 'suspended': 0, 'abnormal': 0},
                 'total_duration_hours': 0.0,
                 'total_tasks': 0,
                 'days_with_tasks': 0
             }
-            # Thread-safe write
-            with self._batch_lock:
-                self._batch_cache['task_status_counts'][df_id] = empty_result
-            return empty_result
 
         logger.info(f"Pre-calculating task metrics for {len(tasks_df)} tasks")
 
-        # Calculate outside lock (expensive)
+        # Calculate directly - no caching
         result = {
             'status_counts': self._count_tasks_by_status(tasks_df),
             'total_duration_hours': self._sum_task_durations(tasks_df),
@@ -146,102 +167,58 @@ class PerformanceMetricsCalculator:
             'days_with_tasks': self.calculate_days_with_tasks(tasks_df)
         }
 
-        # Thread-safe write
-        with self._batch_lock:
-            self._batch_cache['task_status_counts'][df_id] = result
-            self._batch_cache['task_durations'][df_id] = result['total_duration_hours']
-            self._batch_cache['days_with_tasks'][df_id] = result['days_with_tasks']
-
-        logger.info("Task metrics pre-calculated and cached")
+        logger.info("Task metrics calculated")
         return result
 
     def get_cached_status_counts(self, tasks_df: pd.DataFrame) -> Dict[str, int]:
-        """Get cached status counts or calculate if not cached - THREAD-SAFE"""
-        df_id = (id(tasks_df), threading.get_ident())
+        """Get status counts - direct calculation, no caching"""
+        if tasks_df.empty or 'status' not in tasks_df.columns:
+            return {'completed': 0, 'cancelled': 0, 'interrupted': 0, 'suspended': 0, 'abnormal': 0}
 
-        # Thread-safe read
-        with self._batch_lock:
-            if df_id in self._batch_cache['task_status_counts']:
-                return self._batch_cache['task_status_counts'][df_id]['status_counts']
-
-        # Not cached, calculate and cache
-        self.precalculate_task_metrics(tasks_df)
-
-        # Thread-safe read after calculation
-        with self._batch_lock:
-            return self._batch_cache['task_status_counts'][df_id]['status_counts']
+        return self._count_tasks_by_status(tasks_df)
 
     def get_cached_duration_sum(self, tasks_df: pd.DataFrame) -> float:
-        """Get cached duration sum or calculate if not cached - THREAD-SAFE"""
-        df_id = (id(tasks_df), threading.get_ident())
-
-        # Thread-safe read
-        with self._batch_lock:
-            if df_id in self._batch_cache['task_durations']:
-                return self._batch_cache['task_durations'][df_id]
-
-        # Not cached, calculate and cache
-        self.precalculate_task_metrics(tasks_df)
-
-        # Thread-safe read after calculation
-        with self._batch_lock:
-            return self._batch_cache['task_durations'][df_id]
+        """Get duration sum - direct calculation, no caching"""
+        return self._sum_task_durations(tasks_df)
 
     def get_cached_days_with_tasks(self, tasks_df: pd.DataFrame) -> int:
-        """Get cached days with tasks or calculate if not cached - THREAD-SAFE"""
+        """Get days with tasks - direct calculation, no caching"""
         try:
-            if tasks_df is None:
+            if tasks_df is None or tasks_df.empty:
                 return 0
 
-            df_id = (id(tasks_df), threading.get_ident())
-
-            # Thread-safe read
-            with self._batch_lock:
-                if df_id in self._batch_cache['days_with_tasks']:
-                    return self._batch_cache['days_with_tasks'][df_id]
-
-            # Not cached, calculate and cache
-            self.precalculate_task_metrics(tasks_df)
-
-            # Thread-safe read after calculation
-            with self._batch_lock:
-                return self._batch_cache['days_with_tasks'].get(df_id, 0)
+            return self.calculate_days_with_tasks(tasks_df)
         except Exception as e:
-            logger.error(f"Error getting cached days_with_tasks: {e}")
+            logger.error(f"Error calculating days_with_tasks: {e}")
             return 0
 
     def set_robot_facility_map(self, robot_locations: pd.DataFrame) -> Dict[str, str]:
         """Cache robot-facility mapping - THREAD-SAFE"""
-        # Thread-safe read check
-        with self._batch_lock:
-            if self._batch_cache['robot_facility_map'] is not None:
-                return self._batch_cache['robot_facility_map']
+        with self._robot_facility_lock:
+            if self._robot_facility_map is not None:
+                return self._robot_facility_map
 
-        if robot_locations.empty:
-            with self._batch_lock:
-                self._batch_cache['robot_facility_map'] = {}
-            return {}
+            if robot_locations.empty:
+                self._robot_facility_map = {}
+                return {}
 
-        # Calculate outside lock
-        robot_facility_map = dict(zip(
-            robot_locations['robot_sn'],
-            robot_locations['building_name']
-        ))
+            # Calculate outside lock
+            robot_facility_map = dict(zip(
+                robot_locations['robot_sn'],
+                robot_locations['building_name']
+            ))
 
-        # Thread-safe write
-        with self._batch_lock:
-            self._batch_cache['robot_facility_map'] = robot_facility_map
-
-        logger.info(f"Cached robot-facility mapping for {len(robot_facility_map)} robots")
-        return robot_facility_map
+            self._robot_facility_map = robot_facility_map
+            logger.info(f"Cached robot-facility mapping for {len(robot_facility_map)} robots")
+            return robot_facility_map
 
     def get_robot_facility_map(self) -> Dict[str, str]:
         """Get cached robot-facility mapping - THREAD-SAFE"""
-        with self._batch_lock:
-            if self._batch_cache['robot_facility_map'] is None:
+        with self._robot_facility_lock:
+            if self._robot_facility_map is None:
                 logger.warning("Robot facility map not set, returning empty dict")
                 return {}
-            return self._batch_cache['robot_facility_map']
+            return self._robot_facility_map
 
     # ============================================================================
     # HELPER METHODS - Centralized parsing and validation (UNCHANGED)
@@ -315,7 +292,7 @@ class PerformanceMetricsCalculator:
             return 0
         return df[datetime_column].dt.date.nunique()
 
-    @cache_by_dataframe_id
+    @cache_by_dataframe_id_and_robot
     def _sum_task_durations(self, tasks_df: pd.DataFrame) -> float:
         """
         OPTIMIZED: Cached method to sum task durations in hours.
@@ -328,7 +305,7 @@ class PerformanceMetricsCalculator:
         total_seconds = durations.sum()
         return total_seconds / 3600
 
-    @cache_by_dataframe_id
+    @cache_by_dataframe_id_and_robot
     def _count_completed_tasks(self, tasks_df: pd.DataFrame) -> int:
         """OPTIMIZED: Cached method to count completed tasks"""
         if tasks_df.empty or 'status' not in tasks_df.columns:
@@ -338,7 +315,7 @@ class PerformanceMetricsCalculator:
             'end|complet|finish', case=False, na=False
         )])
 
-    @cache_by_dataframe_id
+    @cache_by_dataframe_id_and_robot
     def _count_tasks_by_status(self, tasks_df: pd.DataFrame) -> Dict[str, int]:
         """
         OPTIMIZED: Cached method to categorize tasks by status.
@@ -358,21 +335,21 @@ class PerformanceMetricsCalculator:
         }
 
     def _calculate_period_length(self, start_date: str, end_date: str) -> int:
-        """Calculate period length in days"""
+        """Calculate period length in days (inclusive of both start and end dates)"""
         try:
             start_dt = datetime.strptime(start_date, '%Y-%m-%d %H:%M:%S')
             end_dt = datetime.strptime(end_date, '%Y-%m-%d %H:%M:%S')
 
-            # Calculate the difference
-            diff = end_dt - start_dt
-            days_diff = diff.days
+            # Get date parts (ignore time)
+            start_date_only = start_dt.date()
+            end_date_only = end_dt.date()
 
-            # If there are remaining hours/minutes/seconds, round up to include partial day
-            if diff.seconds > 0 or diff.microseconds > 0:
-                return days_diff + 1
-            else:
-                # Exact day boundary - don't add 1
-                return days_diff
+            # Calculate difference in calendar days
+            diff = (end_date_only - start_date_only).days
+
+            # Add 1 to include both start and end dates
+            # Example: Jan 1 to Jan 1 = 0 days difference, but 1 calendar day
+            return diff + 1
 
         except Exception as e:
             logger.error(f"Error calculating period length: {e}")
@@ -603,7 +580,7 @@ class PerformanceMetricsCalculator:
             logger.error(f"Error calculating fleet status: {e}")
             return self._get_default_fleet_metrics()
 
-    @cache_by_dataframe_id
+    @cache_by_dataframe_id_and_robot
     def calculate_days_with_tasks(self, tasks_data: pd.DataFrame) -> int:
         """
         OPTIMIZED: Cached calculation of days with tasks.
@@ -2019,7 +1996,7 @@ class PerformanceMetricsCalculator:
             if not tasks_data.empty and 'robot_sn' in tasks_data.columns:
                 try:
                     for robot_sn, robot_tasks in tasks_data.groupby('robot_sn'):
-                        robot_tasks_groups[robot_sn] = robot_tasks
+                        robot_tasks_groups[robot_sn] = robot_tasks.copy() # ✅ Copy DataFrame to prevent concurrent modification
                 except Exception as e:
                     logger.error(f"Error grouping tasks by robot: {e}")
 
