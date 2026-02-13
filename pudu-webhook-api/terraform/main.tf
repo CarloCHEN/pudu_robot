@@ -36,8 +36,8 @@ locals {
   # Certificate ARN for HTTPS listener (null when skipping validation - HTTP only until DNS is set)
   certificate_arn = var.certificate_arn != "" ? var.certificate_arn : (local.create_cert_validation ? aws_acm_certificate_validation.app[0].certificate_arn : null)
 
-  # HTTPS only when we have a validated cert
-  use_https = local.certificate_arn != null
+  # HTTPS only when we have a validated cert (must use vars only - no resource attrs - for count to work at plan time)
+  use_https = var.certificate_arn != "" || (local.create_cert && !var.skip_cert_validation_wait)
 
   # Environment variables for ECS task - brand-agnostic approach
   container_environment = [
@@ -97,6 +97,12 @@ locals {
 # Data sources
 data "aws_vpc" "default" {
   default = true
+}
+
+# Get zone name for relative record names (fixes ACM validation for subdomains in parent zone)
+data "aws_route53_zone" "app" {
+  count   = local.create_cert ? 1 : 0
+  zone_id = local.route53_zone_id
 }
 
 data "aws_subnets" "default" {
@@ -235,6 +241,8 @@ resource "aws_acm_certificate" "app" {
 }
 
 # Route53 validation records (only when creating new cert)
+# Use relative record name (e.g. "_xxx.east2" not "_xxx.east2.webhook-east1.com.") so ACM
+# validation works for subdomains in parent zone - full FQDN can cause double-domain issues
 resource "aws_route53_record" "cert_validation" {
   for_each = local.create_cert ? {
     for dvo in aws_acm_certificate.app[0].domain_validation_options : dvo.domain_name => {
@@ -245,11 +253,12 @@ resource "aws_route53_record" "cert_validation" {
   } : {}
 
   allow_overwrite = true
-  name            = each.value.name
-  records         = [each.value.record]
-  ttl             = 60
-  type            = each.value.type
-  zone_id         = local.route53_zone_id
+  # Strip zone name suffix for relative name (fixes 48+ min ACM validation hangs)
+  name    = trim(replace(trimspace(each.value.name), ".${trim(data.aws_route53_zone.app[0].name, ".")}.", ""), ".")
+  records = [each.value.record]
+  ttl     = 60
+  type    = each.value.type
+  zone_id = local.route53_zone_id
 }
 
 # Wait for DNS propagation before ACM validation (avoids "missing validation record" race)
@@ -271,7 +280,7 @@ resource "aws_acm_certificate_validation" "app" {
 resource "aws_route53_record" "app" {
   count   = local.has_zone ? 1 : 0
   zone_id = local.route53_zone_id
-  name    = ""  # Apex record (webhook-east1.com, webhook-east2.com)
+  name    = var.domain_record_name  # Apex when empty, subdomain when set (e.g. "east2" for east2.webhook-east1.com)
   type    = "A"
 
   alias {

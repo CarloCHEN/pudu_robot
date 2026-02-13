@@ -71,6 +71,12 @@ variable "route53_zone_id" {
   default     = ""
 }
 
+variable "domain_record_name" {
+  description = "Route53 record name in the zone (empty for apex, e.g. 'east2' for east2.webhook-east1.com)"
+  type        = string
+  default     = ""
+}
+
 variable "create_hosted_zone" {
   description = "Create Route53 hosted zone for domain_name (use when domain has no zone yet, e.g. webhook-east2.com)"
   type        = bool

@@ -19,11 +19,12 @@ notification_api_host = "alb-notice-1223048054.us-east-2.elb.amazonaws.com"
 pudu_callback_code = "1vQ6MfUxqyoGMRQ9nK8C4pSkg1Qsa3Vpq"
 gas_callback_code  = ""  # Not available for us-east-2 yet - empty string will be used
 
-# HTTPS Configuration - webhook-east2.com (Terraform creates hosted zone)
-domain_name             = "webhook-east2.com"
-create_hosted_zone      = true
-route53_zone_id         = ""  # Not used when create_hosted_zone=true
-skip_cert_validation_wait = true  # Set to false AFTER updating registrar with Route53 nameservers
+# HTTPS Configuration - subdomain of webhook-east1.com (uses existing zone)
+domain_name              = "east2.webhook-east1.com"
+route53_zone_id          = "Z10056663J1NAES793Y4U"  # Same zone as webhook-east1.com
+create_hosted_zone       = false
+domain_record_name       = "east2"  # Creates east2.webhook-east1.com in the zone
+skip_cert_validation_wait = false    # Zone exists, cert validates immediately
 
 # Optional: Use existing ACM cert instead of creating one
 # certificate_arn = "arn:aws:acm:us-east-2:908027373537:certificate/xxxx"

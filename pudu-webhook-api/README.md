@@ -355,7 +355,7 @@ python main.py
 
 ```bash
 
-curl -X POST "https://webhook-east2.com/api/pudu/webhook" \
+curl -X POST "http://robot-webhook-alb-us-east-2-889479792.us-east-2.elb.amazonaws.com/api/pudu/webhook" \
   -H "Content-Type: application/json" \
   -H "CallbackCode: 1vQ6MfUxqyoGMRQ9nK8C4pSkg1Qsa3Vpq" \
   -d '{
@@ -461,7 +461,7 @@ curl -X POST http://3.237.78.106:8000/api/pudu/webhook \
   }'
 
 # Test Gas endpoint
-curl https://webhook-east2.com/api/webhook/health
+curl https://webhook-east1.com/api/webhook/health
 
 curl --location "https://webhook-east1.com/api/webhook" \
 --header 'accept: */*' \
