@@ -32,6 +32,13 @@ def normalize_decimal_value(value, field_name: str):
 
     return value
 
+def _escape_sql_string(value) -> str:
+    """Escape single quotes for SQL string literals (MySQL style: ' -> '')"""
+    if value is None:
+        return ''
+    return str(value).replace("'", "''")
+
+
 def normalize_record_for_comparison(record: dict) -> dict:
     """Normalize all decimal fields in a record for database comparison"""
     normalized = {}
@@ -70,7 +77,7 @@ def detect_data_changes(table, data_list: list, primary_keys: list) -> Dict[str,
         # Build WHERE clause for primary keys to fetch existing records
         primary_key_conditions = []
         for record in normalized_data_list:
-            pk_condition = " AND ".join([f"{pk} = '{record[pk]}'" for pk in primary_keys if pk in record])
+            pk_condition = " AND ".join([f"{pk} = '{_escape_sql_string(record[pk])}'" for pk in primary_keys if pk in record])
             if pk_condition:
                 primary_key_conditions.append(f"({pk_condition})")
 

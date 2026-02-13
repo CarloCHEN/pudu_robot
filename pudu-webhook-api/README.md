@@ -354,14 +354,67 @@ python main.py
 ### 4. Test Endpoints
 
 ```bash
+
+curl -X POST "https://webhook-east2.com/api/pudu/webhook" \
+  -H "Content-Type: application/json" \
+  -H "CallbackCode: 1vQ6MfUxqyoGMRQ9nK8C4pSkg1Qsa3Vpq" \
+  -d '{
+    "callback_type": "notifyRobotStatus",
+    "data": {
+      "sn": "811135422060228",
+      "mac": "机器人001",
+      "timestamp": 1770873793004,
+      "notify_timestamp": 1770873793004,
+      "battery": 85,
+      "is_charging": -1,
+      "move_state": "STUCK",
+      "charge_stage": "IDLE",
+      "remain_time": 0,
+      "run_state": "BUSY",
+      "charge_type": 2
+    }
+  }'
+
+curl -X POST "http://robot-webhook-alb-us-east-2-889479792.us-east-2.elb.amazonaws.com/api/pudu/webhook" \
+  -H "Content-Type: application/json" \
+  -H "CallbackCode: 1vQ6MfUxqyoGMRQ9nK8C4pSkg1Qsa3Vpq" \
+  -d '{
+    "callback_type": "robotErrorNotice",
+    "data": {
+      "error_detail": "TestEmergencyKeyPressed",
+      "error_id": "11111111as",
+      "error_level": "Event",
+      "error_type": "EmergencyStop",
+      "extend_info": {
+        "battery": 58,
+        "floor": "",
+        "mac": "00:D6:CB:D5:28:01",
+        "map_name": "0#0#T600纯激光地图20250815",
+        "map_point": "",
+        "sn": "811135422060228",
+        "task_id": "1222222222222",
+        "task_type": "Delivery",
+        "position": {
+          "x": -0.004843229,
+          "y": 4.99104,
+          "yaw": 1.3746479
+        }
+      },
+      "language": "",
+      "sn": "811135422060228",
+      "timestamp": 1770865706
+    }
+  }'
+
 # Test Pudu endpoint
-curl -X POST http://robot-webhook-alb-us-east-1-1428034945.us-east-1.elb.amazonaws.com/api/webhook \
+curl -X POST http://robot-webhook-alb-us-east-2-889479792.us-east-2.elb.amazonaws.com/api/pudu/webhook \
   -H "Content-Type: application/json" \
   -H "CallbackCode: vFpG5Ga9o8NqdymFLicLfJVfqj6JU50qQYCs" \
   -d '{
     "callback_type": "robotStatus",
     "data": {"sn": "811135422060228", "run_status": "ONLINE", "timestamp": 1640995800}
   }'
+
 
 curl -X POST http://robot-webhook-alb-us-east-1-1428034945.us-east-1.elb.amazonaws.com/api/webhook \
   -H "Content-Type: application/json" \
@@ -408,7 +461,7 @@ curl -X POST http://3.237.78.106:8000/api/pudu/webhook \
   }'
 
 # Test Gas endpoint
-curl https://webhook-east1.com/api/webhook/health
+curl https://webhook-east2.com/api/webhook/health
 
 curl --location "https://webhook-east1.com/api/webhook" \
 --header 'accept: */*' \

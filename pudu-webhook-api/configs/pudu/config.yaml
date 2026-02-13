@@ -13,7 +13,7 @@ verification:
 type_mappings:
   robotStatus: status_event
   notifyRobotStatus: work_status_event
-  robotErrorNotice: error_event
+  robotErrorNotice: error_notice
   robotErrorWarning: error_event
   notifyRobotPose: pose_event
   notifyRobotPower: power_event
@@ -48,20 +48,20 @@ field_mappings:
     source_to_db:
       sn: robot_sn
       is_charging: is_charging # 1 for charging, -1 for not charging
-      move_state: move_state # IDLE :空闲 MOVING :运动中 STUCK :被障碍物阻挡 APPROACHING ：快抵达目标点 ARRIVE ：抵达目标点 PAUSE ：暂停 AVOID ： 与其他机器人进行调度
-      charge_stage: charge_stage # 电池状态 IDLE:空闲 CHARGING：充电中 CHARGE_FULL：充满电 CHARGE_ERROR_CONTACT：充电连接异常 CHARGE_ERROR_ELECTRIC：电流异常 ERROR_BATTERY_PACK_COMM：通讯异常 ERROR_OVER_VOLT：电压异常 ERROR_OVER_ELECTRIC：电流异常 ERROR_OVER_TEMPERATURE：温度异常 ERROR_OVER_TIME：超时异常
-      run_state: status # OFFLINE：机器离线，一般是由于机器网络问题或者呼叫开关没有开启; DISABLE：当前状态不可用，机器电量太低无法执行任务或者设置了机器充电中无法被呼叫，注意当机器由IDLE变为该状态时，所有在云端排队的呼叫任务都会提前结束; BUSY：机器正在执行任务，或者部分机器触摸屏幕后10秒内都会时忙碌状态，该状态机器是可以呼叫，但是会进入云端排队(仅呼叫任务有排队逻辑) ;IDLE：机器当前空闲，给机器发任务，机器会立即响应。这里 各个状态和原v1/get_by_sn返回各个状态的映射关系： OFFLINE：is_online!=1 IDLE:is_online=1 && schedule_status=1 && work_status=-1 BUSY:is_online=1 && schedule_status=1 && work_status!=-1 DISABLE:is_online=1 && schedule_status!=1
+      move_state: move_state #IDLE, MOVING, STUCK, APPROACHING, ARRIVE, PAUSE, AVOID. IDLE :空闲 MOVING :运动中 STUCK :被障碍物阻挡 APPROACHING ：快抵达目标点 ARRIVE ：抵达目标点 PAUSE ：暂停 AVOID ： 与其他机器人进行调度
+      charge_stage: charge_stage #电池状态 IDLE:空闲 CHARGING：充电中 CHARGE_FULL：充满电 CHARGE_ERROR_CONTACT：充电连接异常 CHARGE_ERROR_ELECTRIC：电流异常 ERROR_BATTERY_PACK_COMM：通讯异常 ERROR_OVER_VOLT：电压异常 ERROR_OVER_ELECTRIC：电流异常 ERROR_OVER_TEMPERATURE：温度异常 ERROR_OVER_TIME：超时异常
+      run_state: run_state # ONLINE, OFFLINE, DISABLE, BUSY, IDLE. OFFLINE：机器离线，一般是由于机器网络问题或者呼叫开关没有开启; DISABLE：当前状态不可用，机器电量太低无法执行任务或者设置了机器充电中无法被呼叫，注意当机器由IDLE变为该状态时，所有在云端排队的呼叫任务都会提前结束; BUSY：机器正在执行任务，或者部分机器触摸屏幕后10秒内都会时忙碌状态，该状态机器是可以呼叫，但是会进入云端排队(仅呼叫任务有排队逻辑) ;IDLE：机器当前空闲，给机器发任务，机器会立即响应。这里 各个状态和原v1/get_by_sn返回各个状态的映射关系： OFFLINE：is_online!=1 IDLE:is_online=1 && schedule_status=1 && work_status=-1 BUSY:is_online=1 && schedule_status=1 && work_status!=-1 DISABLE:is_online=1 && schedule_status!=1
       notify_timestamp: timestamp # milliseconds
     conversions:
       move_state:
         type: lowercase
       charge_stage:
         type: lowercase
-      status:
+      run_state:
         type: lowercase
       timestamp:
         type: timestamp_ms_to_s
-    drop_fields: [is_charging, move_state, charge_stage]
+    drop_fields: []
 
   # Error/Warning event mapping
   error_event:
@@ -72,6 +72,24 @@ field_mappings:
       error_type: event_type
       error_detail: event_detail
       timestamp: task_time
+    conversions:
+      event_level:
+        type: lowercase
+      task_time:
+        type: int  # Ensure it's integer timestamp
+    drop_fields:
+      - callback_type  # pudu-specific, not in DB
+
+  # Error notice mapping
+  error_notice:
+    source_to_db:
+      sn: robot_sn
+      error_id: error_id
+      error_level: event_level
+      error_type: event_type
+      error_detail: event_detail
+      timestamp: task_time
+      extend_info: extra_fields
     conversions:
       event_level:
         type: lowercase

@@ -28,26 +28,50 @@ make deploy-us-east-2
 ### 3. Save the ALB URL
 After deployment completes, save the ALB URL from the output:
 ```
-Load Balancer: http://foxx-monitor-webhook-api-alb-us-east-1-xxxxx.elb.amazonaws.com
+Load Balancer: https://webhook-east2.yourdomain.com   # with HTTPS configured
+# or
+Load Balancer: http://foxx-monitor-webhook-api-alb-xxxxx.elb.amazonaws.com   # HTTP only
 ```
+
+### 4. Enable HTTPS (Required for production)
+Endpoints: `https://webhook-east1.com/api/webhook` (us-east-1), `https://webhook-east2.com/api/webhook` (us-east-2)
+
+**us-east-1:** Uses existing zone in `terraform/us-east-1.tfvars`.
+
+**us-east-2:** Two-phase deploy (required because webhook-east2.com must point to Route53 first):
+
+**Phase 1 – Deploy and get nameservers:**
+```hcl
+# terraform/us-east-2.tfvars
+domain_name               = "webhook-east2.com"
+create_hosted_zone        = true
+skip_cert_validation_wait = true   # Don't wait for cert (DNS not set yet)
+```
+Run `make deploy-us-east-2`. Deploy succeeds with HTTP only. **Save the Route53 nameservers** from the output.
+
+**Phase 2 – Point domain to Route53:**
+1. In your domain registrar (where you bought webhook-east2.com), set the domain’s nameservers to the Route53 nameservers from Phase 1.
+2. Wait 5–30 minutes for DNS propagation.
+3. Set `skip_cert_validation_wait = false` in `terraform/us-east-2.tfvars`.
+4. Run `make deploy-us-east-2` again. Cert validates and HTTPS is enabled.
 
 ## API Endpoints
 
 ### Primary Endpoint (Recommended)
 ```
-POST http://<alb-url>/api/webhook
+POST https://<your-domain>/api/webhook   # or http:// when HTTPS not configured
 ```
 Automatically detects if request is from Pudu or Gas robot.
 
 ### Legacy Endpoints (Backward Compatibility)
 ```
-POST http://<alb-url>/api/pudu/webhook
-POST http://<alb-url>/api/gas/webhook
+POST https://<your-domain>/api/pudu/webhook
+POST https://<your-domain>/api/gas/webhook
 ```
 
 ### Health Check
 ```
-GET http://<alb-url>/api/webhook/health
+GET https://<your-domain>/api/webhook/health
 ```
 
 ## Architecture
@@ -137,7 +161,29 @@ pudu-webhook-api/
 └── main.py               # Flask application
 ```
 
+## HTTPS Setup Details
+
+| Variable | Purpose |
+|----------|---------|
+| `domain_name` | Domain for your API (e.g., `webhook-east2.yourdomain.com`) |
+| `route53_zone_id` | Route53 hosted zone ID for DNS validation + A record |
+| `certificate_arn` | Optional: use existing ACM cert instead of creating one |
+
+**Get your Route53 zone ID:**
+```bash
+aws route53 list-hosted-zones --query 'HostedZones[*].[Name,Id]' --output table
+```
+
 ## Troubleshooting
+
+### ACM cert validation timeout (1h15m)
+**Cause:** webhook-east2.com is not pointing to Route53 nameservers at your domain registrar.
+
+**Fix:**
+1. Set `skip_cert_validation_wait = true` in `terraform/us-east-2.tfvars`.
+2. Run `make deploy-us-east-2` – deploy will succeed with HTTP only.
+3. Update your registrar to use the Route53 nameservers from the output.
+4. After DNS propagates (5–30 min), set `skip_cert_validation_wait = false` and redeploy.
 
 ### Deployment fails
 ```bash
@@ -195,4 +241,19 @@ rm -rf .terraform .terraform.lock.hcl
 GODEBUG=netdns=go terraform init
 cd ..
 make deploy
+```
+
+```bash
+cd terraform
+
+# Back up current state (it's your us-east-1 state)
+cp terraform.tfstate terraform-us-east-1.tfstate
+cp terraform.tfstate.backup terraform-us-east-1.tfstate.backup
+
+# Remove the state so us-east-2 starts fresh
+rm terraform.tfstate terraform.tfstate.backup
+
+# Now deploy us-east-2
+cd ..
+make deploy-us-east-2
 ```

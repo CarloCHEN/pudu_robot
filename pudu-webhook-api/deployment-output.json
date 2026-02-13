@@ -2,12 +2,12 @@
   "alb_dns_name": {
     "sensitive": false,
     "type": "string",
-    "value": "robot-webhook-alb-us-east-1-1428034945.us-east-1.elb.amazonaws.com"
+    "value": "robot-webhook-alb-us-east-2-889479792.us-east-2.elb.amazonaws.com"
   },
   "alb_url": {
     "sensitive": false,
     "type": "string",
-    "value": "https://webhook-east1.com"
+    "value": "https://webhook-east2.com"
   },
   "certificate_validation_records": {
     "sensitive": false,
@@ -24,26 +24,26 @@
     ],
     "value": [
       {
-        "name": "_ea2193e1d909744c7a697d42b2da7692.webhook-east1.com.",
+        "name": "_79ced2ba85291263f1d412527c7d595c.webhook-east2.com.",
         "type": "CNAME",
-        "value": "_a6188c5003c76281935d562f053f0b37.xlfgrmvvlj.acm-validations.aws."
+        "value": "_62611fb12d68ec72890dbd6e5bf4162b.jkddzztszm.acm-validations.aws."
       }
     ]
   },
   "cloudwatch_log_group": {
     "sensitive": false,
     "type": "string",
-    "value": "/ecs/robot-webhook-us-east-1"
+    "value": "/ecs/robot-webhook-us-east-2"
   },
   "ecr_repository_url": {
     "sensitive": false,
     "type": "string",
-    "value": "908027373537.dkr.ecr.us-east-1.amazonaws.com/robot-webhook"
+    "value": "908027373537.dkr.ecr.us-east-2.amazonaws.com/robot-webhook"
   },
   "ecs_cluster_name": {
     "sensitive": false,
     "type": "string",
-    "value": "robot-webhook-cluster-us-east-1"
+    "value": "robot-webhook-cluster-us-east-2"
   },
   "ecs_service_name": {
     "sensitive": false,
@@ -53,7 +53,20 @@
   "region": {
     "sensitive": false,
     "type": "string",
-    "value": "us-east-1"
+    "value": "us-east-2"
+  },
+  "route53_nameservers": {
+    "sensitive": false,
+    "type": [
+      "list",
+      "string"
+    ],
+    "value": [
+      "ns-1356.awsdns-41.org",
+      "ns-1786.awsdns-31.co.uk",
+      "ns-406.awsdns-50.com",
+      "ns-579.awsdns-08.net"
+    ]
   },
   "webhook_endpoints": {
     "sensitive": false,
@@ -66,9 +79,9 @@
       }
     ],
     "value": {
-      "gas_webhook": "https://webhook-east1.com/api/gas/webhook",
-      "health_check": "https://webhook-east1.com/api/webhook/health",
-      "pudu_webhook": "https://webhook-east1.com/api/pudu/webhook"
+      "gas_webhook": "https://webhook-east2.com/api/gas/webhook",
+      "health_check": "https://webhook-east2.com/api/webhook/health",
+      "pudu_webhook": "https://webhook-east2.com/api/pudu/webhook"
     }
   }
 }

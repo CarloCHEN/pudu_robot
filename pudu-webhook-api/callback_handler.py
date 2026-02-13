@@ -1,4 +1,5 @@
 # callback_handler.py
+import json
 import logging
 from typing import Any, Dict, Tuple
 import time
@@ -135,14 +136,57 @@ class CallbackHandler:
             if abstract_type == "status_event":
                 return self.database_writer.write_robot_status(robot_sn, cleaned_data)
 
+            elif abstract_type == 'work_status_event':
+                # is_charging is 1 for charging, -1 for not charging
+                is_charging = (
+                    cleaned_data.get("is_charging") in (1, "1")
+                    or (cleaned_data.get("charge_stage") or "").lower() == "charging"
+                )
+
+                # is working
+                is_working = (
+                    (cleaned_data.get("run_state") or "").lower() == "busy"
+                )
+
+                # is stuck
+                is_stuck = (
+                    (cleaned_data.get("move_state") or "").lower() == "stuck"
+                )
+
+                # is offline
+                is_offline = (
+                    (cleaned_data.get("run_state") or "").lower() == "offline"
+                )
+
+                # final status (priority logic)
+                if is_stuck:
+                    status = "Stuck"
+                elif is_working:
+                    status = "Working"
+                elif is_charging:
+                    status = "Charging"
+                elif is_offline:
+                    status = "Offline"
+                else:
+                    status = "Online"
+
+                work_status_data = {
+                    "robot_sn": cleaned_data.get("robot_sn", robot_sn),
+                    "status": status,
+                    "timestamp": cleaned_data.get("timestamp", int(time.time())),
+                }
+                return self.database_writer.write_robot_status(robot_sn, work_status_data)
+
             elif abstract_type == "pose_event":
                 return self.database_writer.write_robot_pose(robot_sn, cleaned_data)
 
             elif abstract_type == "power_event":
                 return self.database_writer.write_robot_power(robot_sn, cleaned_data)
 
-            elif abstract_type == "error_event":
+            elif abstract_type in ["error_event", "error_notice"]:
                 # Ensure required fields for error events
+                extra_fields = cleaned_data.get("extra_fields", {})
+                extra_fields = json.dumps(extra_fields, ensure_ascii=False)
                 error_data = {
                     "robot_sn": cleaned_data.get("robot_sn", robot_sn),
                     "event_id": cleaned_data.get("error_id", ""),
@@ -152,7 +196,7 @@ class CallbackHandler:
                     "event_detail": cleaned_data.get("event_detail", ""),
                     "task_time": cleaned_data.get("task_time", int(time.time())),
                     "upload_time": int(time.time()),
-                    "extra_fields": cleaned_data.get("extra_fields"),  # JSON string
+                    "extra_fields": extra_fields,  # JSON string
                 }
                 return self.database_writer.write_robot_event(robot_sn, error_data)
 

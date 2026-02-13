@@ -22,7 +22,7 @@ case $ENVIRONMENT in
     export RDS_SECRET_NAME="rds!db-12d35fce-6171-4db1-a7e1-c75f1503ffed"
     export NOTIFICATION_API_HOST="alb-notice-1223048054.us-east-2.elb.amazonaws.com"
     export PUDU_CALLBACK_CODE="1vQ6MfUxqyoGMRQ9nK8C4pSkg1Qsa3Vpq"
-    export GAS_CALLBACK_CODE=""  # Not available for us-east-2
+    export GAS_CALLBACK_CODE="378c0111-5d5d-4bdc-9cc5-e3d7bd3494d3"  # Not available for us-east-2
     ;;
   *)
     echo "❌ Unknown environment: $ENVIRONMENT"

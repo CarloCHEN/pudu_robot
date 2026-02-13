@@ -7,6 +7,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 4.67"
     }
+    time = {
+      source  = "hashicorp/time"
+      version = "~> 0.9"
+    }
   }
 }
 
@@ -17,8 +21,23 @@ provider "aws" {
 locals {
   app_name = "robot-webhook"
 
-  # Determine if HTTPS is enabled
-  use_https = var.domain_name != "" && var.route53_zone_id != ""
+  # Zone: use existing (route53_zone_id) or create new (create_hosted_zone)
+  has_zone = var.domain_name != "" && (var.route53_zone_id != "" || var.create_hosted_zone)
+
+  # Create ACM cert when domain+zone and no existing cert
+  create_cert = var.domain_name != "" && local.has_zone && var.certificate_arn == ""
+
+  # Wait for cert validation only when not skipping (skip = first deploy, get nameservers, update registrar)
+  create_cert_validation = local.create_cert && !var.skip_cert_validation_wait
+
+  # Zone ID: from created zone or provided variable
+  route53_zone_id = var.create_hosted_zone ? aws_route53_zone.app[0].zone_id : var.route53_zone_id
+
+  # Certificate ARN for HTTPS listener (null when skipping validation - HTTP only until DNS is set)
+  certificate_arn = var.certificate_arn != "" ? var.certificate_arn : (local.create_cert_validation ? aws_acm_certificate_validation.app[0].certificate_arn : null)
+
+  # HTTPS only when we have a validated cert
+  use_https = local.certificate_arn != null
 
   # Environment variables for ECS task - brand-agnostic approach
   container_environment = [
@@ -189,9 +208,20 @@ resource "aws_lb_target_group" "app" {
   }
 }
 
-# ACM Certificate (only if domain is configured)
+# Route53 Hosted Zone (when create_hosted_zone=true, e.g. for webhook-east2.com)
+resource "aws_route53_zone" "app" {
+  count   = var.create_hosted_zone ? 1 : 0
+  name    = var.domain_name
+  comment = "Webhook API - ${var.aws_region}"
+
+  tags = {
+    Name = "${local.app_name}-zone-${var.aws_region}"
+  }
+}
+
+# ACM Certificate (only when creating new cert - domain + zone, no existing cert)
 resource "aws_acm_certificate" "app" {
-  count             = local.use_https ? 1 : 0
+  count             = local.create_cert ? 1 : 0
   domain_name       = var.domain_name
   validation_method = "DNS"
 
@@ -204,9 +234,9 @@ resource "aws_acm_certificate" "app" {
   }
 }
 
-# Route53 validation records (only if using Route53)
+# Route53 validation records (only when creating new cert)
 resource "aws_route53_record" "cert_validation" {
-  for_each = local.use_https ? {
+  for_each = local.create_cert ? {
     for dvo in aws_acm_certificate.app[0].domain_validation_options : dvo.domain_name => {
       name   = dvo.resource_record_name
       record = dvo.resource_record_value
@@ -219,21 +249,29 @@ resource "aws_route53_record" "cert_validation" {
   records         = [each.value.record]
   ttl             = 60
   type            = each.value.type
-  zone_id         = var.route53_zone_id
+  zone_id         = local.route53_zone_id
 }
 
-# Certificate validation
+# Wait for DNS propagation before ACM validation (avoids "missing validation record" race)
+resource "time_sleep" "wait_for_dns" {
+  count           = local.create_cert_validation ? 1 : 0
+  create_duration = "60s"
+  depends_on      = [aws_route53_record.cert_validation]
+}
+
+# Certificate validation (skipped when skip_cert_validation_wait=true - update registrar first)
 resource "aws_acm_certificate_validation" "app" {
-  count                   = local.use_https ? 1 : 0
+  count                   = local.create_cert_validation ? 1 : 0
   certificate_arn         = aws_acm_certificate.app[0].arn
   validation_record_fqdns = [for record in aws_route53_record.cert_validation : record.fqdn]
+  depends_on              = [time_sleep.wait_for_dns]
 }
 
-# Route53 A Record pointing to ALB (only if domain configured)
+# Route53 A Record pointing to ALB (when domain + zone configured)
 resource "aws_route53_record" "app" {
-  count   = local.use_https ? 1 : 0
-  zone_id = var.route53_zone_id
-  name    = var.domain_name
+  count   = local.has_zone ? 1 : 0
+  zone_id = local.route53_zone_id
+  name    = ""  # Apex record (webhook-east1.com, webhook-east2.com)
   type    = "A"
 
   alias {
@@ -265,14 +303,14 @@ resource "aws_lb_listener" "http" {
   }
 }
 
-# ALB Listener (HTTPS) - Only if domain configured
+# ALB Listener (HTTPS) - When use_https (domain+Route53 or certificate_arn)
 resource "aws_lb_listener" "https" {
   count             = local.use_https ? 1 : 0
   load_balancer_arn = aws_lb.main.arn
   port              = "443"
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
-  certificate_arn   = aws_acm_certificate_validation.app[0].certificate_arn
+  certificate_arn   = local.certificate_arn
 
   default_action {
     type             = "forward"

@@ -45,7 +45,7 @@ tables:
   robot_events:
     - database: "project"
       table_name: "mnt_robot_events"
-      primary_keys: ["robot_sn", "error_id"]
+      primary_keys: ["robot_sn", "event_id"]
       fields: null
       description: "Robot events table in project database"
 

@@ -120,7 +120,7 @@ terraform-plan:
 		exit 1; \
 	fi
 	@export $(grep -v '^#' .env | xargs) && \
-	cd terraform && terraform plan -var-file="$$AWS_REGION.tfvars"
+	cd terraform && terraform plan -var-file="$$AWS_REGION.tfvars" -state="terraform-$$AWS_REGION.tfstate"
 
 terraform-apply:
 	@if [ ! -f ".env" ]; then \
@@ -128,7 +128,7 @@ terraform-apply:
 		exit 1; \
 	fi
 	@export $(grep -v '^#' .env | xargs) && \
-	cd terraform && terraform apply -var-file="$$AWS_REGION.tfvars"
+	cd terraform && terraform apply -var-file="$$AWS_REGION.tfvars" -state="terraform-$$AWS_REGION.tfstate"
 
 terraform-destroy:
 	@if [ ! -f ".env" ]; then \

@@ -34,9 +34,14 @@ output "webhook_endpoints" {
   }
 }
 
+output "route53_nameservers" {
+  description = "Route53 nameservers - update your domain registrar to use these for webhook-east2.com"
+  value       = var.create_hosted_zone ? aws_route53_zone.app[0].name_servers : []
+}
+
 output "certificate_validation_records" {
-  description = "DNS records needed for certificate validation"
-  value       = var.domain_name != "" ? [for dvo in aws_acm_certificate.app[0].domain_validation_options : {
+  description = "DNS records needed for certificate validation (only when creating new cert)"
+  value       = local.create_cert ? [for dvo in aws_acm_certificate.app[0].domain_validation_options : {
     name  = dvo.resource_record_name
     type  = dvo.resource_record_type
     value = dvo.resource_record_value

@@ -182,6 +182,7 @@ ALB_URL=$(terraform output -raw alb_url 2>/dev/null)
 PUDU_ENDPOINT=$(terraform output -json webhook_endpoints 2>/dev/null | grep -o '"pudu_webhook"[^"]*"[^"]*' | cut -d'"' -f4)
 GAS_ENDPOINT=$(terraform output -json webhook_endpoints 2>/dev/null | grep -o '"gas_webhook"[^"]*"[^"]*' | cut -d'"' -f4)
 HEALTH_ENDPOINT=$(terraform output -json webhook_endpoints 2>/dev/null | grep -o '"health_check"[^"]*"[^"]*' | cut -d'"' -f4)
+NS_OUTPUT=$(terraform output -json route53_nameservers 2>/dev/null)
 
 cd ..
 
@@ -193,6 +194,12 @@ echo "🌐 Application URLs (SAVE THESE!)"
 echo "=========================================="
 echo "Load Balancer: $ALB_URL"
 echo ""
+if echo "$NS_OUTPUT" | grep -q 'ns-'; then
+  echo "⚠️  IMPORTANT: Update your domain registrar for webhook-east2.com"
+  echo "   Point the domain to these Route53 nameservers:"
+  cd terraform && terraform output route53_nameservers && cd ..
+  echo ""
+fi
 echo "📋 Webhook Endpoints:"
 echo "  Pudu:  $PUDU_ENDPOINT"
 echo "  Gas:   $GAS_ENDPOINT"

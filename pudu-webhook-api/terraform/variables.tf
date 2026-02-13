@@ -66,7 +66,25 @@ variable "domain_name" {
 }
 
 variable "route53_zone_id" {
-  description = "Route53 hosted zone ID for DNS validation (leave empty if not using Route53)"
+  description = "Route53 hosted zone ID (leave empty if create_hosted_zone=true)"
+  type        = string
+  default     = ""
+}
+
+variable "create_hosted_zone" {
+  description = "Create Route53 hosted zone for domain_name (use when domain has no zone yet, e.g. webhook-east2.com)"
+  type        = bool
+  default     = false
+}
+
+variable "skip_cert_validation_wait" {
+  description = "Skip waiting for ACM cert validation (use for first deploy - get nameservers, update registrar, then set to false)"
+  type        = bool
+  default     = false
+}
+
+variable "certificate_arn" {
+  description = "Optional: ARN of existing ACM certificate for HTTPS. If set, skips cert creation. Must be in same region."
   type        = string
   default     = ""
 }
